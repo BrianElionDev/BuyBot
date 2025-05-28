@@ -10,7 +10,7 @@ class Settings:
   """
 
   # Telegram Configuration
-  TELEGRAM_API_ID: int = int(os.getenv("Telegram_API_ID", 0))
+  TELEGRAM_API_ID: int = int(os.getenv("TELEGRAM_API_ID", 0))
   TELEGRAM_API_HASH: str = os.getenv("TELEGRAM_API_HASH", "")
   TELEGRAM_PHONE: str = os.getenv("TELEGRAM_PHONE", "")
   TARGET_GROUP: str = os.getenv("TARGET_GROUP", "")
@@ -19,8 +19,8 @@ class Settings:
   # EXCHANGE CONFIGURATION
   EXCHANGE: str = os.getenv("EXCHANGE", "yobit").lower()
   YOBIT_API_KEY: str = os.getenv("YOBIT_API_KEY", "")
-  YOBIT_API_SECRET: str = os.get.env("YOBIT_API_SECRET", "")
-  BASE_CURRENCY: str = os.get.env("BASE_CURRENCY", "usd").lower()
+  YOBIT_API_SECRET: str = os.getenv("YOBIT_API_SECRET", "")
+  BASE_CURRENCY: str = os.getenv("BASE_CURRENCY", "usd").lower()
 
 
   # Trading Parameters

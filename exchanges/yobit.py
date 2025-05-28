@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 class YoBitExchange(BaseExchange):
     """
-    Handles the Yobit exchange operations
+    Handles the YoBit exchange operations
     Uses aiohttp for asynchronous HTTP requests
     """
 
     def __init__(self):
-        self.api_key = settings.YOBBIT_API_KEY
+        self.api_key = settings.YOBIT_API_KEY
         self.api_secret = settings.YOBIT_API_SECRET
         self.base_url = "https://yobit.net/tapi"
         self.public_url = "https://yobit.net/api/3" # For public info like pair info

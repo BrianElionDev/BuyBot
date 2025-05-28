@@ -146,7 +146,7 @@ class TelegramSignalMonitor:
         # Group 1: Coin Symbol (e.g., BTC, ETH)
         # Group 2: Price (numeric, possibly with decimal)
         patterns = [
-            r'BUY\s+([A-Z]+)\s+@\s+\$?\s*(\d+\.?\d*)', # e.g., "BUY BTC @ $25000"
+            r'Trade detected \s+([A-Z]+)\s+@\s+\$?\s*(\d+\.?\d*)', # e.g., "BUY BTC @ $25000"
             r'ALERT:\s+([A-Z]+)\s+breakout\s+at\s+\$?\s*(\d+\.?\d*)', # e.g., "ALERT: ETH breakout at $1800"
             r'Purchase\s+signal:\s+([A-Z]+)\s+current\s+price\s+\$?\s*(\d+\.?\d*)', # e.g., "Purchase signal: ADA current price $0.30"
             r'New\s+signal:\s+([A-Z]+)\s+-\s+(\d+\.?\d*)', # e.g., "New signal: XRP - 0.55"
