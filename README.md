@@ -23,7 +23,7 @@ A Python-based cryptocurrency exchange bot that provides a unified interface for
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/BrianElionDev/BuyBot.git
 cd telegram-bot
 ```
 
@@ -39,6 +39,10 @@ source venv/bin/activate  # On Linux/Mac
 ```bash
 pip install -r requirements.txt
 ```
+
+4. Run the program
+```bash
+ python3 main.py ```
 
 ## Project Structure
 
