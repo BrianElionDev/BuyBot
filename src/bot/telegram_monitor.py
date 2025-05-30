@@ -30,8 +30,8 @@ class TelegramMonitor:
         log_message = f"[{timestamp}] {sender}: {message}"
         logger.info(log_message)
 
-    async def _send_notification(self, sell_coin: str, buy_coin: str, amount: float):
-        """Send notification with the new format and CoinGecko price"""
+    async def _send_notification(self, sell_coin: str, buy_coin: str, amount: float, signal_price: Optional[float] = None):
+        """Send notification with the new format and CoinGecko price, with slippage protection"""
         if not self.notification_group:
             try:
                 entity = await self.client.get_entity(self.config.NOTIFICATION_GROUP_ID)
@@ -48,17 +48,40 @@ class TelegramMonitor:
                 return
 
         # Fetch price from CoinGecko for the buy coin
+        coingecko_price_value = None
         coingecko_price = "Price unavailable"
         try:
             logger.info(f"[PRICE] Fetching CoinGecko price for {buy_coin}...")
-            price = await self.price_service.get_coin_price(buy_coin)
-            if price:
-                coingecko_price = f"${price:.6f}"
+            coingecko_price_value = await self.price_service.get_coin_price(buy_coin)
+            if coingecko_price_value:
+                coingecko_price = f"${coingecko_price_value:.6f}"
                 logger.info(f"[SUCCESS] CoinGecko price for {buy_coin}: {coingecko_price}")
             else:
                 logger.warning(f"[WARNING] Could not fetch CoinGecko price for {buy_coin}")
         except Exception as e:
             logger.error(f"[ERROR] Error fetching CoinGecko price for {buy_coin}: {e}")
+
+        # Slippage protection check
+        if signal_price and coingecko_price_value:
+            price_difference_percent = abs(coingecko_price_value - signal_price) / signal_price * 100
+            slippage_threshold = self.config.SLIPPAGE_PERCENTAGE
+            
+            logger.info(f"[SLIPPAGE] Signal price: ${signal_price:.6f}")
+            logger.info(f"[SLIPPAGE] Current market price: ${coingecko_price_value:.6f}")
+            logger.info(f"[SLIPPAGE] Price difference: {price_difference_percent:.2f}%")
+            logger.info(f"[SLIPPAGE] Slippage threshold: {slippage_threshold:.1f}%")
+            
+            if price_difference_percent > slippage_threshold:
+                logger.warning(f"❌ SLIPPAGE PROTECTION: Price moved too far ({price_difference_percent:.2f}% > {slippage_threshold:.1f}%)")
+                logger.warning(f"❌ TRANSACTION BLOCKED: Signal ${signal_price:.6f} vs Market ${coingecko_price_value:.6f}")
+                logger.warning(f"❌ Notification NOT sent - price slippage too high")
+                return  # Exit without sending notification
+            else:
+                logger.info(f"✅ SLIPPAGE CHECK PASSED: {price_difference_percent:.2f}% <= {slippage_threshold:.1f}%")
+        elif signal_price:
+            logger.warning(f"[WARNING] Cannot perform slippage check - CoinGecko price unavailable")
+        else:
+            logger.warning(f"[WARNING] Cannot perform slippage check - signal price not provided")
 
         # New notification format
         message = (
@@ -203,7 +226,8 @@ class TelegramMonitor:
                             await self._send_notification(
                                 sell_coin=sell_coin,
                                 buy_coin=buy_coin,
-                                amount=10.0
+                                amount=10.0,
+                                signal_price=price
                             )
                             await self.trading_engine.process_signal(buy_coin, price)
                         except Exception as e:

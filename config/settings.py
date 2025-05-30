@@ -20,6 +20,7 @@ RISK_PERCENTAGE = float(os.getenv("RISK_PERCENTAGE", "2.0"))
 MIN_TRADE_AMOUNT = float(os.getenv("MIN_TRADE_AMOUNT", "10.0"))
 MAX_TRADE_AMOUNT = float(os.getenv("MAX_TRADE_AMOUNT", "100.0"))
 PRICE_THRESHOLD = float(os.getenv("PRICE_THRESHOLD", "5.0"))  # % price difference
+SLIPPAGE_PERCENTAGE = float(os.getenv("SLIPPAGE_PERCENTAGE", "20.0"))  # % slippage tolerance
 TRADE_COOLDOWN = int(os.getenv("TRADE_COOLDOWN", "300"))  # seconds
 
 # Setup logging
