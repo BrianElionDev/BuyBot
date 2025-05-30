@@ -52,7 +52,7 @@ def setup_logging():
     logging.getLogger('telethon').setLevel(logging.WARNING)
     logging.getLogger('aiohttp').setLevel(logging.WARNING)
 
-async def main():
+def main():
     """Main entry point for the trading bot"""
     setup_logging()
     logger = logging.getLogger(__name__)
@@ -64,16 +64,15 @@ async def main():
     try:
         logger.info("[STARTUP] Starting Rubicon Whale Tracker Bot")
         logger.info(f"Monitoring group: {config.TARGET_GROUP_ID}")
-        logger.info("Filtering for messages starting with: 'Trade detected'")
-        await telegram_monitor.start()
+        logger.info("Filtering for messages containing: 'Trade detected'")
+        telegram_monitor.start()
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Bot error: {e}")
     finally:
-        await telegram_monitor.stop()
-        await trading_engine.close()
+        telegram_monitor.stop()
         logger.info("Bot shutdown complete")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
