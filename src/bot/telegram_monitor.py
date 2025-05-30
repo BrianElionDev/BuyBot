@@ -128,7 +128,9 @@ class TelegramMonitor:
                 await self._log_message(message, sender_display)
 
                 # Process "Trade detected" messages (with or without emoji)
-                if message and (message.startswith('Trade detected') or message.startswith('[TRADE] Trade detected')):
+                if message and (message.startswith('Trade detected') or 
+                               message.startswith('[TRADE] Trade detected') or 
+                               message.startswith('👋 Trade detected')):
                     logger.info(f"[SIGNAL] TRADE SIGNAL DETECTED!")
                     logger.info(f"[SUCCESS] Trade signal from {sender_display}")
                     logger.info(f"[CONTENT] Full message content:")
@@ -180,11 +182,12 @@ class TelegramMonitor:
                 logger.info(f"Found symbol: {coin_symbol}")
                 break
 
-        # Extract price from format: "[PRICE] Price per token $0.136 USD"
+        # Extract price from format: "💰 Price per token $0.136 USD" or "[PRICE] Price per token $0.136 USD"
         price_patterns = [
-            r'Price per token\s*\$?([\d,]+\.?\d*)\s*USD',
-            r'\[PRICE\].*\$?([\d,]+\.?\d*)\s*USD',
-            r'\$?([\d,]+\.?\d*)\s*USD',
+            r'Price per token\s*\$?([\d,]+\.?\d*)\s*USD',  # Generic price pattern
+            r'💰.*\$?([\d,]+\.?\d*)\s*USD',                # Original emoji pattern
+            r'\[PRICE\].*\$?([\d,]+\.?\d*)\s*USD',         # Windows-compatible pattern
+            r'\$?([\d,]+\.?\d*)\s*USD',                    # Fallback pattern
         ]
 
         for pattern in price_patterns:
@@ -234,7 +237,10 @@ class TelegramMonitor:
             logger.info(f"[ID] Group ID: {group_id}")
             logger.info("=" * 80)
             logger.info("[MONITOR] Now monitoring ALL messages in this group...")
-            logger.info("[DEBUG] Filtering for messages starting with 'Trade detected' or '[TRADE] Trade detected'")
+            logger.info("[DEBUG] Filtering for messages starting with:")
+            logger.info("[DEBUG]   - 'Trade detected'")
+            logger.info("[DEBUG]   - '[TRADE] Trade detected'")
+            logger.info("[DEBUG]   - '👋 Trade detected'")
             logger.info("[LOG] All message activity will be logged. Press Ctrl+C to stop.")
             logger.info("=" * 80)
         except Exception as e:
