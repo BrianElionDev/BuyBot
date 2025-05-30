@@ -1,7 +1,7 @@
 import re
 
 # Test patterns
-test_text = "🟢 +531,835.742 Destra Network (DSync)"
+test_text = "[GREEN] +531,835.742 Destra Network (DSync)"
 print(f"Testing text: {test_text}")
 
 # Pattern to extract symbol
@@ -22,7 +22,7 @@ if match2:
     print(f"Name: {name}, Symbol: {symbol}")
 
 # Test price pattern
-price_text = "💰 Price per token $0.136 USD"
+price_text = "[PRICE] Price per token $0.136 USD"
 price_pattern = r'Price per token\s*\$?([\d,]+\.?\d*)\s*USD'
 price_match = re.search(price_pattern, price_text)
 if price_match:
