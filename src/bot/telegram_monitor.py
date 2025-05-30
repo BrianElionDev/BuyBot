@@ -65,12 +65,12 @@ class TelegramMonitor:
         if signal_price and coingecko_price_value:
             price_difference_percent = abs(coingecko_price_value - signal_price) / signal_price * 100
             slippage_threshold = self.config.SLIPPAGE_PERCENTAGE
-            
+
             logger.info(f"[SLIPPAGE] Signal price: ${signal_price:.6f}")
             logger.info(f"[SLIPPAGE] Current market price: ${coingecko_price_value:.6f}")
             logger.info(f"[SLIPPAGE] Price difference: {price_difference_percent:.2f}%")
             logger.info(f"[SLIPPAGE] Slippage threshold: {slippage_threshold:.1f}%")
-            
+
             if price_difference_percent > slippage_threshold:
                 logger.warning(f"❌ SLIPPAGE PROTECTION: Price moved too far ({price_difference_percent:.2f}% > {slippage_threshold:.1f}%)")
                 logger.warning(f"❌ TRANSACTION BLOCKED: Signal ${signal_price:.6f} vs Market ${coingecko_price_value:.6f}")
@@ -275,9 +275,9 @@ class TelegramMonitor:
             r'🟢.*?\+.*?([A-Za-z\s]+)\s*\(([A-Z0-9]{1,10})\)',  # Green line with symbol in parentheses
             r'🟢.*?\+.*?([A-Za-z\s]+)\s*\(([A-Z0-9]{1,10})\s*\(https://.*?\)\)',  # With etherscan link
         ]
-        
+
         red_patterns = [
-            r'🔴.*?-.*?([A-Za-z\s]+)\s*\(([A-Z0-9]{1,10})\)',  # Red line with symbol in parentheses  
+            r'🔴.*?-.*?([A-Za-z\s]+)\s*\(([A-Z0-9]{1,10})\)',  # Red line with symbol in parentheses
             r'🔴.*?-.*?([A-Za-z\s]+)\s*\(([A-Z0-9]{1,10})\s*\(https://.*?\)\)',  # With etherscan link
         ]
 
@@ -289,7 +289,7 @@ class TelegramMonitor:
                 logger.info(f"Found buy coin (green): {buy_coin}")
                 break
 
-        # Find sell coin (red line) 
+        # Find sell coin (red line)
         for pattern in red_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
