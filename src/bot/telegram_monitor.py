@@ -53,19 +53,19 @@ class TelegramMonitor:
         coin_to_price = buy_coin_symbol or buy_coin
 
         try:
-            logger.info(f"🔍 Fetching price for {coin_to_price} from CoinGecko...")
+            logger.info(f"[PRICE] Fetching price for {coin_to_price} from CoinGecko...")
             dynamic_price = await self.price_service.get_coin_price(coin_to_price)
 
             if dynamic_price:
                 cost_value = dynamic_price * amount
                 cost_message = f"${cost_value:.6f} (${dynamic_price:.6f} per {coin_to_price})"
-                logger.info(f"✅ Got dynamic price: {coin_to_price} = ${dynamic_price:.6f}")
+                logger.info(f"[SUCCESS] Got dynamic price: {coin_to_price} = ${dynamic_price:.6f}")
             else:
                 cost_message = f"Price unavailable for {coin_to_price}"
-                logger.warning(f"❌ Could not fetch price for {coin_to_price}")
+                logger.warning(f"[WARNING] Could not fetch price for {coin_to_price}")
 
         except Exception as e:
-            logger.error(f"❌ Error fetching price for {coin_to_price}: {e}")
+            logger.error(f"[ERROR] Error fetching price for {coin_to_price}: {e}")
             cost_message = f"Error fetching price for {coin_to_price}"
 
         message = (
@@ -91,7 +91,7 @@ class TelegramMonitor:
                 # Debug logging for ALL incoming messages
                 chat_title = getattr(chat, 'title', 'Unknown Group')
                 chat_id = getattr(chat, 'id', 'Unknown')
-                logger.debug(f"🔍 DEBUG: Message received in '{chat_title}' [ID: {chat_id}] - Target: {self.config.TARGET_GROUP_ID}")
+                logger.debug(f"[DEBUG] Message received in '{chat_title}' [ID: {chat_id}] - Target: {self.config.TARGET_GROUP_ID}")
 
                 # Filter for target group only using ID (handle both positive and negative IDs)
                 if not (hasattr(chat, 'id') and abs(chat.id) == abs(self.config.TARGET_GROUP_ID)):
@@ -118,27 +118,27 @@ class TelegramMonitor:
 
                 # Enhanced logging for all messages
                 logger.info("=" * 80)
-                logger.info(f"📨 NEW MESSAGE IN TARGET GROUP")
-                logger.info(f"🏠 Group: '{chat_title}' (@{chat_username if chat_username else 'no_username'}) [ID: {chat_id}]")
-                logger.info(f"👤 From: {sender_display} [ID: {sender_id}]")
-                logger.info(f"💬 Message: {message if message else '[Media/Non-text content]'}")
+                logger.info(f"[MESSAGE] NEW MESSAGE IN TARGET GROUP")
+                logger.info(f"[GROUP] Group: '{chat_title}' (@{chat_username if chat_username else 'no_username'}) [ID: {chat_id}]")
+                logger.info(f"[SENDER] From: {sender_display} [ID: {sender_id}]")
+                logger.info(f"[CONTENT] Message: {message if message else '[Media/Non-text content]'}")
                 logger.info("=" * 80)
 
                 # Also use the old format for compatibility
                 await self._log_message(message, sender_display)
 
                 # Process "Trade detected" messages (with or without emoji)
-                if message and (message.startswith('Trade detected') or message.startswith('👋 Trade detected')):
-                    logger.info(f"🚨 TRADE SIGNAL DETECTED! 🚨")
-                    logger.info(f"✅ Trade signal from {sender_display}")
-                    logger.info(f"📄 Full message content:")
+                if message and (message.startswith('Trade detected') or message.startswith('[TRADE] Trade detected')):
+                    logger.info(f"[SIGNAL] TRADE SIGNAL DETECTED!")
+                    logger.info(f"[SUCCESS] Trade signal from {sender_display}")
+                    logger.info(f"[CONTENT] Full message content:")
                     logger.info(f"{message}")
                     logger.info("-" * 60)
 
                     coin_symbol, price = self._parse_signal(message)
 
                     if coin_symbol and price:
-                        logger.info(f"🎯 SUCCESSFUL PARSE: {coin_symbol} @ ${price}")
+                        logger.info(f"[SUCCESS] SUCCESSFUL PARSE: {coin_symbol} @ ${price}")
                         # Send notification with dynamic pricing before processing the signal
                         await self._send_notification(
                             transaction_type="Buy",
@@ -149,15 +149,15 @@ class TelegramMonitor:
                         )
                         await self.trading_engine.process_signal(coin_symbol, price)
                     else:
-                        logger.warning(f"❌ FAILED TO PARSE trade signal from {sender_display}")
+                        logger.warning(f"[WARNING] FAILED TO PARSE trade signal from {sender_display}")
                 else:
                     if message:
-                        logger.info(f"ℹ️ Regular message (not a trade signal) - ignoring")
+                        logger.info(f"[INFO] Regular message (not a trade signal) - ignoring")
                     else:
-                        logger.info(f"📷 Non-text message (media/sticker/etc) - ignoring")
+                        logger.info(f"[MEDIA] Non-text message (media/sticker/etc) - ignoring")
 
             except Exception as e:
-                logger.error(f"❌ Error in message handler: {e}", exc_info=True)
+                logger.error(f"[ERROR] Error in message handler: {e}", exc_info=True)
 
     def _parse_signal(self, text: str) -> Tuple[Optional[str], Optional[float]]:
         """Extract coin symbol and price from trade detected message"""
@@ -166,7 +166,7 @@ class TelegramMonitor:
         coin_symbol = None
         price = None
 
-        # Extract coin symbol from format: "🟢 +531,835.742 Destra Network (DSync)"
+        # Extract coin symbol from format: "[GREEN] +531,835.742 Destra Network (DSync)"
         # Look for text in parentheses which should be the symbol
         symbol_patterns = [
             r'\(([A-Z0-9]{2,10})\)',  # Symbol in parentheses like (DSync)
@@ -180,10 +180,10 @@ class TelegramMonitor:
                 logger.info(f"Found symbol: {coin_symbol}")
                 break
 
-        # Extract price from format: "💰 Price per token $0.136 USD"
+        # Extract price from format: "[PRICE] Price per token $0.136 USD"
         price_patterns = [
             r'Price per token\s*\$?([\d,]+\.?\d*)\s*USD',
-            r'💰.*\$?([\d,]+\.?\d*)\s*USD',
+            r'\[PRICE\].*\$?([\d,]+\.?\d*)\s*USD',
             r'\$?([\d,]+\.?\d*)\s*USD',
         ]
 
@@ -199,14 +199,14 @@ class TelegramMonitor:
                     continue
 
         if coin_symbol and price:
-            logger.info(f"✅ Successfully parsed: {coin_symbol} @ ${price}")
+            logger.info(f"[SUCCESS] Successfully parsed: {coin_symbol} @ ${price}")
             return coin_symbol, price
         else:
-            logger.warning(f"❌ Failed to parse - Symbol: {coin_symbol}, Price: {price}")
+            logger.warning(f"[WARNING] Failed to parse - Symbol: {coin_symbol}, Price: {price}")
             return None, None
 
     async def start(self):
-        logger.info("🚀 Starting Enhanced Telegram Monitor...")
+        logger.info("[STARTUP] Starting Enhanced Telegram Monitor...")
         if self.config.TELEGRAM_PHONE is None:
             logger.error("TELEGRAM_PHONE must be set in the configuration and cannot be None")
             return
@@ -218,7 +218,7 @@ class TelegramMonitor:
         me_first_name = getattr(me, 'first_name', 'Unknown')
         me_last_name = getattr(me, 'last_name', '') or ''
         me_username = getattr(me, 'username', 'no_username')
-        logger.info(f"👋 Logged in as: {me_first_name} {me_last_name} (@{me_username})")
+        logger.info(f"[LOGIN] Logged in as: {me_first_name} {me_last_name} (@{me_username})")
 
         # Resolve target group and get detailed information
         try:
@@ -228,22 +228,22 @@ class TelegramMonitor:
             group_id = getattr(group, 'id', 'Unknown')
 
             logger.info("=" * 80)
-            logger.info(f"🎯 TARGET GROUP FOUND!")
-            logger.info(f"📋 Group Name: '{group_title}'")
-            logger.info(f"🔗 Username: @{group_username if group_username else 'no_username'}")
-            logger.info(f"🆔 Group ID: {group_id}")
+            logger.info(f"[TARGET] TARGET GROUP FOUND!")
+            logger.info(f"[INFO] Group Name: '{group_title}'")
+            logger.info(f"[LINK] Username: @{group_username if group_username else 'no_username'}")
+            logger.info(f"[ID] Group ID: {group_id}")
             logger.info("=" * 80)
-            logger.info("👀 Now monitoring ALL messages in this group...")
-            logger.info("🔍 Filtering for messages starting with 'Trade detected' or '👋 Trade detected'")
-            logger.info("📝 All message activity will be logged. Press Ctrl+C to stop.")
+            logger.info("[MONITOR] Now monitoring ALL messages in this group...")
+            logger.info("[DEBUG] Filtering for messages starting with 'Trade detected' or '[TRADE] Trade detected'")
+            logger.info("[LOG] All message activity will be logged. Press Ctrl+C to stop.")
             logger.info("=" * 80)
         except Exception as e:
-            logger.error(f"❌ Failed to find group with ID {self.config.TARGET_GROUP_ID}: {e}")
+            logger.error(f"[ERROR] Failed to find group with ID {self.config.TARGET_GROUP_ID}: {e}")
             return
 
         await self.client.run_until_disconnected()
 
     async def stop(self):
         if self.client.is_connected():
-            await self.client.disconnect()
+            self.client.disconnect()
             logger.info("Telegram client disconnected")
