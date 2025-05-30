@@ -93,12 +93,27 @@ class TelegramMonitor:
                 chat_id = getattr(chat, 'id', 'Unknown')
                 logger.debug(f"[DEBUG] Message received in '{chat_title}' [ID: {chat_id}] - Target: {self.config.TARGET_GROUP_ID}")
 
-                # Filter for target group only using ID (handle both positive and negative IDs)
-                if not (hasattr(chat, 'id') and abs(chat.id) == abs(self.config.TARGET_GROUP_ID)):
-                    return
+                # Enhanced group ID matching - handle multiple formats
+                target_id = self.config.TARGET_GROUP_ID
+                current_id = getattr(chat, 'id', None)
 
-                # Get detailed chat information
-                chat_username = getattr(chat, 'username', None)
+                # Check if this is our target group (handle different ID formats)
+                is_target_group = False
+                if current_id is not None:
+                    # Direct match
+                    if current_id == target_id:
+                        is_target_group = True
+                    # Handle supergroup format (-100 prefix)
+                    elif str(current_id).startswith('-100') and int(str(current_id)[4:]) == abs(target_id):
+                        is_target_group = True
+                    elif str(target_id).startswith('-100') and int(str(target_id)[4:]) == abs(current_id):
+                        is_target_group = True
+                    # Absolute value match as fallback
+                    elif abs(current_id) == abs(target_id):
+                        is_target_group = True
+
+                if not is_target_group:
+                    return
 
                 # Get detailed sender information
                 sender = await event.get_sender()
@@ -122,13 +137,13 @@ class TelegramMonitor:
                 logger.info(f"[GROUP] Group: '{chat_title}' (@{chat_username if chat_username else 'no_username'}) [ID: {chat_id}]")
                 logger.info(f"[SENDER] From: {sender_display} [ID: {sender_id}]")
                 logger.info(f"[CONTENT] Message: {message if message else '[Media/Non-text content]'}")
-                
+
                 # Debug: Show message analysis
                 if message:
                     logger.info(f"[DEBUG] Message starts with: '{message[:30]}...'")
                     logger.info(f"[DEBUG] Message lower starts with: '{message.lower()[:30]}...'")
                     logger.info(f"[DEBUG] Checking for trade signal patterns...")
-                
+
                 logger.info("=" * 80)
 
                 # Also use the old format for compatibility
@@ -137,7 +152,7 @@ class TelegramMonitor:
                 # Process "Trade detected" messages (with or without emoji) - case insensitive
                 message_lower = message.lower() if message else ""
                 is_trade_signal = (
-                    'trade detected' in message_lower or 
+                    'trade detected' in message_lower or
                     '[trade] trade detected' in message_lower or
                     # Handle variations with emoji, spaces, and punctuation
                     ('👋' in message and 'trade detected' in message_lower) or
@@ -149,7 +164,7 @@ class TelegramMonitor:
                     '👋  trade detected' in message_lower or  # Double space
                     '👋 trade detected' in message_lower       # Single space
                 )
-                
+
                 if message and is_trade_signal:
                     logger.info(f"[SIGNAL] TRADE SIGNAL DETECTED!")
                     logger.info(f"[SUCCESS] Trade signal from {sender_display}")
@@ -179,7 +194,7 @@ class TelegramMonitor:
                     if message:
                         logger.info(f"[INFO] Regular message (not a trade signal) - ignoring")
                         logger.info(f"[DEBUG] Message content: '{message[:100]}...'")
-                        
+
                         # Show which patterns were tested
                         message_lower = message.lower() if message else ""
                         patterns_tested = [
@@ -253,7 +268,7 @@ class TelegramMonitor:
         try:
             # Start the client synchronously
             self.client.start(phone=self.config.TELEGRAM_PHONE)
-            
+
             logger.info("[LOGIN] Successfully connected to Telegram")
 
             # Log the monitoring setup
@@ -270,7 +285,7 @@ class TelegramMonitor:
 
             # Run until disconnected
             self.client.run_until_disconnected()
-            
+
         except Exception as e:
             logger.error(f"[ERROR] Failed to start Telegram client: {e}")
             raise
