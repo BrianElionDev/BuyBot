@@ -3,6 +3,7 @@ import logging
 from telethon import TelegramClient, events
 from typing import Optional, Tuple
 from datetime import datetime
+from src.services.price_service import PriceService
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +11,7 @@ class TelegramMonitor:
     def __init__(self, trading_engine, config):
         self.trading_engine = trading_engine
         self.config = config
+        self.price_service = PriceService()  # Re-add price service for CoinGecko integration
 
         if config.TELEGRAM_API_HASH is None:
             raise ValueError("TELEGRAM_API_HASH must be set in the configuration and cannot be None")
@@ -28,12 +30,11 @@ class TelegramMonitor:
         log_message = f"[{timestamp}] {sender}: {message}"
         logger.info(log_message)
 
-    async def _send_notification(self, transaction_type: str, sell_coin: str, buy_coin: str, amount: float):
-        """Send simple notification without complex price fetching"""
+    async def _send_notification(self, sell_coin: str, buy_coin: str, amount: float):
+        """Send notification with the new format and CoinGecko price"""
         if not self.notification_group:
             try:
                 entity = await self.client.get_entity(self.config.NOTIFICATION_GROUP_ID)
-                # Ensure entity is not a list
                 if isinstance(entity, list):
                     if len(entity) > 0:
                         self.notification_group = entity[0]
@@ -46,12 +47,25 @@ class TelegramMonitor:
                 logger.error(f"Failed to find notification group with ID {self.config.NOTIFICATION_GROUP_ID}: {e}")
                 return
 
-        # Simple notification message without complex price fetching
+        # Fetch price from CoinGecko for the buy coin
+        coingecko_price = "Price unavailable"
+        try:
+            logger.info(f"[PRICE] Fetching CoinGecko price for {buy_coin}...")
+            price = await self.price_service.get_coin_price(buy_coin)
+            if price:
+                coingecko_price = f"${price:.6f}"
+                logger.info(f"[SUCCESS] CoinGecko price for {buy_coin}: {coingecko_price}")
+            else:
+                logger.warning(f"[WARNING] Could not fetch CoinGecko price for {buy_coin}")
+        except Exception as e:
+            logger.error(f"[ERROR] Error fetching CoinGecko price for {buy_coin}: {e}")
+
+        # New notification format
         message = (
             f"🚨 Trade Signal Detected!\n\n"
-            f"Transaction Type: {transaction_type}\n"
-            f"Sell: {sell_coin}\n"
-            f"Buy: {buy_coin}\n"
+            f"Transaction Type: Buy\n"
+            f"{sell_coin}/{buy_coin}\n"
+            f"Price: {coingecko_price}\n"
             f"Amount: {amount}"
         )
 
@@ -180,21 +194,22 @@ class TelegramMonitor:
                     logger.info(f"{message}")
                     logger.info("-" * 60)
 
-                    coin_symbol, price = self._parse_signal(message)
+                    sell_coin, buy_coin, price, is_valid = self._parse_enhanced_signal(message)
 
-                    if coin_symbol and price:
-                        logger.info(f"[SUCCESS] SUCCESSFUL PARSE: {coin_symbol} @ ${price}")
-                        # Send notification before processing the signal
+                    if is_valid and sell_coin and buy_coin and price:
+                        logger.info(f"[SUCCESS] VALID TRADE: {sell_coin}/{buy_coin} @ ${price}")
+                        # Send notification with enhanced format
                         try:
                             await self._send_notification(
-                                transaction_type="Buy",
-                                sell_coin="ETH", 
-                                buy_coin=coin_symbol,
+                                sell_coin=sell_coin,
+                                buy_coin=buy_coin,
                                 amount=10.0
                             )
-                            await self.trading_engine.process_signal(coin_symbol, price)
+                            await self.trading_engine.process_signal(buy_coin, price)
                         except Exception as e:
                             logger.error(f"[ERROR] Failed to process signal: {e}")
+                    elif not is_valid:
+                        logger.warning(f"[IGNORED] Invalid transaction - not selling ETH/USDC (selling: {sell_coin})")
                     else:
                         logger.warning(f"[WARNING] FAILED TO PARSE trade signal from {sender_display}")
                 else:
@@ -218,33 +233,62 @@ class TelegramMonitor:
             except Exception as e:
                 logger.error(f"[ERROR] Error in message handler: {e}", exc_info=True)
 
-    def _parse_signal(self, text: str) -> Tuple[Optional[str], Optional[float]]:
-        """Extract coin symbol and price from trade detected message"""
-        logger.info(f"Parsing message: {text[:200]}...")
+    def _parse_enhanced_signal(self, text: str) -> Tuple[Optional[str], Optional[str], Optional[float], bool]:
+        """
+        Enhanced parsing to extract sell_coin, buy_coin, price, and validate ETH/USDC requirement
+        Returns: (sell_coin, buy_coin, price, is_valid_transaction)
+        """
+        logger.info(f"Enhanced parsing: {text[:200]}...")
 
-        coin_symbol = None
+        sell_coin = None
+        buy_coin = None
         price = None
+        is_valid_transaction = False
 
-        # Extract coin symbol from format: "[GREEN] +531,835.742 Destra Network (DSync)"
-        # Look for text in parentheses which should be the symbol
-        symbol_patterns = [
-            r'\(([A-Z0-9]{2,10})\)',  # Symbol in parentheses like (DSync)
-            r'([A-Z]{3,6})\s*\)',     # Symbol before closing parenthesis
+        # Extract coins from green (buy) and red (sell) lines
+        # Pattern 1: 🟢 +2,336.576 USD Coin (USDC) / 🔴 - 104,347.826 DAR Open Network (D)
+        green_patterns = [
+            r'🟢.*?\+.*?([A-Za-z\s]+)\s*\(([A-Z0-9]{1,10})\)',  # Green line with symbol in parentheses
+            r'🟢.*?\+.*?([A-Za-z\s]+)\s*\(([A-Z0-9]{1,10})\s*\(https://.*?\)\)',  # With etherscan link
+        ]
+        
+        red_patterns = [
+            r'🔴.*?-.*?([A-Za-z\s]+)\s*\(([A-Z0-9]{1,10})\)',  # Red line with symbol in parentheses  
+            r'🔴.*?-.*?([A-Za-z\s]+)\s*\(([A-Z0-9]{1,10})\s*\(https://.*?\)\)',  # With etherscan link
         ]
 
-        for pattern in symbol_patterns:
+        # Find buy coin (green line)
+        for pattern in green_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                coin_symbol = match.group(1).upper()
-                logger.info(f"Found symbol: {coin_symbol}")
+                buy_coin = match.group(2).upper()
+                logger.info(f"Found buy coin (green): {buy_coin}")
                 break
 
-        # Extract price from format: "💰 Price per token $0.136 USD" or "[PRICE] Price per token $0.136 USD"
+        # Find sell coin (red line) 
+        for pattern in red_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                sell_coin = match.group(2).upper()
+                logger.info(f"Found sell coin (red): {sell_coin}")
+                break
+
+        # Validate that sell coin is ETH or USDC
+        if sell_coin and sell_coin in ['ETH', 'USDC']:
+            is_valid_transaction = True
+            logger.info(f"✅ Valid transaction: Selling {sell_coin}")
+        elif sell_coin:
+            logger.warning(f"❌ Invalid transaction: Selling {sell_coin} (only ETH/USDC allowed)")
+            is_valid_transaction = False
+        else:
+            logger.warning(f"❌ Could not determine sell coin")
+            is_valid_transaction = False
+
+        # Extract price
         price_patterns = [
-            r'Price per token\s*\$?([\d,]+\.?\d*)\s*USD',  # Generic price pattern
-            r'💰.*\$?([\d,]+\.?\d*)\s*USD',                # Original emoji pattern
-            r'\[PRICE\].*\$?([\d,]+\.?\d*)\s*USD',         # Windows-compatible pattern
-            r'\$?([\d,]+\.?\d*)\s*USD',                    # Fallback pattern
+            r'💰.*?Price per token\s*\$?([\d,]+\.?\d*)\s*USD',  # 💰 Price per token $0.136 USD
+            r'💵.*?Price per token\s*\$?([\d,]+\.?\d*)\s*USD',  # 💵 Price per token $0.008 USD
+            r'Price per token\s*\$?([\d,]+\.?\d*)\s*USD',      # Generic pattern
         ]
 
         for pattern in price_patterns:
@@ -258,12 +302,8 @@ class TelegramMonitor:
                 except (ValueError, IndexError):
                     continue
 
-        if coin_symbol and price:
-            logger.info(f"[SUCCESS] Successfully parsed: {coin_symbol} @ ${price}")
-            return coin_symbol, price
-        else:
-            logger.warning(f"[WARNING] Failed to parse - Symbol: {coin_symbol}, Price: {price}")
-            return None, None
+        logger.info(f"Parsed result: sell={sell_coin}, buy={buy_coin}, price=${price}, valid={is_valid_transaction}")
+        return sell_coin, buy_coin, price, is_valid_transaction
 
     def start(self):
         """Start the Telegram monitor - synchronous method"""
