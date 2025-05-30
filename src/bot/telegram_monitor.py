@@ -3,7 +3,6 @@ import logging
 from telethon import TelegramClient, events
 from typing import Optional, Tuple
 from datetime import datetime
-from src.services.price_service import PriceService
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +10,6 @@ class TelegramMonitor:
     def __init__(self, trading_engine, config):
         self.trading_engine = trading_engine
         self.config = config
-        self.price_service = PriceService()  # Initialize price service
 
         if config.TELEGRAM_API_HASH is None:
             raise ValueError("TELEGRAM_API_HASH must be set in the configuration and cannot be None")
@@ -30,8 +28,8 @@ class TelegramMonitor:
         log_message = f"[{timestamp}] {sender}: {message}"
         logger.info(log_message)
 
-    async def _send_notification(self, transaction_type: str, sell_coin: str, buy_coin: str, amount: float, buy_coin_symbol: Optional[str] = None):
-        """Send notification with dynamic pricing from CoinGecko"""
+    async def _send_notification(self, transaction_type: str, sell_coin: str, buy_coin: str, amount: float):
+        """Send simple notification without complex price fetching"""
         if not self.notification_group:
             try:
                 entity = await self.client.get_entity(self.config.NOTIFICATION_GROUP_ID)
@@ -48,39 +46,20 @@ class TelegramMonitor:
                 logger.error(f"Failed to find notification group with ID {self.config.NOTIFICATION_GROUP_ID}: {e}")
                 return
 
-        # Fetch dynamic price from CoinGecko
-        cost_message = "N/A"
-        coin_to_price = buy_coin_symbol or buy_coin
-
-        try:
-            logger.info(f"[PRICE] Fetching price for {coin_to_price} from CoinGecko...")
-            dynamic_price = await self.price_service.get_coin_price(coin_to_price)
-
-            if dynamic_price:
-                cost_value = dynamic_price * amount
-                cost_message = f"${cost_value:.6f} (${dynamic_price:.6f} per {coin_to_price})"
-                logger.info(f"[SUCCESS] Got dynamic price: {coin_to_price} = ${dynamic_price:.6f}")
-            else:
-                cost_message = f"Price unavailable for {coin_to_price}"
-                logger.warning(f"[WARNING] Could not fetch price for {coin_to_price}")
-
-        except Exception as e:
-            logger.error(f"[ERROR] Error fetching price for {coin_to_price}: {e}")
-            cost_message = f"Error fetching price for {coin_to_price}"
-
+        # Simple notification message without complex price fetching
         message = (
+            f"🚨 Trade Signal Detected!\n\n"
             f"Transaction Type: {transaction_type}\n"
             f"Sell: {sell_coin}\n"
             f"Buy: {buy_coin}\n"
-            f"Amount: {amount}\n"
-            f"Cost: {cost_message}"
+            f"Amount: {amount}"
         )
 
         try:
             await self.client.send_message(self.notification_group, message)
-            logger.info(f"Notification sent to group ID {self.config.NOTIFICATION_GROUP_ID}")
+            logger.info(f"✅ Notification sent successfully to group ID {self.config.NOTIFICATION_GROUP_ID}")
         except Exception as e:
-            logger.error(f"Failed to send notification: {e}")
+            logger.error(f"❌ Failed to send notification: {e}")
 
     def _setup_handlers(self):
         @self.client.on(events.NewMessage())
@@ -91,11 +70,19 @@ class TelegramMonitor:
                 # Debug logging for ALL incoming messages
                 chat_title = getattr(chat, 'title', 'Unknown Group')
                 chat_id = getattr(chat, 'id', 'Unknown')
-                logger.debug(f"[DEBUG] Message received in '{chat_title}' [ID: {chat_id}] - Target: {self.config.TARGET_GROUP_ID}")
+                logger.info(f"[DEBUG] Message received in '{chat_title}' [ID: {chat_id}] - Target: {self.config.TARGET_GROUP_ID}")
 
                 # Enhanced group ID matching - handle multiple formats
                 target_id = self.config.TARGET_GROUP_ID
                 current_id = getattr(chat, 'id', None)
+
+                # TEMPORARY: Extra debug logging
+                logger.info(f"[DEBUG] Raw comparison: current_id={current_id}, target_id={target_id}")
+                if str(target_id).startswith('-100'):
+                    target_without_prefix = int(str(target_id)[4:])
+                    logger.info(f"[DEBUG] Target without -100 prefix: {target_without_prefix}")
+                    logger.info(f"[DEBUG] Testing: {current_id} == {target_without_prefix}")
+
 
                 # Check if this is our target group (handle different ID formats)
                 is_target_group = False
@@ -103,17 +90,38 @@ class TelegramMonitor:
                     # Direct match
                     if current_id == target_id:
                         is_target_group = True
-                    # Handle supergroup format (-100 prefix)
-                    elif str(current_id).startswith('-100') and int(str(current_id)[4:]) == abs(target_id):
-                        is_target_group = True
-                    elif str(target_id).startswith('-100') and int(str(target_id)[4:]) == abs(current_id):
-                        is_target_group = True
+                        logger.debug(f"[MATCH] Direct ID match: {current_id} == {target_id}")
+                    # Handle supergroup format: target is -100XXXXXXXXX, current is XXXXXXXXX
+                    elif str(target_id).startswith('-100'):
+                        # Extract the group ID without -100 prefix
+                        target_without_prefix = int(str(target_id)[4:])  # Remove -100 prefix
+                        if current_id == target_without_prefix:
+                            is_target_group = True
+                            logger.debug(f"[MATCH] Supergroup match: {current_id} matches {target_id} (without -100 prefix)")
+                    # Handle reverse case: current is -100XXXXXXXXX, target is XXXXXXXXX
+                    elif str(current_id).startswith('-100'):
+                        current_without_prefix = int(str(current_id)[4:])  # Remove -100 prefix
+                        if current_without_prefix == abs(target_id):
+                            is_target_group = True
+                            logger.debug(f"[MATCH] Reverse supergroup match: {current_id} matches {target_id}")
                     # Absolute value match as fallback
                     elif abs(current_id) == abs(target_id):
                         is_target_group = True
+                        logger.debug(f"[MATCH] Absolute value match: |{current_id}| == |{target_id}|")
+                    else:
+                        logger.debug(f"[NO MATCH] {current_id} != {target_id} (Group: {chat_title})")
+                        # Show what we tried to match
+                        if str(target_id).startswith('-100'):
+                            target_without_prefix = int(str(target_id)[4:])
+                            logger.debug(f"[DEBUG] Tried supergroup match: {current_id} vs {target_without_prefix} (from {target_id})")
+                else:
+                    logger.debug(f"[NO MATCH] current_id is None (Group: {chat_title})")
 
                 if not is_target_group:
                     return
+
+                # Get detailed chat information
+                chat_username = getattr(chat, 'username', None)
 
                 # Get detailed sender information
                 sender = await event.get_sender()
@@ -176,14 +184,13 @@ class TelegramMonitor:
 
                     if coin_symbol and price:
                         logger.info(f"[SUCCESS] SUCCESSFUL PARSE: {coin_symbol} @ ${price}")
-                        # Send notification with dynamic pricing before processing the signal
+                        # Send notification before processing the signal
                         try:
                             await self._send_notification(
                                 transaction_type="Buy",
-                                sell_coin="ETH",
-                                buy_coin="USDC",
-                                amount=10,  # You can adjust these values based on your needs
-                                buy_coin_symbol=coin_symbol  # Pass the actual coin symbol for pricing
+                                sell_coin="ETH", 
+                                buy_coin=coin_symbol,
+                                amount=10.0
                             )
                             await self.trading_engine.process_signal(coin_symbol, price)
                         except Exception as e:
