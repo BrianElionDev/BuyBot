@@ -122,15 +122,35 @@ class TelegramMonitor:
                 logger.info(f"[GROUP] Group: '{chat_title}' (@{chat_username if chat_username else 'no_username'}) [ID: {chat_id}]")
                 logger.info(f"[SENDER] From: {sender_display} [ID: {sender_id}]")
                 logger.info(f"[CONTENT] Message: {message if message else '[Media/Non-text content]'}")
+                
+                # Debug: Show message analysis
+                if message:
+                    logger.info(f"[DEBUG] Message starts with: '{message[:30]}...'")
+                    logger.info(f"[DEBUG] Message lower starts with: '{message.lower()[:30]}...'")
+                    logger.info(f"[DEBUG] Checking for trade signal patterns...")
+                
                 logger.info("=" * 80)
 
                 # Also use the old format for compatibility
                 await self._log_message(message, sender_display)
 
-                # Process "Trade detected" messages (with or without emoji)
-                if message and (message.startswith('Trade detected') or 
-                               message.startswith('[TRADE] Trade detected') or 
-                               message.startswith('👋 Trade detected')):
+                # Process "Trade detected" messages (with or without emoji) - case insensitive
+                message_lower = message.lower() if message else ""
+                is_trade_signal = (
+                    'trade detected' in message_lower or 
+                    '[trade] trade detected' in message_lower or
+                    # Handle variations with emoji, spaces, and punctuation
+                    ('👋' in message and 'trade detected' in message_lower) or
+                    ('👋' in message and 'trade signal' in message_lower) or
+                    # Handle text format variations
+                    '[trade]' in message_lower or
+                    # Direct pattern matches for common formats
+                    message_lower.strip().startswith('trade detected') or
+                    '👋  trade detected' in message_lower or  # Double space
+                    '👋 trade detected' in message_lower       # Single space
+                )
+                
+                if message and is_trade_signal:
                     logger.info(f"[SIGNAL] TRADE SIGNAL DETECTED!")
                     logger.info(f"[SUCCESS] Trade signal from {sender_display}")
                     logger.info(f"[CONTENT] Full message content:")
@@ -142,19 +162,34 @@ class TelegramMonitor:
                     if coin_symbol and price:
                         logger.info(f"[SUCCESS] SUCCESSFUL PARSE: {coin_symbol} @ ${price}")
                         # Send notification with dynamic pricing before processing the signal
-                        await self._send_notification(
-                            transaction_type="Buy",
-                            sell_coin="ETH",
-                            buy_coin="USDC",
-                            amount=10,  # You can adjust these values based on your needs
-                            buy_coin_symbol=coin_symbol  # Pass the actual coin symbol for pricing
-                        )
-                        await self.trading_engine.process_signal(coin_symbol, price)
+                        try:
+                            await self._send_notification(
+                                transaction_type="Buy",
+                                sell_coin="ETH",
+                                buy_coin="USDC",
+                                amount=10,  # You can adjust these values based on your needs
+                                buy_coin_symbol=coin_symbol  # Pass the actual coin symbol for pricing
+                            )
+                            await self.trading_engine.process_signal(coin_symbol, price)
+                        except Exception as e:
+                            logger.error(f"[ERROR] Failed to process signal: {e}")
                     else:
                         logger.warning(f"[WARNING] FAILED TO PARSE trade signal from {sender_display}")
                 else:
                     if message:
                         logger.info(f"[INFO] Regular message (not a trade signal) - ignoring")
+                        logger.info(f"[DEBUG] Message content: '{message[:100]}...'")
+                        
+                        # Show which patterns were tested
+                        message_lower = message.lower() if message else ""
+                        patterns_tested = [
+                            f"starts with 'trade detected': {message_lower.startswith('trade detected')}",
+                            f"starts with '[trade] trade detected': {message_lower.startswith('[trade] trade detected')}",
+                            f"starts with '👋 trade detected': {message_lower.startswith('👋 trade detected')}",
+                            f"starts with '👋  trade detected': {message_lower.startswith('👋  trade detected')}"
+                        ]
+                        for pattern in patterns_tested:
+                            logger.debug(f"[DEBUG] {pattern}")
                     else:
                         logger.info(f"[MEDIA] Non-text message (media/sticker/etc) - ignoring")
 
@@ -208,48 +243,40 @@ class TelegramMonitor:
             logger.warning(f"[WARNING] Failed to parse - Symbol: {coin_symbol}, Price: {price}")
             return None, None
 
-    async def start(self):
+    def start(self):
+        """Start the Telegram monitor - synchronous method"""
         logger.info("[STARTUP] Starting Enhanced Telegram Monitor...")
         if self.config.TELEGRAM_PHONE is None:
             logger.error("TELEGRAM_PHONE must be set in the configuration and cannot be None")
             return
 
-        await self.client.start(phone=self.config.TELEGRAM_PHONE)
-
-        # Get information about the current user
-        me = await self.client.get_me()
-        me_first_name = getattr(me, 'first_name', 'Unknown')
-        me_last_name = getattr(me, 'last_name', '') or ''
-        me_username = getattr(me, 'username', 'no_username')
-        logger.info(f"[LOGIN] Logged in as: {me_first_name} {me_last_name} (@{me_username})")
-
-        # Resolve target group and get detailed information
         try:
-            group = await self.client.get_entity(self.config.TARGET_GROUP_ID)
-            group_title = getattr(group, 'title', 'Unknown Group')
-            group_username = getattr(group, 'username', None)
-            group_id = getattr(group, 'id', 'Unknown')
+            # Start the client synchronously
+            self.client.start(phone=self.config.TELEGRAM_PHONE)
+            
+            logger.info("[LOGIN] Successfully connected to Telegram")
 
+            # Log the monitoring setup
             logger.info("=" * 80)
-            logger.info(f"[TARGET] TARGET GROUP FOUND!")
-            logger.info(f"[INFO] Group Name: '{group_title}'")
-            logger.info(f"[LINK] Username: @{group_username if group_username else 'no_username'}")
-            logger.info(f"[ID] Group ID: {group_id}")
+            logger.info(f"[TARGET] Monitoring group ID: {self.config.TARGET_GROUP_ID}")
             logger.info("=" * 80)
-            logger.info("[MONITOR] Now monitoring ALL messages in this group...")
-            logger.info("[DEBUG] Filtering for messages starting with:")
-            logger.info("[DEBUG]   - 'Trade detected'")
-            logger.info("[DEBUG]   - '[TRADE] Trade detected'")
-            logger.info("[DEBUG]   - '👋 Trade detected'")
+            logger.info("[MONITOR] Now monitoring ALL messages in the target group...")
+            logger.info("[DEBUG] Filtering for messages containing:")
+            logger.info("[DEBUG]   - 'trade detected' (case insensitive)")
+            logger.info("[DEBUG]   - '👋 trade detected' (with emoji)")
+            logger.info("[DEBUG]   - '[trade]' patterns")
             logger.info("[LOG] All message activity will be logged. Press Ctrl+C to stop.")
             logger.info("=" * 80)
+
+            # Run until disconnected
+            self.client.run_until_disconnected()
+            
         except Exception as e:
-            logger.error(f"[ERROR] Failed to find group with ID {self.config.TARGET_GROUP_ID}: {e}")
-            return
+            logger.error(f"[ERROR] Failed to start Telegram client: {e}")
+            raise
 
-        await self.client.run_until_disconnected()
-
-    async def stop(self):
+    def stop(self):
+        """Stop the Telegram monitor - synchronous method"""
         if self.client.is_connected():
             self.client.disconnect()
             logger.info("Telegram client disconnected")
