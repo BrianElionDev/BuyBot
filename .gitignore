@@ -21,7 +21,7 @@ venv/
 
 # Docs
 COIN*.md
-
+UNI*.md
 
 # IDEs and editors
 .vscode/
