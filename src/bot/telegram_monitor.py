@@ -430,76 +430,126 @@ class TelegramMonitor:
         price = None
         is_valid_transaction = False
 
-        # Extract coins from green (buy) and red (sell) lines
-        # Pattern 1: 🟢 +2,336.576 USD Coin (USDC) / 🔴 - 104,347.826 DAR Open Network (D)
+        # Extract coins based on the actual signal logic:
+        # 🟢 + COIN = BUYING COIN (green with plus)
+        # 🔴 - COIN = SPENDING COIN to buy (red with minus)
+        # 🟢 - COIN = SELLING COIN (green with minus)
+        # 🔴 + COIN = GETTING COIN from selling (red with plus)
+
+        # First, determine if this is a BUY or SELL transaction
+        transaction_type = None
+
+        # Check for BUY pattern: 🟢 + [coin] and 🔴 - [coin]
+        green_plus_match = re.search(r'🟢\s*\+', text)
+        red_minus_match = re.search(r'🔴\s*-', text)
+
+        # Check for SELL pattern: 🟢 - [coin] and 🔴 + [coin]
+        green_minus_match = re.search(r'🟢\s*-', text)
+        red_plus_match = re.search(r'🔴\s*\+', text)
+
+        if green_plus_match and red_minus_match:
+            transaction_type = "BUY"
+            logger.info(f"[TRANSACTION] Detected BUY transaction (🟢+ and 🔴-)")
+        elif green_minus_match and red_plus_match:
+            transaction_type = "SELL"
+            logger.info(f"[TRANSACTION] Detected SELL transaction (🟢- and 🔴+)")
+        else:
+            logger.warning(f"[WARNING] Could not determine transaction type")
+
+        # Patterns for extracting coins from green lines
         green_patterns = [
-            # Standard format with token name and symbol
-            r'🟢.*?\+.*?([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\)',
-            # With etherscan link
-            r'🟢.*?\+.*?([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\s*\(https://.*?\)\)',
-            # Format with just the symbol and no name
-            r'🟢.*?\+.*?\(([A-Z0-9]{1,10})\)',
-            # Direct extract for SHIB with or without INU
-            r'🟢.*?\+.*?(SHIBA INU|SHIBA)\s*\(([A-Z0-9]{1,10})\)',
-            # More flexible pattern that works better with special token names
-            r'🟢.*?\+\s*[\d,.]+\s*([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\)',
+            # Format: 🟢 + 1,200 LINK (Chainlink (https://etherscan.io/address/...))
+            r'🟢\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})\s*\(',
+            # Format: 🟢 + 1,200 LINK
+            r'🟢\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
+            # More flexible patterns
+            r'🟢[^A-Z]*([A-Z0-9]{2,10})',
         ]
 
+        # Patterns for extracting coins from red lines
         red_patterns = [
-            # Standard format with token name and symbol
-            r'🔴.*?-.*?([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\)',
-            # With etherscan link
-            r'🔴.*?-.*?([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\s*\(https://.*?\)\)',
-            # Format with just the symbol and no name
-            r'🔴.*?-.*?\(([A-Z0-9]{1,10})\)',
-            # Direct extract for SHIB with or without INU
-            r'🔴.*?-.*?(SHIBA INU|SHIBA)\s*\(([A-Z0-9]{1,10})\)',
-            # More flexible pattern that works better with special token names
-            r'🔴.*?-\s*[\d,.]+\s*([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\)',
+            # Format: 🔴 - 18,000 USD Coin (USDC (https://etherscan.io/address/...))
+            r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\s*\(',
+            # Format: 🔴 - 18,000 USD Coin (USDC)
+            r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\)',
+            # Format: 🔴 + 2,550 USDC
+            r'🔴\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
+            # More flexible patterns
+            r'🔴[^(]*\(([A-Z0-9]{2,10})\)',
         ]
 
-        # Find buy coin (green line)
+        # Extract coins from green and red lines
+        green_coin = None
+        red_coin = None
+
+        # Find coin in green line
         for i, pattern in enumerate(green_patterns):
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                # Different patterns may have the group in different positions
-                if len(match.groups()) == 1:
-                    buy_coin = match.group(1).upper()
-                else:
-                    buy_coin = match.group(2).upper()
-                logger.info(f"Found buy coin (green): {buy_coin} using pattern {i+1}")
+                green_coin = match.group(1).upper().strip()
+                logger.info(f"Found green coin: {green_coin} using pattern {i+1}")
                 break
 
-        if not buy_coin:
-            logger.warning(f"⚠️ Failed to parse buy coin. Check regex patterns against this green line")
+        if not green_coin:
+            logger.warning(f"⚠️ Failed to parse green coin. Check regex patterns")
             # Extract green line for debugging
-            green_line_match = re.search(r'(🟢.*)', text)
+            green_line_match = re.search(r'(🟢[^\n\r]*)', text)
             if green_line_match:
-                green_line = green_line_match.group(1)
+                green_line = green_line_match.group(1).strip()
                 logger.warning(f"Green line content: {green_line}")
-                # Try direct SHIB check
-                if "SHIB" in green_line.upper():
-                    logger.info("SHIB token detected in green line, using special handling")
-                    buy_coin = "SHIB"
+                # Try simple extraction for common tokens
+                for token in ['ETH', 'BTC', 'WBTC', 'USDC', 'USDT', 'LINK']:
+                    if token in green_line.upper():
+                        green_coin = token
+                        logger.info(f"Found green coin using fallback: {green_coin}")
+                        break
 
-        # Find sell coin (red line)
+        # Find coin in red line
         for i, pattern in enumerate(red_patterns):
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                # Different patterns may have the group in different positions
-                if len(match.groups()) == 1:
-                    sell_coin = match.group(1).upper()
-                else:
-                    sell_coin = match.group(2).upper()
-                logger.info(f"Found sell coin (red): {sell_coin} using pattern {i+1}")
+                red_coin = match.group(1).upper().strip()
+                logger.info(f"Found red coin: {red_coin} using pattern {i+1}")
                 break
 
-        if not sell_coin:
-            logger.warning(f"⚠️ Failed to parse sell coin. Check regex patterns against this red line")
+        if not red_coin:
+            logger.warning(f"⚠️ Failed to parse red coin. Check regex patterns")
             # Extract red line for debugging
-            red_line_match = re.search(r'(🔴.*)', text)
+            red_line_match = re.search(r'(🔴[^\n\r]*)', text)
             if red_line_match:
-                logger.warning(f"Red line content: {red_line_match.group(1)}")
+                red_line = red_line_match.group(1).strip()
+                logger.warning(f"Red line content: {red_line}")
+                # Try simple extraction for common tokens
+                for token in ['USDC', 'USDT', 'DAI', 'ETH', 'BTC', 'LINK']:
+                    if token in red_line.upper():
+                        red_coin = token
+                        logger.info(f"Found red coin using fallback: {red_coin}")
+                        break
+
+        # Determine buy_coin and sell_coin based on transaction type
+        if transaction_type == "BUY":
+            # BUY: 🟢 + [buy_coin], 🔴 - [sell_coin]
+            buy_coin = green_coin  # What we're getting (green +)
+            sell_coin = red_coin   # What we're spending (red -)
+            logger.info(f"[BUY] Buying {buy_coin} with {sell_coin}")
+        elif transaction_type == "SELL":
+            # SELL: 🟢 - [sell_coin], 🔴 + [buy_coin]
+            sell_coin = green_coin  # What we're selling (green -)
+            buy_coin = red_coin     # What we're getting (red +)
+            logger.info(f"[SELL] Selling {sell_coin} for {buy_coin}")
+        else:
+            # Fallback - try to determine from the coins themselves
+            logger.warning(f"[FALLBACK] Could not determine transaction type, using fallback logic")
+            # If one is ETH/USDC and the other isn't, assume we're trading the base currency
+            if green_coin in ['ETH', 'USDC'] and red_coin not in ['ETH', 'USDC']:
+                sell_coin = green_coin
+                buy_coin = red_coin
+            elif red_coin in ['ETH', 'USDC'] and green_coin not in ['ETH', 'USDC']:
+                sell_coin = red_coin
+                buy_coin = green_coin
+            else:
+                sell_coin = green_coin
+                buy_coin = red_coin
 
         # Validate that sell coin is ETH or USDC
         if sell_coin and sell_coin in ['ETH', 'USDC']:
