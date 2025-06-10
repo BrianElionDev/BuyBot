@@ -287,25 +287,36 @@ class TelegramMonitor:
                 # Also use the old format for compatibility
                 await self._log_message(message, sender_display)
 
-                # Process "Trade detected" messages (with or without emoji) - case insensitive
+                # Process "Trade detected" and "Swap detected" messages (with or without emoji) - case insensitive
                 message_lower = message.lower() if message else ""
                 is_trade_signal = (
+                    # Trade detected patterns
                     'trade detected' in message_lower or
                     '[trade] trade detected' in message_lower or
+                    # Swap detected patterns
+                    'swap detected' in message_lower or
+                    '[swap] swap detected' in message_lower or
                     # Handle variations with emoji, spaces, and punctuation
                     ('👋' in message and 'trade detected' in message_lower) or
+                    ('👋' in message and 'swap detected' in message_lower) or
                     ('👋' in message and 'trade signal' in message_lower) or
                     # Handle text format variations
                     '[trade]' in message_lower or
+                    '[swap]' in message_lower or
                     # Direct pattern matches for common formats
                     message_lower.strip().startswith('trade detected') or
+                    message_lower.strip().startswith('swap detected') or
                     '👋  trade detected' in message_lower or
-                    '👋 trade detected' in message_lower
+                    '👋 trade detected' in message_lower or
+                    '👋  swap detected' in message_lower or
+                    '👋 swap detected' in message_lower
                 )
 
                 if message and is_trade_signal:
-                    logger.info(f"[SIGNAL] TRADE SIGNAL DETECTED!")
-                    logger.info(f"[SUCCESS] Trade signal from {sender_display}")
+                    # Determine signal type
+                    signal_type = "SWAP" if 'swap detected' in message_lower else "TRADE"
+                    logger.info(f"[SIGNAL] {signal_type} SIGNAL DETECTED!")
+                    logger.info(f"[SUCCESS] {signal_type} signal from {sender_display}")
                     logger.info(f"[CONTENT] Full message content:")
                     logger.info(f"{message}")
                     logger.info("-" * 60)
@@ -421,6 +432,7 @@ class TelegramMonitor:
     def _parse_enhanced_signal(self, text: str) -> Tuple[Optional[str], Optional[str], Optional[float], bool]:
         """
         Enhanced parsing to extract sell_coin, buy_coin, price, and validate ETH/USDC requirement
+        Handles both "trade detected" and "swap detected" formats with different coin symbol positions
         Returns: (sell_coin, buy_coin, price, is_valid_transaction)
         """
         logger.info(f"Enhanced parsing: {text[:200]}...")
@@ -430,76 +442,170 @@ class TelegramMonitor:
         price = None
         is_valid_transaction = False
 
-        # Extract coins from green (buy) and red (sell) lines
-        # Pattern 1: 🟢 +2,336.576 USD Coin (USDC) / 🔴 - 104,347.826 DAR Open Network (D)
-        green_patterns = [
-            # Standard format with token name and symbol
-            r'🟢.*?\+.*?([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\)',
-            # With etherscan link
-            r'🟢.*?\+.*?([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\s*\(https://.*?\)\)',
-            # Format with just the symbol and no name
-            r'🟢.*?\+.*?\(([A-Z0-9]{1,10})\)',
-            # Direct extract for SHIB with or without INU
-            r'🟢.*?\+.*?(SHIBA INU|SHIBA)\s*\(([A-Z0-9]{1,10})\)',
-            # More flexible pattern that works better with special token names
-            r'🟢.*?\+\s*[\d,.]+\s*([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\)',
-        ]
+        # Determine if this is a swap or trade message
+        text_lower = text.lower()
+        is_swap_message = 'swap detected' in text_lower
+        signal_type = "SWAP" if is_swap_message else "TRADE"
+        logger.info(f"[PARSING] Signal type: {signal_type}")
 
-        red_patterns = [
-            # Standard format with token name and symbol
-            r'🔴.*?-.*?([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\)',
-            # With etherscan link
-            r'🔴.*?-.*?([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\s*\(https://.*?\)\)',
-            # Format with just the symbol and no name
-            r'🔴.*?-.*?\(([A-Z0-9]{1,10})\)',
-            # Direct extract for SHIB with or without INU
-            r'🔴.*?-.*?(SHIBA INU|SHIBA)\s*\(([A-Z0-9]{1,10})\)',
-            # More flexible pattern that works better with special token names
-            r'🔴.*?-\s*[\d,.]+\s*([A-Za-z0-9\s]+)\s*\(([A-Z0-9]{1,10})\)',
-        ]
+        # Extract coins based on the actual signal logic:
+        # 🟢 + COIN = BUYING COIN (green with plus)
+        # 🔴 - COIN = SPENDING COIN to buy (red with minus)
+        # 🟢 - COIN = SELLING COIN (green with minus)
+        # 🔴 + COIN = GETTING COIN from selling (red with plus)
 
-        # Find buy coin (green line)
+        # First, determine if this is a BUY or SELL transaction
+        transaction_type = None
+
+        # Check for BUY pattern: 🟢 + [coin] and 🔴 - [coin]
+        green_plus_match = re.search(r'🟢\s*\+', text)
+        red_minus_match = re.search(r'🔴\s*-', text)
+
+        # Check for SELL pattern: 🟢 - [coin] and 🔴 + [coin]
+        green_minus_match = re.search(r'🟢\s*-', text)
+        red_plus_match = re.search(r'🔴\s*\+', text)
+
+        if green_plus_match and red_minus_match:
+            transaction_type = "BUY"
+            logger.info(f"[TRANSACTION] Detected BUY transaction (🟢+ and 🔴-)")
+        elif green_minus_match and red_plus_match:
+            transaction_type = "SELL"
+            logger.info(f"[TRANSACTION] Detected SELL transaction (🟢- and 🔴+)")
+        else:
+            logger.warning(f"[WARNING] Could not determine transaction type")
+
+        # Define patterns based on signal type
+        if is_swap_message:
+            logger.info(f"[SWAP] Using swap-specific parsing patterns")
+            # SWAP format: symbol appears in final parentheses
+            # Example: 🟢 + 5,575.48 USDT (USDT) (https://solscan.io/token/...)
+            # Example: 🔴 - 5,000 SPX6900 (Wormhole) (SPX) (https://solscan.io/token/...)
+            green_patterns = [
+                # Format: 🟢 + 5,575.48 USDT (USDT) (https://...)
+                r'🟢\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
+                # Format: 🟢 + 5,575.48 USDT (USD Tether) (USDT) (https://...)
+                r'🟢\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
+                # Fallback: symbol in any parentheses on green line
+                r'🟢[^(]*\(([A-Z0-9]{2,10})\)',
+                # Direct symbol after amount (trade format compatibility)
+                r'🟢\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
+            ]
+
+            red_patterns = [
+                # Format: 🔴 - 5,000 SPX6900 (Wormhole) (SPX) (https://...)
+                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
+                # Format: 🔴 - 5,000 SPX6900 (Wormhole Token) (SPX) (https://...)
+                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
+                # Fallback: symbol in any parentheses on red line
+                r'🔴[^(]*\(([A-Z0-9]{2,10})\)',
+                # Direct symbol after amount (trade format compatibility)
+                r'🔴\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
+            ]
+        else:
+            logger.info(f"[TRADE] Using trade-specific parsing patterns")
+            # TRADE format: symbol appears immediately after amount
+            # Example: 🟢 + 1,200 LINK (Chainlink)
+            green_patterns = [
+                # Format: 🟢 + 1,200 LINK (Chainlink) - prioritize symbol before parentheses (MOST SPECIFIC)
+                r'🟢\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s+\(',
+                # Format: 🟢 + 1,200 LINK (no parentheses)
+                r'🟢\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})$',
+                # Format: 🟢 + 1,200 LINK (end of line or whitespace)
+                r'🟢\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s*$',
+                # More flexible patterns if above fail
+                r'🟢[^A-Z]*([A-Z0-9]{2,10})',
+            ]
+
+            red_patterns = [
+                # Format: 🔴 - 2.5 ETH (Ethereum) - prioritize symbol before parentheses (MOST SPECIFIC)
+                r'🔴\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s+\(',
+                # Format: 🔴 + 2,550 USDC (no parentheses)
+                r'🔴\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})$',
+                # Format: 🔴 + 2,550 USDC (end of line or whitespace)
+                r'🔴\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s*$',
+                # Format: 🔴 - 18,000 USD Coin (USDC (https://etherscan.io/address/...))
+                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\s*\(',
+                # Format: 🔴 - 18,000 USD Coin (USDC) - LEAST SPECIFIC, only if above fail
+                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\)',
+            ]
+
+        # Extract coins from green and red lines with enhanced debugging
+        green_coin = None
+        red_coin = None
+
+        # Extract the actual green and red lines for debugging
+        green_line_match = re.search(r'(🟢[^\n\r]*)', text)
+        red_line_match = re.search(r'(🔴[^\n\r]*)', text)
+
+        green_line = green_line_match.group(1).strip() if green_line_match else ""
+        red_line = red_line_match.group(1).strip() if red_line_match else ""
+
+        logger.info(f"Green line: {green_line}")
+        logger.info(f"Red line: {red_line}")
+
+        # Find coin in green line
         for i, pattern in enumerate(green_patterns):
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, green_line, re.IGNORECASE)
             if match:
-                # Different patterns may have the group in different positions
-                if len(match.groups()) == 1:
-                    buy_coin = match.group(1).upper()
-                else:
-                    buy_coin = match.group(2).upper()
-                logger.info(f"Found buy coin (green): {buy_coin} using pattern {i+1}")
+                green_coin = match.group(1).upper().strip()
+                logger.info(f"✅ Found green coin symbol: {green_coin} using pattern {i+1}: {pattern}")
                 break
 
-        if not buy_coin:
-            logger.warning(f"⚠️ Failed to parse buy coin. Check regex patterns against this green line")
-            # Extract green line for debugging
-            green_line_match = re.search(r'(🟢.*)', text)
-            if green_line_match:
-                green_line = green_line_match.group(1)
-                logger.warning(f"Green line content: {green_line}")
-                # Try direct SHIB check
-                if "SHIB" in green_line.upper():
-                    logger.info("SHIB token detected in green line, using special handling")
-                    buy_coin = "SHIB"
+        if not green_coin:
+            logger.warning(f"⚠️ Failed to parse green coin symbol with patterns")
+            # Enhanced fallback - look for common crypto symbols
+            common_tokens = ['ETH', 'BTC', 'WBTC', 'USDC', 'USDT', 'LINK', 'AAVE', 'UNI', 'COMP', 'MKR', 'SNX', 'YFI', 'SHIB', 'DOGE', 'SPX', 'SPX6900']
+            for token in common_tokens:
+                if re.search(rf'\b{token}\b', green_line, re.IGNORECASE):
+                    green_coin = token
+                    logger.info(f"✅ Found green coin using fallback: {green_coin}")
+                    break
 
-        # Find sell coin (red line)
+        # Find coin in red line
         for i, pattern in enumerate(red_patterns):
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, red_line, re.IGNORECASE)
             if match:
-                # Different patterns may have the group in different positions
-                if len(match.groups()) == 1:
-                    sell_coin = match.group(1).upper()
-                else:
-                    sell_coin = match.group(2).upper()
-                logger.info(f"Found sell coin (red): {sell_coin} using pattern {i+1}")
+                red_coin = match.group(1).upper().strip()
+                logger.info(f"✅ Found red coin symbol: {red_coin} using pattern {i+1}: {pattern}")
                 break
 
-        if not sell_coin:
-            logger.warning(f"⚠️ Failed to parse sell coin. Check regex patterns against this red line")
-            # Extract red line for debugging
-            red_line_match = re.search(r'(🔴.*)', text)
-            if red_line_match:
-                logger.warning(f"Red line content: {red_line_match.group(1)}")
+        if not red_coin:
+            logger.warning(f"⚠️ Failed to parse red coin symbol with patterns")
+            # Enhanced fallback - look for common base currencies first
+            base_currencies = ['USDC', 'USDT', 'ETH', 'DAI', 'WETH']
+            common_tokens = ['BTC', 'WBTC', 'LINK', 'AAVE', 'UNI', 'COMP', 'MKR', 'SNX', 'YFI', 'SHIB', 'DOGE', 'SPX', 'SPX6900']
+
+            # Try base currencies first (more likely to be red/selling)
+            for token in base_currencies + common_tokens:
+                if re.search(rf'\b{token}\b', red_line, re.IGNORECASE):
+                    red_coin = token
+                    logger.info(f"✅ Found red coin using fallback: {red_coin}")
+                    break
+
+        # Determine buy_coin and sell_coin based on transaction type
+        if transaction_type == "BUY":
+            # BUY: 🟢 + [buy_coin], 🔴 - [sell_coin]
+            buy_coin = green_coin  # What we're getting (green +)
+            sell_coin = red_coin   # What we're spending (red -)
+            logger.info(f"[BUY] Buying {buy_coin} with {sell_coin}")
+        elif transaction_type == "SELL":
+            # SELL: 🟢 - [sell_coin], 🔴 + [buy_coin]
+            sell_coin = green_coin  # What we're selling (green -)
+            buy_coin = red_coin     # What we're getting (red +)
+            logger.info(f"[SELL] Selling {sell_coin} for {buy_coin}")
+        else:
+            # Fallback - try to determine from the coins themselves
+            logger.warning(f"[FALLBACK] Could not determine transaction type, using fallback logic")
+            # If one is ETH/USDC and the other isn't, assume we're trading the base currency
+            if green_coin in ['ETH', 'USDC'] and red_coin not in ['ETH', 'USDC']:
+                sell_coin = green_coin
+                buy_coin = red_coin
+            elif red_coin in ['ETH', 'USDC'] and green_coin not in ['ETH', 'USDC']:
+                sell_coin = red_coin
+                buy_coin = green_coin
+            else:
+                sell_coin = green_coin
+                buy_coin = red_coin
 
         # Validate that sell coin is ETH or USDC
         if sell_coin and sell_coin in ['ETH', 'USDC']:
@@ -533,16 +639,16 @@ class TelegramMonitor:
         logger.info(f"Parsed result: sell={sell_coin}, buy={buy_coin}, price=${price}, valid={is_valid_transaction}")
         return sell_coin, buy_coin, price, is_valid_transaction
 
-    def start(self):
-        """Start the Telegram monitor - synchronous method"""
+    async def start(self):
+        """Start the Telegram monitor - async method"""
         logger.info("[STARTUP] Starting Enhanced Telegram Monitor...")
         if self.config.TELEGRAM_PHONE is None:
             logger.error("TELEGRAM_PHONE must be set in the configuration and cannot be None")
             return
 
         try:
-            # Start the client synchronously
-            self.client.start(phone=self.config.TELEGRAM_PHONE)
+            # Start the client asynchronously
+            await self.client.start(phone=self.config.TELEGRAM_PHONE)
 
             logger.info("[LOGIN] Successfully connected to Telegram")
 
@@ -555,7 +661,7 @@ class TelegramMonitor:
             logger.info("=" * 80)
 
             # Run until disconnected
-            self.client.run_until_disconnected()
+            await self.client.run_until_disconnected()
 
         except Exception as e:
             logger.error(f"[ERROR] Failed to start Telegram client: {e}")

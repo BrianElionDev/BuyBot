@@ -40,6 +40,28 @@ class PriceService:
             "OP": "optimism",
             "APT": "aptos",
 
+            # DeFi & Exchange tokens
+            "AAVE": "aave",
+            "COMP": "compound-governance-token",
+            "MKR": "maker",
+            "SNX": "havven",
+            "YFI": "yearn-finance",
+            "CRV": "curve-dao-token",
+            "SUSHI": "sushi",
+            "1INCH": "1inch",
+            "BAL": "balancer",
+            "RUNE": "thorchain",
+
+            # Wrapped tokens
+            "WBTC": "wrapped-bitcoin",
+            "WETH": "weth",
+
+            # Other popular tokens
+            "MANA": "decentraland",
+            "SAND": "the-sandbox",
+            "APE": "apecoin",
+            "LDO": "lido-dao",
+
             # Stablecoins
             "USDT": "tether",
             "USDC": "usd-coin",
