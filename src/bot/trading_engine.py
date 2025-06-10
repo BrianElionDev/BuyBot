@@ -279,6 +279,59 @@ class TradingEngine:
             logger.error(f"DEX trade failed: {sell_coin}/{buy_coin}")
             return False
 
+    async def check_wallet_connection(self) -> bool:
+        """Check wallet balance and verify Uniswap/Infura connection at startup."""
+        if not self.uniswap_exchange:
+            logger.warning("[WALLET] Uniswap exchange not initialized - DEX functionality disabled")
+            return False
+
+        try:
+            logger.info("[WALLET] Checking wallet connection and balance...")
+
+            # Get ETH balance
+            eth_balance = await self.uniswap_exchange.get_eth_balance()
+            logger.info(f"[WALLET] ETH Balance: {eth_balance:.6f} ETH")
+
+            # Check if we have a minimum balance for gas fees
+            if eth_balance < 0.001:  # Less than 0.001 ETH
+                logger.warning(f"[WALLET] ⚠️  Low ETH balance ({eth_balance:.6f} ETH) - may not be sufficient for gas fees")
+            elif eth_balance < 0.01:  # Less than 0.01 ETH
+                logger.info(f"[WALLET] ⚡ Limited ETH balance ({eth_balance:.6f} ETH) - sufficient for a few transactions")
+
+            # Test connection by getting wallet address
+            wallet_address = self.uniswap_exchange.wallet_address
+            logger.info(f"[WALLET] Wallet Address: {wallet_address}")
+
+            # Test Web3 connection
+            latest_block = await self.uniswap_exchange._run_in_executor(
+                self.uniswap_exchange.w3.eth.get_block_number
+            )
+            logger.info(f"[WALLET] Connected to Ethereum - Latest block: {latest_block}")
+
+            # Check balances of common trading tokens
+            common_tokens = {
+                "USDC": config.USDC_ADDRESS,
+                "WETH": config.WETH_ADDRESS
+            }
+
+            for token_name, token_address in common_tokens.items():
+                if token_address:
+                    try:
+                        token_balance = await self.uniswap_exchange.get_token_balance(token_address)
+                        if token_balance > 0:
+                            logger.info(f"[WALLET] {token_name} Balance: {token_balance:.6f}")
+                        else:
+                            logger.debug(f"[WALLET] {token_name} Balance: 0")
+                    except Exception as e:
+                        logger.debug(f"[WALLET] Could not check {token_name} balance: {e}")
+
+            logger.info("[WALLET] ✅ Wallet connection verified successfully")
+            return True
+
+        except Exception as e:
+            logger.error(f"[WALLET] ❌ Failed to verify wallet connection: {e}")
+            return False
+
     async def close(self):
         """Cleanup resources."""
         logger.info("Closing TradingEngine resources")

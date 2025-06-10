@@ -287,25 +287,36 @@ class TelegramMonitor:
                 # Also use the old format for compatibility
                 await self._log_message(message, sender_display)
 
-                # Process "Trade detected" messages (with or without emoji) - case insensitive
+                # Process "Trade detected" and "Swap detected" messages (with or without emoji) - case insensitive
                 message_lower = message.lower() if message else ""
                 is_trade_signal = (
+                    # Trade detected patterns
                     'trade detected' in message_lower or
                     '[trade] trade detected' in message_lower or
+                    # Swap detected patterns
+                    'swap detected' in message_lower or
+                    '[swap] swap detected' in message_lower or
                     # Handle variations with emoji, spaces, and punctuation
                     ('👋' in message and 'trade detected' in message_lower) or
+                    ('👋' in message and 'swap detected' in message_lower) or
                     ('👋' in message and 'trade signal' in message_lower) or
                     # Handle text format variations
                     '[trade]' in message_lower or
+                    '[swap]' in message_lower or
                     # Direct pattern matches for common formats
                     message_lower.strip().startswith('trade detected') or
+                    message_lower.strip().startswith('swap detected') or
                     '👋  trade detected' in message_lower or
-                    '👋 trade detected' in message_lower
+                    '👋 trade detected' in message_lower or
+                    '👋  swap detected' in message_lower or
+                    '👋 swap detected' in message_lower
                 )
 
                 if message and is_trade_signal:
-                    logger.info(f"[SIGNAL] TRADE SIGNAL DETECTED!")
-                    logger.info(f"[SUCCESS] Trade signal from {sender_display}")
+                    # Determine signal type
+                    signal_type = "SWAP" if 'swap detected' in message_lower else "TRADE"
+                    logger.info(f"[SIGNAL] {signal_type} SIGNAL DETECTED!")
+                    logger.info(f"[SUCCESS] {signal_type} signal from {sender_display}")
                     logger.info(f"[CONTENT] Full message content:")
                     logger.info(f"{message}")
                     logger.info("-" * 60)
@@ -421,6 +432,7 @@ class TelegramMonitor:
     def _parse_enhanced_signal(self, text: str) -> Tuple[Optional[str], Optional[str], Optional[float], bool]:
         """
         Enhanced parsing to extract sell_coin, buy_coin, price, and validate ETH/USDC requirement
+        Handles both "trade detected" and "swap detected" formats with different coin symbol positions
         Returns: (sell_coin, buy_coin, price, is_valid_transaction)
         """
         logger.info(f"Enhanced parsing: {text[:200]}...")
@@ -429,6 +441,12 @@ class TelegramMonitor:
         buy_coin = None
         price = None
         is_valid_transaction = False
+
+        # Determine if this is a swap or trade message
+        text_lower = text.lower()
+        is_swap_message = 'swap detected' in text_lower
+        signal_type = "SWAP" if is_swap_message else "TRADE"
+        logger.info(f"[PARSING] Signal type: {signal_type}")
 
         # Extract coins based on the actual signal logic:
         # 🟢 + COIN = BUYING COIN (green with plus)
@@ -456,75 +474,113 @@ class TelegramMonitor:
         else:
             logger.warning(f"[WARNING] Could not determine transaction type")
 
-        # Patterns for extracting coins from green lines
-        green_patterns = [
-            # Format: 🟢 + 1,200 LINK (Chainlink (https://etherscan.io/address/...))
-            r'🟢\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})\s*\(',
-            # Format: 🟢 + 1,200 LINK
-            r'🟢\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
-            # More flexible patterns
-            r'🟢[^A-Z]*([A-Z0-9]{2,10})',
-        ]
+        # Define patterns based on signal type
+        if is_swap_message:
+            logger.info(f"[SWAP] Using swap-specific parsing patterns")
+            # SWAP format: symbol appears in final parentheses
+            # Example: 🟢 + 5,575.48 USDT (USDT) (https://solscan.io/token/...)
+            # Example: 🔴 - 5,000 SPX6900 (Wormhole) (SPX) (https://solscan.io/token/...)
+            green_patterns = [
+                # Format: 🟢 + 5,575.48 USDT (USDT) (https://...)
+                r'🟢\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
+                # Format: 🟢 + 5,575.48 USDT (USD Tether) (USDT) (https://...)
+                r'🟢\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
+                # Fallback: symbol in any parentheses on green line
+                r'🟢[^(]*\(([A-Z0-9]{2,10})\)',
+                # Direct symbol after amount (trade format compatibility)
+                r'🟢\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
+            ]
 
-        # Patterns for extracting coins from red lines
-        red_patterns = [
-            # Format: 🔴 - 18,000 USD Coin (USDC (https://etherscan.io/address/...))
-            r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\s*\(',
-            # Format: 🔴 - 18,000 USD Coin (USDC)
-            r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\)',
-            # Format: 🔴 + 2,550 USDC
-            r'🔴\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
-            # More flexible patterns
-            r'🔴[^(]*\(([A-Z0-9]{2,10})\)',
-        ]
+            red_patterns = [
+                # Format: 🔴 - 5,000 SPX6900 (Wormhole) (SPX) (https://...)
+                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
+                # Format: 🔴 - 5,000 SPX6900 (Wormhole Token) (SPX) (https://...)
+                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
+                # Fallback: symbol in any parentheses on red line
+                r'🔴[^(]*\(([A-Z0-9]{2,10})\)',
+                # Direct symbol after amount (trade format compatibility)
+                r'🔴\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
+            ]
+        else:
+            logger.info(f"[TRADE] Using trade-specific parsing patterns")
+            # TRADE format: symbol appears immediately after amount
+            # Example: 🟢 + 1,200 LINK (Chainlink)
+            green_patterns = [
+                # Format: 🟢 + 1,200 LINK (Chainlink) - prioritize symbol before parentheses (MOST SPECIFIC)
+                r'🟢\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s+\(',
+                # Format: 🟢 + 1,200 LINK (no parentheses)
+                r'🟢\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})$',
+                # Format: 🟢 + 1,200 LINK (end of line or whitespace)
+                r'🟢\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s*$',
+                # More flexible patterns if above fail
+                r'🟢[^A-Z]*([A-Z0-9]{2,10})',
+            ]
 
-        # Extract coins from green and red lines
+            red_patterns = [
+                # Format: 🔴 - 2.5 ETH (Ethereum) - prioritize symbol before parentheses (MOST SPECIFIC)
+                r'🔴\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s+\(',
+                # Format: 🔴 + 2,550 USDC (no parentheses)
+                r'🔴\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})$',
+                # Format: 🔴 + 2,550 USDC (end of line or whitespace)
+                r'🔴\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s*$',
+                # Format: 🔴 - 18,000 USD Coin (USDC (https://etherscan.io/address/...))
+                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\s*\(',
+                # Format: 🔴 - 18,000 USD Coin (USDC) - LEAST SPECIFIC, only if above fail
+                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\)',
+            ]
+
+        # Extract coins from green and red lines with enhanced debugging
         green_coin = None
         red_coin = None
 
+        # Extract the actual green and red lines for debugging
+        green_line_match = re.search(r'(🟢[^\n\r]*)', text)
+        red_line_match = re.search(r'(🔴[^\n\r]*)', text)
+
+        green_line = green_line_match.group(1).strip() if green_line_match else ""
+        red_line = red_line_match.group(1).strip() if red_line_match else ""
+
+        logger.info(f"Green line: {green_line}")
+        logger.info(f"Red line: {red_line}")
+
         # Find coin in green line
         for i, pattern in enumerate(green_patterns):
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, green_line, re.IGNORECASE)
             if match:
                 green_coin = match.group(1).upper().strip()
-                logger.info(f"Found green coin: {green_coin} using pattern {i+1}")
+                logger.info(f"✅ Found green coin symbol: {green_coin} using pattern {i+1}: {pattern}")
                 break
 
         if not green_coin:
-            logger.warning(f"⚠️ Failed to parse green coin. Check regex patterns")
-            # Extract green line for debugging
-            green_line_match = re.search(r'(🟢[^\n\r]*)', text)
-            if green_line_match:
-                green_line = green_line_match.group(1).strip()
-                logger.warning(f"Green line content: {green_line}")
-                # Try simple extraction for common tokens
-                for token in ['ETH', 'BTC', 'WBTC', 'USDC', 'USDT', 'LINK']:
-                    if token in green_line.upper():
-                        green_coin = token
-                        logger.info(f"Found green coin using fallback: {green_coin}")
-                        break
+            logger.warning(f"⚠️ Failed to parse green coin symbol with patterns")
+            # Enhanced fallback - look for common crypto symbols
+            common_tokens = ['ETH', 'BTC', 'WBTC', 'USDC', 'USDT', 'LINK', 'AAVE', 'UNI', 'COMP', 'MKR', 'SNX', 'YFI', 'SHIB', 'DOGE', 'SPX', 'SPX6900']
+            for token in common_tokens:
+                if re.search(rf'\b{token}\b', green_line, re.IGNORECASE):
+                    green_coin = token
+                    logger.info(f"✅ Found green coin using fallback: {green_coin}")
+                    break
 
         # Find coin in red line
         for i, pattern in enumerate(red_patterns):
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, red_line, re.IGNORECASE)
             if match:
                 red_coin = match.group(1).upper().strip()
-                logger.info(f"Found red coin: {red_coin} using pattern {i+1}")
+                logger.info(f"✅ Found red coin symbol: {red_coin} using pattern {i+1}: {pattern}")
                 break
 
         if not red_coin:
-            logger.warning(f"⚠️ Failed to parse red coin. Check regex patterns")
-            # Extract red line for debugging
-            red_line_match = re.search(r'(🔴[^\n\r]*)', text)
-            if red_line_match:
-                red_line = red_line_match.group(1).strip()
-                logger.warning(f"Red line content: {red_line}")
-                # Try simple extraction for common tokens
-                for token in ['USDC', 'USDT', 'DAI', 'ETH', 'BTC', 'LINK']:
-                    if token in red_line.upper():
-                        red_coin = token
-                        logger.info(f"Found red coin using fallback: {red_coin}")
-                        break
+            logger.warning(f"⚠️ Failed to parse red coin symbol with patterns")
+            # Enhanced fallback - look for common base currencies first
+            base_currencies = ['USDC', 'USDT', 'ETH', 'DAI', 'WETH']
+            common_tokens = ['BTC', 'WBTC', 'LINK', 'AAVE', 'UNI', 'COMP', 'MKR', 'SNX', 'YFI', 'SHIB', 'DOGE', 'SPX', 'SPX6900']
+
+            # Try base currencies first (more likely to be red/selling)
+            for token in base_currencies + common_tokens:
+                if re.search(rf'\b{token}\b', red_line, re.IGNORECASE):
+                    red_coin = token
+                    logger.info(f"✅ Found red coin using fallback: {red_coin}")
+                    break
 
         # Determine buy_coin and sell_coin based on transaction type
         if transaction_type == "BUY":
@@ -583,16 +639,16 @@ class TelegramMonitor:
         logger.info(f"Parsed result: sell={sell_coin}, buy={buy_coin}, price=${price}, valid={is_valid_transaction}")
         return sell_coin, buy_coin, price, is_valid_transaction
 
-    def start(self):
-        """Start the Telegram monitor - synchronous method"""
+    async def start(self):
+        """Start the Telegram monitor - async method"""
         logger.info("[STARTUP] Starting Enhanced Telegram Monitor...")
         if self.config.TELEGRAM_PHONE is None:
             logger.error("TELEGRAM_PHONE must be set in the configuration and cannot be None")
             return
 
         try:
-            # Start the client synchronously
-            self.client.start(phone=self.config.TELEGRAM_PHONE)
+            # Start the client asynchronously
+            await self.client.start(phone=self.config.TELEGRAM_PHONE)
 
             logger.info("[LOGIN] Successfully connected to Telegram")
 
@@ -605,7 +661,7 @@ class TelegramMonitor:
             logger.info("=" * 80)
 
             # Run until disconnected
-            self.client.run_until_disconnected()
+            await self.client.run_until_disconnected()
 
         except Exception as e:
             logger.error(f"[ERROR] Failed to start Telegram client: {e}")
