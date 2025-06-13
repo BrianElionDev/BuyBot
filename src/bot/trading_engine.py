@@ -4,7 +4,7 @@ import asyncio
 from typing import Dict, Set, Tuple, Optional, Any, Union, Literal
 from config import settings as config
 from src.services.price_service import PriceService
-from src.exchange.yobit_exchange import YoBitExchange
+from src.exchange.binance_exchange import BinanceExchange
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,9 @@ class TradingEngine:
         # Track trade cooldowns
         self.trade_cooldowns: Dict[str, float] = {}
 
-        # Initialize CEX (YoBit)
-        self.yobit_exchange = YoBitExchange()
-        logger.info("YoBitExchange initialized")
+        # Initialize CEX (Binance)
+        self.binance_exchange = BinanceExchange()
+        logger.info("BinanceExchange initialized")
 
         # Initialize DEX (Uniswap) if available
         self.uniswap_exchange = None
@@ -61,7 +61,7 @@ class TradingEngine:
         Args:
             coin_symbol: Symbol of coin to buy (e.g., "DSYNC")
             signal_price: Price from the signal message
-            exchange_type: "cex" (YoBit) or "dex" (Uniswap), defaults to config.PREFERRED_EXCHANGE_TYPE
+            exchange_type: "cex" (Binance) or "dex" (Uniswap), defaults to config.PREFERRED_EXCHANGE_TYPE
             sell_coin: Symbol of coin to sell (e.g., "ETH", "USDC"), required for DEX trades
 
         Returns:
@@ -92,7 +92,7 @@ class TradingEngine:
             return await self._process_cex_signal(coin_symbol, signal_price)
 
     async def _process_cex_signal(self, coin_symbol: str, signal_price: float) -> Tuple[bool, Optional[str]]:
-        """Process a trading signal using the centralized exchange (YoBit)."""
+        """Process a trading signal using the centralized exchange (Binance)."""
         # Check cooldown
         if not self._is_cooled_down(f"cex_{coin_symbol}"):
             reason = f"Trade cooldown active for {coin_symbol} on CEX"
@@ -116,18 +116,18 @@ class TradingEngine:
             return False, reason
 
         # Check account balance
-        balances = await self.yobit_exchange.get_balance()
+        balances = await self.binance_exchange.get_balance()
         if not balances:
-            reason = "Failed to get account balances from YoBit"
+            reason = "Failed to get account balances from Binance"
             logger.error(reason)
             return False, reason
 
-        usd_balance = balances.get('usd', 0)
-        logger.info(f"Available USD balance on YoBit: ${usd_balance}")
+        usdt_balance = balances.get('usdt', 0)
+        logger.info(f"Available USDT balance on Binance: ${usdt_balance}")
 
         # Calculate trade amount
         trade_amount = min(
-            usd_balance * (config.RISK_PERCENTAGE / 100),
+            usdt_balance * (config.RISK_PERCENTAGE / 100),
             config.MAX_TRADE_AMOUNT
         )
 
@@ -138,12 +138,12 @@ class TradingEngine:
 
         # Calculate coin amount to buy
         coin_amount = trade_amount / current_price
-        trading_pair = f"{coin_symbol.lower()}_usd"
+        trading_pair = f"{coin_symbol.lower()}_usdt"
 
-        # Check if pair exists on YoBit
-        pair_info = await self.yobit_exchange.get_pair_info(trading_pair)
+        # Check if pair exists on Binance
+        pair_info = await self.binance_exchange.get_pair_info(trading_pair)
         if not pair_info:
-            reason = f"Trading pair {trading_pair} not available on YoBit"
+            reason = f"Trading pair {trading_pair} not available on Binance"
             logger.error(reason)
             return False, reason
 
@@ -152,7 +152,7 @@ class TradingEngine:
 
         logger.info(f"Executing CEX trade: {coin_amount:.8f} {coin_symbol} @ ${buy_price}")
 
-        order_result = await self.yobit_exchange.create_order(
+        order_result = await self.binance_exchange.create_order(
             pair=trading_pair,
             order_type='buy',
             amount=coin_amount,
@@ -410,9 +410,9 @@ class TradingEngine:
         """Close connections for all exchanges."""
         logger.info("Closing TradingEngine resources")
 
-        # Close YoBit exchange
-        if hasattr(self, 'yobit_exchange'):
-            await self.yobit_exchange.close()
+        # Close Binance exchange
+        if hasattr(self, 'binance_exchange'):
+            await self.binance_exchange.close()
 
         # Close Uniswap exchange if initialized
         if hasattr(self, 'uniswap_exchange') and self.uniswap_exchange:

@@ -11,9 +11,10 @@ TELEGRAM_PHONE = os.getenv("TELEGRAM_PHONE")
 TARGET_GROUP_ID = int(os.getenv("TARGET_GROUP_ID", "0"))
 NOTIFICATION_GROUP_ID = int(os.getenv("NOTIFICATION_GROUP_ID", "0"))
 
-# YoBit
-YOBIT_API_KEY = os.getenv("YOBIT_API_KEY")
-YOBIT_API_SECRET = os.getenv("YOBIT_API_SECRET")
+# Binance
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
+BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
 
 # Infura & Web3
 INFURA_PROJECT_ID = os.getenv("INFURA_PROJECT_ID")
@@ -95,17 +96,17 @@ USE_EIP1559 = os.getenv("USE_EIP1559", "true").lower() == "true"  # Whether to u
 TX_MAX_RETRIES = int(os.getenv("TX_MAX_RETRIES", "3"))  # Maximum number of retry attempts
 TX_RETRY_DELAY = int(os.getenv("TX_RETRY_DELAY", "5"))  # Base delay between retries (seconds)
 
-# Trading
-RISK_PERCENTAGE = float(os.getenv("RISK_PERCENTAGE", "2.0"))
-TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "10.00"))
-MIN_TRADE_AMOUNT = float(os.getenv("MIN_TRADE_AMOUNT", "10.0"))
-MAX_TRADE_AMOUNT = float(os.getenv("MAX_TRADE_AMOUNT", "100.0"))
-PRICE_THRESHOLD = float(os.getenv("PRICE_THRESHOLD", "5.0"))  # % price difference
-SLIPPAGE_PERCENTAGE = float(os.getenv("SLIPPAGE_PERCENTAGE", "20.0"))  # % slippage tolerance
-TRADE_COOLDOWN = int(os.getenv("TRADE_COOLDOWN", "300"))  # seconds
+# Trading Parameters
+RISK_PERCENTAGE = float(os.getenv("RISK_PERCENTAGE", "2.0"))  # Percentage of balance to risk
+TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "100.00"))  # Default trade amount in USD
+MIN_TRADE_AMOUNT = float(os.getenv("MIN_TRADE_AMOUNT", "10.0"))  # Minimum trade amount
+MAX_TRADE_AMOUNT = float(os.getenv("MAX_TRADE_AMOUNT", "1000.0"))  # Maximum trade amount
+PRICE_THRESHOLD = float(os.getenv("PRICE_THRESHOLD", "5.0"))  # Maximum allowed price difference percentage
+SLIPPAGE_PERCENTAGE = float(os.getenv("SLIPPAGE_PERCENTAGE", "1.0"))  # Allowed slippage percentage
+TRADE_COOLDOWN = int(os.getenv("TRADE_COOLDOWN", "300"))  # Cooldown between trades in seconds
 
 # Minimum ETH balance to maintain for gas fees
-MIN_ETH_BALANCE = float(os.getenv("MIN_ETH_BALANCE", 0.01))
+MIN_ETH_BALANCE = float(os.getenv("MIN_ETH_BALANCE", "0.01"))
 
 # Setup logging
 def setup_logging():
