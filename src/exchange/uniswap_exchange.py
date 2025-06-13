@@ -62,6 +62,19 @@ UNISWAP_ROUTER_ABI = [
         "outputs": [{"internalType": "uint256[]", "name": "amounts", "type": "uint256[]"}],
         "stateMutability": "nonpayable",
         "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
+            {"internalType": "uint256", "name": "amountOutMin", "type": "uint256"},
+            {"internalType": "address[]", "name": "path", "type": "address[]"},
+            {"internalType": "address", "name": "to", "type": "address"},
+            {"internalType": "uint256", "name": "deadline", "type": "uint256"}
+        ],
+        "name": "swapExactTokensForTokensSupportingFeeOnTransferTokens",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     }
 ]
 
@@ -296,7 +309,7 @@ class UniswapExchange:
                 return latest_block.baseFeePerGas
 
             # For non-EIP-1559 networks, fall back to gas_price
-            return await self._run_in_executor(self.w3.eth.gas_price)
+            return self.w3.eth.gas_price
         except Exception as e:
             logger.error(f"Error getting base fee: {e}")
             return self.w3.to_wei(15, 'gwei')  # Reasonable fallback
@@ -355,149 +368,85 @@ class UniswapExchange:
                 'maxPriorityFeePerGas': self.w3.to_wei(1, 'gwei')
             }
 
-    async def approve_token(self, token_address: str, amount: int = 0) -> bool:
+    async def approve_token(self, token_address: str, amount: int = 0) -> Tuple[bool, Optional[str]]:
         """
-        Approve the Uniswap router to spend tokens.
+        Approve a token for spending by the Uniswap router.
 
         Args:
-            token_address: Address of the token to approve
-            amount: Amount to approve, or None for unlimited approval
+            token_address: The address of the ERC20 token to approve.
+            amount: The amount to approve, in atomic units. Defaults to infinite.
 
         Returns:
-            True if approval was successful, False otherwise
+            A tuple (bool, Optional[str]) indicating success and an optional failure reason.
         """
-        token_contract = self._get_token_contract(token_address)
+        token_address_cs = Web3.to_checksum_address(token_address)
+        token_contract = self._get_token_contract(token_address_cs)
+
+        # Use a very large number for "infinite" approval if amount is not specified
+        approve_amount = amount if amount > 0 else 2**256 - 1
+        logger.info(f"Approving {approve_amount} of {token_address_cs} for router {self.router_address}")
 
         try:
             # Check current allowance
-            current_allowance = await self._run_in_executor(
+            allowance = await self._run_in_executor(
                 token_contract.functions.allowance(self.wallet_address, self.router_address).call
             )
 
-            # If amount specified and already approved enough, return True
-            if amount and current_allowance >= amount:
-                logger.info(f"Token {token_address} already has sufficient allowance: {current_allowance}")
-                return True
+            if allowance >= approve_amount:
+                logger.info("Sufficient allowance already exists.")
+                return True, None
 
-            # For unlimited approval, use max uint256
-            if amount is None:
-                amount = 2**256 - 1
-
-            logger.info(f"Approving {amount} of token {token_address} for Uniswap router")
-
-            # Build the approval transaction
-            tx_params = {
+            # Prepare the transaction
+            tx_params: Dict[str, Any] = {
                 'from': self.wallet_address,
                 'nonce': await self._run_in_executor(
                     self.w3.eth.get_transaction_count,
                     self.wallet_address,
                     'pending'
                 ),
-                'chainId': await self._run_in_executor(self.w3.eth.chain_id)
+                'chainId': self.w3.eth.chain_id
             }
 
-            # Add gas parameters based on transaction type (legacy or EIP-1559)
             gas_params = await self.estimate_gas_price()
             if isinstance(gas_params, dict):
-                # EIP-1559 transaction
                 tx_params.update(gas_params)
             else:
-                # Legacy transaction
                 tx_params['gasPrice'] = gas_params
 
-            # Try to estimate gas for the approval
+            approve_function = token_contract.functions.approve(self.router_address, approve_amount)
+
+            # Estimate gas
             try:
-                gas_estimate = await self._run_in_executor(
-                    token_contract.functions.approve(self.router_address, amount).estimate_gas,
-                    {'from': self.wallet_address}
-                )
-                tx_params['gas'] = int(gas_estimate * 1.2)  # Add 20% buffer
+                gas_estimate = await self._run_in_executor(approve_function.estimate_gas, tx_params)
+                tx_params['gas'] = int(gas_estimate * 1.2)
             except Exception as e:
-                logger.warning(f"Could not estimate gas for approval: {e}. Using default gas limit.")
-                tx_params['gas'] = 100000  # Standard gas limit for approvals
+                logger.warning(f"Could not estimate gas for approval: {e}. Using default.")
+                tx_params['gas'] = 100000
 
-            # Build, sign and send the transaction
-            approve_tx = token_contract.functions.approve(
-                self.router_address,
-                amount
-            ).build_transaction(TxParams(**tx_params))
-
-            signed_tx = await self._run_in_executor(
-                self.w3.eth.account.sign_transaction,
-                approve_tx,
-                self.private_key
+            # Build, sign, and send the transaction using the transaction manager
+            tx_hash, error_reason = await self.tx_manager.send_transaction(
+                approve_function,
+                tx_params,
+                self.private_key,
+                self.estimate_gas_price,
+                self._run_in_executor,
             )
 
-            tx_hash = await self._run_in_executor(
-                self.w3.eth.send_raw_transaction,
-                signed_tx.rawTransaction
-            )
-
-            logger.info(f"Approval transaction sent. TX hash: {tx_hash.hex()}")
-
-            # Wait for receipt
-            receipt = await self._run_in_executor(
-                self.w3.eth.wait_for_transaction_receipt,
-                tx_hash,
-                timeout=180
-            )
-
-            if receipt.status == 1:
-                logger.info(f"Token approval successful! Gas used: {receipt.gasUsed}")
-                return True
+            if tx_hash and not error_reason:
+                logger.info(f"Approval transaction successful with hash: {tx_hash}")
+                return True, None
             else:
-                logger.error(f"Token approval failed! TX: {tx_hash.hex()}")
-                return False
+                logger.error(f"Approval transaction failed: {error_reason}")
+                return False, error_reason
 
+        except ContractLogicError as e:
+            reason = f"Contract logic error during approval: {e}"
+            logger.error(reason)
+            return False, reason
         except Exception as e:
-            logger.error(f"Error approving token {token_address}: {e}")
-            return False
-
-    async def get_swap_quote(
-        self,
-        sell_token_address: str,
-        buy_token_address: str,
-        amount_in_atomic: int
-    ) -> Optional[int]:
-        """
-        Get quote for swap (estimate how much buy_token will be received).
-
-        Args:
-            sell_token_address: Address of token to sell
-            buy_token_address: Address of token to buy
-            amount_in_atomic: Amount of sell_token in its smallest unit
-
-        Returns:
-            Expected amount of buy_token in its smallest unit, or None on error
-        """
-        path = [
-            Web3.to_checksum_address(sell_token_address),
-            Web3.to_checksum_address(buy_token_address)
-        ]
-
-        # For token-to-token swaps when neither is ETH/WETH, we may need to route through WETH
-        if (sell_token_address.lower() != config.WETH_ADDRESS.lower() and
-            buy_token_address.lower() != config.WETH_ADDRESS.lower()):
-            path = [
-                Web3.to_checksum_address(sell_token_address),
-                Web3.to_checksum_address(config.WETH_ADDRESS),
-                Web3.to_checksum_address(buy_token_address)
-            ]
-
-        try:
-            amounts_out = await self._run_in_executor(
-                self.router_contract.functions.getAmountsOut(amount_in_atomic, path).call
-            )
-
-            # The last element is the expected output amount
-            expected_amount_out = amounts_out[-1]
-
-            logger.info(f"Swap quote: {amount_in_atomic} of {sell_token_address} -> {expected_amount_out} of {buy_token_address}")
-            return expected_amount_out
-
-        except Exception as e:
-            logger.error(f"Error getting swap quote: {e}")
-            return None
+            reason = f"An unexpected error occurred during token approval: {e}"
+            logger.error(reason)
+            return False, reason
 
     async def execute_swap(
         self,
@@ -505,49 +454,63 @@ class UniswapExchange:
         buy_token_address: str,
         amount_in_atomic: int,
         slippage_percentage: float = 0
-    ) -> bool:
+    ) -> Tuple[bool, Optional[str]]:
         """
-        Execute a swap on Uniswap.
+        Execute a swap on Uniswap V2.
 
         Args:
-            sell_token_address: Address of token to sell
-            buy_token_address: Address of token to buy
-            amount_in_atomic: Amount of sell_token in its smallest unit
-            slippage_percentage: Optional custom slippage percentage (overrides config)
+            sell_token_address: Address of the token being sold.
+            buy_token_address: Address of the token being bought.
+            amount_in_atomic: The amount of `sell_token` to swap, in its smallest unit.
+            slippage_percentage: The allowed slippage percentage.
 
         Returns:
-            True if swap was successful, False otherwise
+            A tuple of (bool, Optional[str]) indicating success and an optional failure reason.
         """
-        slippage_percentage = slippage_percentage if slippage_percentage is not None else config.DEX_SLIPPAGE_PERCENTAGE
+        logger.info(
+            f"Executing swap: {amount_in_atomic} of {sell_token_address} for {buy_token_address} "
+            f"with {slippage_percentage}% slippage"
+        )
 
-        # Determine what kind of swap we're doing
+        # Standardize addresses
+        sell_token_address = Web3.to_checksum_address(sell_token_address)
+        buy_token_address = Web3.to_checksum_address(buy_token_address)
         is_selling_eth = sell_token_address.lower() == config.WETH_ADDRESS.lower()
         is_buying_eth = buy_token_address.lower() == config.WETH_ADDRESS.lower()
 
-        # Create path based on token pair
-        path = [
-            Web3.to_checksum_address(sell_token_address),
-            Web3.to_checksum_address(buy_token_address)
-        ]
+        # Build path and get quote, trying direct path first, then routing through WETH for token-to-token
+        path = [sell_token_address, buy_token_address]
 
-        # For token-to-token swaps when neither is ETH/WETH, route through WETH
-        if not is_selling_eth and not is_buying_eth:
-            path = [
-                Web3.to_checksum_address(sell_token_address),
-                Web3.to_checksum_address(config.WETH_ADDRESS),
-                Web3.to_checksum_address(buy_token_address)
-            ]
+        try:
+            logger.info(f"Attempting to get swap quote for direct path: {path}")
+            amounts_out = await self._run_in_executor(
+                self.router_contract.functions.getAmountsOut(amount_in_atomic, path).call
+            )
+            expected_output_atomic = amounts_out[-1]
 
-        # Get expected output amount
-        expected_output_atomic = await self.get_swap_quote(sell_token_address, buy_token_address, amount_in_atomic)
-        if not expected_output_atomic:
-            logger.error("Failed to get swap quote")
-            return False
+        except Exception as e:
+            logger.warning(f"Direct swap quote failed: {e}. This is often due to a lack of a direct liquidity pool. Checking for a WETH route.")
+            # If direct fails and it's a token-to-token swap, try routing through WETH
+            if not is_selling_eth and not is_buying_eth:
+                path = [sell_token_address, Web3.to_checksum_address(config.WETH_ADDRESS), buy_token_address]
+                logger.info(f"Attempting to get swap quote for WETH-routed path: {path}")
+                try:
+                    amounts_out = await self._run_in_executor(
+                        self.router_contract.functions.getAmountsOut(amount_in_atomic, path).call
+                    )
+                    expected_output_atomic = amounts_out[-1]
+                except Exception as e_routed:
+                    reason = f"Failed to get swap quote, even via WETH: {e_routed}"
+                    logger.error(reason)
+                    return False, reason
+            else:
+                reason = f"Failed to get swap quote from Uniswap: {e}"
+                logger.error(reason)
+                return False, reason
 
         # Calculate minimum output with slippage
-        min_output_atomic = int(expected_output_atomic * (1 - (slippage_percentage / 100)))
+        min_output_atomic = int(expected_output_atomic * (1 - slippage_percentage / 100))
 
-        logger.info(f"Swap parameters: Selling {amount_in_atomic} of {sell_token_address}")
         logger.info(f"Expected output: {expected_output_atomic} of {buy_token_address}")
         logger.info(f"Minimum output with {slippage_percentage}% slippage: {min_output_atomic}")
 
@@ -558,31 +521,29 @@ class UniswapExchange:
             # If selling an ERC20 token, approve it first
             if not is_selling_eth:
                 logger.info(f"Approving {sell_token_address} for swap")
-                approved = await self.approve_token(sell_token_address, amount_in_atomic)
+                approved, reason = await self.approve_token(sell_token_address, amount_in_atomic)
                 if not approved:
-                    logger.error(f"Failed to approve {sell_token_address} for swap")
-                    return False
+                    logger.error(f"Failed to approve {sell_token_address} for swap: {reason}")
+                    return False, f"Approval failed: {reason}"
                 # Wait a bit for approval to be confirmed
                 await asyncio.sleep(5)
 
             # Prepare transaction parameters
-            tx_params = {
+            tx_params: Dict[str, Any] = {
                 'from': self.wallet_address,
                 'nonce': await self._run_in_executor(
                     self.w3.eth.get_transaction_count,
                     self.wallet_address,
                     'pending'
                 ),
-                'chainId': await self._run_in_executor(self.w3.eth.chain_id)
+                'chainId': self.w3.eth.chain_id
             }
 
-            # Add gas parameters based on transaction type (legacy or EIP-1559)
+            # Add gas parameters
             gas_params = await self.estimate_gas_price()
             if isinstance(gas_params, dict):
-                # EIP-1559 transaction
                 tx_params.update(gas_params)
             else:
-                # Legacy transaction
                 tx_params['gasPrice'] = gas_params
 
             # Add value if selling ETH
@@ -590,93 +551,75 @@ class UniswapExchange:
                 tx_params['value'] = amount_in_atomic
 
             # Build the swap transaction based on type
+            swap_function: Callable
             if is_selling_eth:
-                # ETH -> Token
                 swap_function = self.router_contract.functions.swapExactETHForTokens(
-                    min_output_atomic,
-                    path,
-                    self.wallet_address,
-                    deadline
+                    min_output_atomic, path, self.wallet_address, deadline
                 )
                 logger.info("Using swapExactETHForTokens")
             elif is_buying_eth:
-                # Token -> ETH
                 swap_function = self.router_contract.functions.swapExactTokensForETH(
-                    amount_in_atomic,
-                    min_output_atomic,
-                    path,
-                    self.wallet_address,
-                    deadline
+                    amount_in_atomic, min_output_atomic, path, self.wallet_address, deadline
                 )
                 logger.info("Using swapExactTokensForETH")
             else:
-                # Token -> Token
                 swap_function = self.router_contract.functions.swapExactTokensForTokens(
-                    amount_in_atomic,
-                    min_output_atomic,
-                    path,
-                    self.wallet_address,
-                    deadline
+                    amount_in_atomic, min_output_atomic, path, self.wallet_address, deadline
                 )
                 logger.info("Using swapExactTokensForTokens")
 
             # Estimate gas
             try:
-                gas_estimate = await self._run_in_executor(
-                    swap_function.estimate_gas,
-                    tx_params
-                )
-                tx_params['gas'] = int(gas_estimate * 1.2)  # Add 20% buffer
+                gas_estimate = await self._run_in_executor(swap_function.estimate_gas, tx_params)
+                tx_params['gas'] = int(gas_estimate * 1.2)
 
-                # Ensure gas is within limits
                 if tx_params['gas'] > config.MAX_GAS_LIMIT:
                     logger.warning(f"Estimated gas {tx_params['gas']} exceeds MAX_GAS_LIMIT. Capping at {config.MAX_GAS_LIMIT}.")
                     tx_params['gas'] = config.MAX_GAS_LIMIT
-
             except Exception as e:
-                logger.warning(f"Could not estimate gas: {e}. Using default gas limit.")
-                tx_params['gas'] = 300000  # Conservative default
+                logger.warning(f"Could not estimate gas for {swap_function.fn_name}: {e}.")
+                # For token-to-token, try the fee-on-transfer version as a fallback
+                if not is_selling_eth and not is_buying_eth:
+                    logger.info("Attempting gas estimation with swapExactTokensForTokensSupportingFeeOnTransferTokens.")
+                    try:
+                        swap_function = self.router_contract.functions.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                            amount_in_atomic, min_output_atomic, path, self.wallet_address, deadline
+                        )
+                        logger.info("Using swapExactTokensForTokensSupportingFeeOnTransferTokens")
+                        gas_estimate = await self._run_in_executor(swap_function.estimate_gas, tx_params)
+                        tx_params['gas'] = int(gas_estimate * 1.2)
+                    except Exception as e_fee:
+                        logger.error(f"Gas estimation failed for both standard and fee-on-transfer swaps: {e_fee}. Using default.")
+                        tx_params['gas'] = 300000
+                else:
+                    logger.warning("Using default gas limit.")
+                    tx_params['gas'] = 300000
 
-            swap_tx = swap_function.build_transaction(TxParams(**tx_params))  # type: ignore
-
-            # Sign and send transaction
-            signed_tx = await self._run_in_executor(
-                self.w3.eth.account.sign_transaction,
-                swap_tx,
-                self.private_key
+            # Send transaction using the transaction manager for retries
+            tx_hash, error_reason = await self.tx_manager.send_transaction(
+                swap_function,
+                tx_params,
+                self.private_key,
+                self.estimate_gas_price,
+                self._run_in_executor,
             )
 
-            tx_hash = await self._run_in_executor(
-                self.w3.eth.send_raw_transaction,
-                signed_tx.rawTransaction
-            )
-
-            logger.info(f"Swap transaction sent. TX hash: {tx_hash.hex()}")
-
-            # Wait for transaction to be mined
-            receipt = await self._run_in_executor(
-                self.w3.eth.wait_for_transaction_receipt,
-                tx_hash,
-                timeout=300  # 5 minutes timeout
-            )
-
-            if receipt.status == 1:
-                logger.info(f"Swap successful! Gas used: {receipt.gasUsed}")
-                return True
+            if tx_hash and not error_reason:
+                logger.info(f"Swap transaction successful with hash: {tx_hash}")
+                return True, None
             else:
-                logger.error(f"Swap failed! TX: {tx_hash.hex()}")
-                return False
+                logger.error(f"Swap transaction failed: {error_reason}")
+                return False, error_reason
 
-        except TransactionNotFound as e:
-            logger.error(f"Transaction not found: {e}")
-            return False
         except ContractLogicError as e:
-            logger.error(f"Contract error in swap: {e}")
-            return False
+            reason = f"Swap failed due to contract logic: {e}"
+            logger.error(reason)
+            return False, reason
         except Exception as e:
-            logger.error(f"Error executing swap: {e}")
-            return False
+            reason = f"An unexpected error occurred during swap: {e}"
+            logger.error(reason, exc_info=True)
+            return False, reason
 
     async def close(self):
-        """Close any resources (nothing to do for Web3)."""
+        """Clean up resources, like the thread pool executor."""
         logger.info("Closing UniswapExchange resources")
