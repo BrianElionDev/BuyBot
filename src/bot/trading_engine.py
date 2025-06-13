@@ -54,7 +54,7 @@ class TradingEngine:
         return time.time() - last_trade > config.TRADE_COOLDOWN
 
     async def process_signal(self, coin_symbol: str, signal_price: float,
-                           exchange_type: str = "None", sell_coin: str = "None") -> bool:
+                           exchange_type: str = "None", sell_coin: str = "None") -> Tuple[bool, Optional[str]]:
         """
         Process trading signal and execute trade if conditions are met.
 
@@ -65,7 +65,7 @@ class TradingEngine:
             sell_coin: Symbol of coin to sell (e.g., "ETH", "USDC"), required for DEX trades
 
         Returns:
-            True if trade was successfully processed, False otherwise
+            A tuple of (bool, Optional[str]) indicating success and a reason for failure
         """
         # Use default exchange type if not specified
         if not exchange_type:
@@ -73,47 +73,54 @@ class TradingEngine:
 
         # Validate exchange type
         if exchange_type not in ["cex", "dex"]:
-            logger.error(f"Invalid exchange_type: {exchange_type}. Must be 'cex' or 'dex'")
-            return False
+            reason = f"Invalid exchange_type: {exchange_type}. Must be 'cex' or 'dex'"
+            logger.error(reason)
+            return False, reason
 
         # Route to appropriate method
         if exchange_type == "dex":
             if not self.uniswap_exchange:
-                logger.error("DEX trading requested but Uniswap exchange is not available")
-                return False
+                reason = "DEX trading requested but Uniswap exchange is not available"
+                logger.error(reason)
+                return False, reason
             if not sell_coin:
-                logger.error("DEX trading requires sell_coin parameter")
-                return False
+                reason = "DEX trading requires sell_coin parameter"
+                logger.error(reason)
+                return False, reason
             return await self._process_dex_signal(sell_coin, coin_symbol, signal_price)
         else:  # cex
             return await self._process_cex_signal(coin_symbol, signal_price)
 
-    async def _process_cex_signal(self, coin_symbol: str, signal_price: float) -> bool:
+    async def _process_cex_signal(self, coin_symbol: str, signal_price: float) -> Tuple[bool, Optional[str]]:
         """Process a trading signal using the centralized exchange (YoBit)."""
         # Check cooldown
         if not self._is_cooled_down(f"cex_{coin_symbol}"):
-            logger.info(f"Trade cooldown active for {coin_symbol} on CEX")
-            return False
+            reason = f"Trade cooldown active for {coin_symbol} on CEX"
+            logger.info(reason)
+            return False, reason
 
         logger.info(f"Processing CEX signal: {coin_symbol} @ ${signal_price}")
 
         # Get current market price
         current_price = await self.price_service.get_coin_price(coin_symbol)
         if not current_price:
-            logger.error(f"Failed to get price for {coin_symbol}")
-            return False
+            reason = f"Failed to get price for {coin_symbol}"
+            logger.error(reason)
+            return False, reason
 
         # Check price difference threshold
         price_diff = abs(current_price - signal_price) / signal_price * 100
         if price_diff > config.PRICE_THRESHOLD:
-            logger.warning(f"Price difference too high: {price_diff:.2f}% (threshold: {config.PRICE_THRESHOLD}%)")
-            return False
+            reason = f"Price difference too high: {price_diff:.2f}% (threshold: {config.PRICE_THRESHOLD}%)"
+            logger.warning(reason)
+            return False, reason
 
         # Check account balance
         balances = await self.yobit_exchange.get_balance()
         if not balances:
-            logger.error("Failed to get account balances from YoBit")
-            return False
+            reason = "Failed to get account balances from YoBit"
+            logger.error(reason)
+            return False, reason
 
         usd_balance = balances.get('usd', 0)
         logger.info(f"Available USD balance on YoBit: ${usd_balance}")
@@ -125,8 +132,9 @@ class TradingEngine:
         )
 
         if trade_amount < config.MIN_TRADE_AMOUNT:
-            logger.warning(f"Trade amount ${trade_amount} below minimum ${config.MIN_TRADE_AMOUNT}")
-            return False
+            reason = f"Trade amount ${trade_amount:.2f} below minimum ${config.MIN_TRADE_AMOUNT}"
+            logger.warning(reason)
+            return False, reason
 
         # Calculate coin amount to buy
         coin_amount = trade_amount / current_price
@@ -135,8 +143,9 @@ class TradingEngine:
         # Check if pair exists on YoBit
         pair_info = await self.yobit_exchange.get_pair_info(trading_pair)
         if not pair_info:
-            logger.error(f"Trading pair {trading_pair} not available on YoBit")
-            return False
+            reason = f"Trading pair {trading_pair} not available on YoBit"
+            logger.error(reason)
+            return False, reason
 
         # Execute trade with slippage allowance
         buy_price = current_price * (1 + (config.SLIPPAGE_PERCENTAGE / 100))
@@ -153,24 +162,27 @@ class TradingEngine:
         if order_result:
             self.trade_cooldowns[f"cex_{coin_symbol}"] = time.time()
             logger.info(f"CEX trade successful for {coin_symbol}")
-            return True
+            return True, None
         else:
-            logger.error(f"CEX trade failed for {coin_symbol}")
-            return False
+            reason = f"CEX trade failed for {coin_symbol}"
+            logger.error(reason)
+            return False, reason
 
-    async def _process_dex_signal(self, sell_coin: str, buy_coin: str, signal_price: float) -> bool:
+    async def _process_dex_signal(self, sell_coin: str, buy_coin: str, signal_price: float) -> Tuple[bool, Optional[str]]:
         """Process a trading signal using the decentralized exchange (Uniswap)."""
         if not self.uniswap_exchange:
-            logger.error("Uniswap exchange is not available")
-            return False
+            reason = "Uniswap exchange is not available"
+            logger.error(reason)
+            return False, reason
 
         # Key for cooldown tracking
         cooldown_key = f"dex_{sell_coin}_{buy_coin}"
 
         # Check cooldown
         if not self._is_cooled_down(cooldown_key):
-            logger.info(f"DEX trade cooldown active for {sell_coin}/{buy_coin}")
-            return False
+            reason = f"DEX trade cooldown active for {sell_coin}/{buy_coin}"
+            logger.info(reason)
+            return False, reason
 
         logger.info(f"Processing DEX signal: Sell {sell_coin} to buy {buy_coin} @ ${signal_price}")
 
@@ -179,40 +191,44 @@ class TradingEngine:
         buy_token_address = config.TOKEN_ADDRESS_MAP.get(buy_coin.upper())
 
         if not sell_token_address or not buy_token_address:
-            logger.error(f"Missing token address mapping for {sell_coin} or {buy_coin}")
-            return False
+            reason = f"Missing token address mapping for {sell_coin} or {buy_coin}"
+            logger.error(reason)
+            return False, reason
 
         # Get current market price from CoinGecko
         current_price = await self.price_service.get_coin_price(buy_coin)
         if not current_price:
-            logger.error(f"Failed to get CoinGecko price for {buy_coin}")
-            return False
+            reason = f"Failed to get CoinGecko price for {buy_coin}"
+            logger.error(reason)
+            return False, reason
 
         # Check price difference threshold
         price_diff = abs(current_price - signal_price) / signal_price * 100
         if price_diff > config.PRICE_THRESHOLD:
-            logger.warning(f"Price difference too high: {price_diff:.2f}% (threshold: {config.PRICE_THRESHOLD}%)")
-            return False
+            reason = f"Price difference too high: {price_diff:.2f}% (threshold: {config.PRICE_THRESHOLD}%)"
+            logger.warning(reason)
+            return False, reason
 
         # Determine trade amount based on sell_coin
         trade_amount_usd = config.MIN_TRADE_AMOUNT  # Starting point
 
         # Get available balance
-        eth_price = None  # Ensure eth_price is always defined
+        eth_price = None
         if sell_coin.upper() == "ETH":
             balance = await self.uniswap_exchange.get_eth_balance()
             # Get ETH price in USD
             eth_price = await self.price_service.get_coin_price("ethereum")
             if not eth_price:
-                logger.error("Failed to get ETH price, using fixed USD amount")
-                balance_usd = 0
-            else:
-                balance_usd = balance * eth_price
-                # Calculate risk-adjusted amount
-                trade_amount_usd = min(
-                    balance_usd * (config.RISK_PERCENTAGE / 100),
-                    config.MAX_TRADE_AMOUNT
-                )
+                reason = "Failed to get ETH price, using fixed USD amount"
+                logger.error(reason)
+                return False, reason
+
+            balance_usd = balance * eth_price
+            # Calculate risk-adjusted amount
+            trade_amount_usd = min(
+                balance_usd * (config.RISK_PERCENTAGE / 100),
+                config.MAX_TRADE_AMOUNT
+            )
         else:
             # For other tokens like USDC
             balance = await self.uniswap_exchange.get_token_balance(sell_token_address)
@@ -233,6 +249,10 @@ class TradingEngine:
                         balance_usd * (config.RISK_PERCENTAGE / 100),
                         config.MAX_TRADE_AMOUNT
                     )
+                else:
+                    reason = f"Could not determine price for {sell_coin}"
+                    logger.error(reason)
+                    return False, reason
 
         # Ensure amount is within limits
         trade_amount_usd = max(trade_amount_usd, config.MIN_TRADE_AMOUNT)
@@ -254,17 +274,22 @@ class TradingEngine:
             # Other tokens need price and decimals
             token_price = await self.price_service.get_coin_price(sell_coin)
             decimals = await self.uniswap_exchange.get_token_decimals(sell_token_address)
+            if not token_price or not decimals:
+                reason = f"Could not get price or decimals for {sell_coin}"
+                logger.error(reason)
+                return False, reason
             sell_amount = trade_amount_usd / token_price if token_price else 0
             sell_amount_atomic = int(sell_amount * (10 ** decimals)) if sell_amount > 0 else 0
 
         if sell_amount_atomic <= 0:
-            logger.error(f"Calculated sell amount is invalid: {sell_amount_atomic}")
-            return False
+            reason = f"Calculated sell amount is invalid: {sell_amount_atomic}"
+            logger.error(reason)
+            return False, reason
 
         logger.info(f"Executing DEX swap: {sell_amount_atomic} {sell_coin} -> {buy_coin}")
 
         # Execute the swap
-        swap_success = await self.uniswap_exchange.execute_swap(
+        swap_success, swap_reason = await self.uniswap_exchange.execute_swap(
             sell_token_address=sell_token_address,
             buy_token_address=buy_token_address,
             amount_in_atomic=sell_amount_atomic,
@@ -274,66 +299,115 @@ class TradingEngine:
         if swap_success:
             self.trade_cooldowns[cooldown_key] = time.time()
             logger.info(f"DEX trade successful: {sell_coin}/{buy_coin}")
-            return True
+            return True, None
         else:
-            logger.error(f"DEX trade failed: {sell_coin}/{buy_coin}")
-            return False
+            logger.error(f"DEX trade failed: {swap_reason}")
+            return False, swap_reason
+
+    def get_price_threshold(self) -> float:
+        """Returns the configured price threshold."""
+        return config.PRICE_THRESHOLD
+
+    async def get_wallet_balances(self) -> Dict[str, float]:
+        """
+        Get current wallet balances for ETH and USDC.
+
+        Returns:
+            A dictionary with 'eth' and 'usdc' balances.
+        """
+        balances = {'eth': 0.0, 'usdc': 0.0}
+        if self.uniswap_exchange:
+            try:
+                eth_balance = await self.uniswap_exchange.get_eth_balance()
+                usdc_address = config.TOKEN_ADDRESS_MAP.get("USDC")
+                usdc_balance = 0.0
+                if usdc_address:
+                    usdc_balance = await self.uniswap_exchange.get_token_balance(usdc_address)
+
+                balances['eth'] = eth_balance
+                balances['usdc'] = usdc_balance
+            except Exception as e:
+                logger.error(f"Failed to get wallet balances: {e}")
+        return balances
+
+    async def get_all_wallet_balances(self) -> Dict[str, float]:
+        """
+        Get current wallet balances for all known tokens with a non-zero balance.
+
+        Returns:
+            A dictionary with token symbols and their balances.
+        """
+        balances = {}
+        if self.uniswap_exchange:
+            try:
+                # Get ETH balance first
+                eth_balance = await self.uniswap_exchange.get_eth_balance()
+                if eth_balance > 0:
+                    balances['eth'] = eth_balance
+
+                # Get balances for all tokens in the map
+                for symbol, address in config.TOKEN_ADDRESS_MAP.items():
+                    # Skip WETH as we already have ETH
+                    if symbol.upper() == 'WETH':
+                        continue
+
+                    try:
+                        token_balance = await self.uniswap_exchange.get_token_balance(address)
+                        # Only include tokens with a balance greater than 0
+                        if token_balance > 0:
+                            balances[symbol.lower()] = token_balance
+                    except Exception as e:
+                        logger.error(f"Failed to get balance for {symbol}: {e}")
+
+            except Exception as e:
+                logger.error(f"Failed to get all wallet balances: {e}")
+        return balances
 
     async def check_wallet_connection(self) -> bool:
-        """Check wallet balance and verify Uniswap/Infura connection at startup."""
-        if not self.uniswap_exchange:
-            logger.warning("[WALLET] Uniswap exchange not initialized - DEX functionality disabled")
-            return False
+        """
+        Verify wallet connection and log initial balances.
+        """
+        if self.uniswap_exchange:
+            try:
+                logger.info("[WALLET] Checking wallet connection and balance...")
 
-        try:
-            logger.info("[WALLET] Checking wallet connection and balance...")
+                # Check ETH balance
+                eth_balance = await self.uniswap_exchange.get_eth_balance()
+                logger.info(f"[WALLET] ETH Balance: {eth_balance:.6f} ETH")
 
-            # Get ETH balance
-            eth_balance = await self.uniswap_exchange.get_eth_balance()
-            logger.info(f"[WALLET] ETH Balance: {eth_balance:.6f} ETH")
+                if eth_balance < config.MIN_ETH_BALANCE:
+                    logger.warning(f"[WALLET] ⚠️ ETH balance is low ({eth_balance:.6f} ETH). May cause transaction failures.")
+                else:
+                    logger.info(f"[WALLET] ⚡ Limited ETH balance ({eth_balance:.6f} ETH) - sufficient for a few transactions")
 
-            # Check if we have a minimum balance for gas fees
-            if eth_balance < 0.001:  # Less than 0.001 ETH
-                logger.warning(f"[WALLET] ⚠️  Low ETH balance ({eth_balance:.6f} ETH) - may not be sufficient for gas fees")
-            elif eth_balance < 0.01:  # Less than 0.01 ETH
-                logger.info(f"[WALLET] ⚡ Limited ETH balance ({eth_balance:.6f} ETH) - sufficient for a few transactions")
+                # Check wallet address
+                wallet_address = self.uniswap_exchange.wallet_address
+                logger.info(f"[WALLET] Wallet Address: {wallet_address}")
 
-            # Test connection by getting wallet address
-            wallet_address = self.uniswap_exchange.wallet_address
-            logger.info(f"[WALLET] Wallet Address: {wallet_address}")
+                # Check connection status (block number)
+                block_number = await self.uniswap_exchange._run_in_executor(self.uniswap_exchange.w3.eth.get_block_number)
+                logger.info(f"[WALLET] Connected to Ethereum - Latest block: {block_number}")
 
-            # Test Web3 connection
-            latest_block = await self.uniswap_exchange._run_in_executor(
-                self.uniswap_exchange.w3.eth.get_block_number
-            )
-            logger.info(f"[WALLET] Connected to Ethereum - Latest block: {latest_block}")
+                # Check USDC and WETH balances
+                usdc_address = config.TOKEN_ADDRESS_MAP.get("USDC")
+                if usdc_address:
+                    usdc_balance = await self.uniswap_exchange.get_token_balance(usdc_address)
+                    logger.info(f"[WALLET] USDC Balance: {usdc_balance:.6f}")
 
-            # Check balances of common trading tokens
-            common_tokens = {
-                "USDC": config.USDC_ADDRESS,
-                "WETH": config.WETH_ADDRESS
-            }
+                weth_address = config.TOKEN_ADDRESS_MAP.get("WETH")
+                if weth_address:
+                    weth_balance = await self.uniswap_exchange.get_token_balance(weth_address)
+                    logger.info(f"[WALLET] WETH Balance: {weth_balance:.6f}")
 
-            for token_name, token_address in common_tokens.items():
-                if token_address:
-                    try:
-                        token_balance = await self.uniswap_exchange.get_token_balance(token_address)
-                        if token_balance > 0:
-                            logger.info(f"[WALLET] {token_name} Balance: {token_balance:.6f}")
-                        else:
-                            logger.debug(f"[WALLET] {token_name} Balance: 0")
-                    except Exception as e:
-                        logger.debug(f"[WALLET] Could not check {token_name} balance: {e}")
-
-            logger.info("[WALLET] ✅ Wallet connection verified successfully")
-            return True
-
-        except Exception as e:
-            logger.error(f"[WALLET] ❌ Failed to verify wallet connection: {e}")
-            return False
+                logger.info("[WALLET] ✅ Wallet connection verified successfully")
+                return True
+            except Exception as e:
+                logger.error(f"[WALLET] ❌ Wallet connection check failed: {e}")
+                return False
+        return False
 
     async def close(self):
-        """Cleanup resources."""
+        """Close connections for all exchanges."""
         logger.info("Closing TradingEngine resources")
 
         # Close YoBit exchange

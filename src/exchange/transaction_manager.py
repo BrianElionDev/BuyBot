@@ -28,6 +28,47 @@ class TransactionManager:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
+    async def send_transaction(
+        self,
+        transaction_func: Callable,
+        tx_params: Dict[str, Any],
+        private_key: str,
+        gas_price_func: Callable,
+        run_in_executor: Callable,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        A wrapper around execute_with_retry to simplify sending transactions.
+
+        Args:
+            transaction_func: The contract function to call (e.g., contract.functions.approve(...)).
+            tx_params: The transaction parameters.
+            private_key: The private key for signing.
+            gas_price_func: An async function to get gas price details.
+            run_in_executor: A function to run sync code in an executor.
+
+        Returns:
+            A tuple of (transaction_hash, error_reason).
+        """
+        success, tx_hash, receipt = await self.execute_with_retry(
+            transaction_func=transaction_func,
+            transaction_args=tx_params,
+            private_key=private_key,
+            gas_price_func=gas_price_func,
+            run_in_executor=run_in_executor,
+            handle_nonce=True,
+        )
+
+        if success:
+            return tx_hash, None
+
+        error_reason = "Transaction failed after retries."
+        if receipt and receipt.get("status") == 0:
+            error_reason = f"Transaction reverted. TX hash: {tx_hash}"
+        elif tx_hash:
+            error_reason = f"Transaction failed or timed out. TX hash: {tx_hash}"
+
+        return tx_hash, error_reason
+
     async def execute_with_retry(
         self,
         transaction_func: Callable,
@@ -83,7 +124,7 @@ class TransactionManager:
                         transaction_args['gasPrice'] = int(gas_params * 1.1 ** (attempt - 1))  # Increase by 10% each retry
 
                 # Build and sign the transaction
-                transaction = transaction_func(transaction_args)
+                transaction = transaction_func.build_transaction(transaction_args)
                 signed_tx = await run_in_executor(
                     self.w3.eth.account.sign_transaction,
                     transaction,
@@ -93,7 +134,7 @@ class TransactionManager:
                 # Send the transaction
                 tx_hash = await run_in_executor(
                     self.w3.eth.send_raw_transaction,
-                    signed_tx.rawTransaction
+                    signed_tx.raw_transaction
                 )
 
                 logger.info(f"Transaction sent (attempt {attempt}). TX hash: {tx_hash.hex()}")

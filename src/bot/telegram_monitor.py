@@ -30,8 +30,17 @@ class TelegramMonitor:
         log_message = f"[{timestamp}] {sender}: {message}"
         logger.info(log_message)
 
-    async def _send_notification(self, sell_coin: str, buy_coin: str, amount: float, signal_price: Optional[float] = None,
-                              is_valid: bool = True, rejection_reason: Optional[str] = None):
+    async def _send_notification(
+        self,
+        sell_coin: str,
+        buy_coin: str,
+        amount: float,
+        signal_price: Optional[float] = None,
+        is_valid: bool = True,
+        rejection_reason: Optional[str] = None,
+        success: Optional[bool] = None,
+        final_balances: Optional[dict] = None
+    ):
         """
         Send notification with enhanced format for both valid and invalid transactions
 
@@ -42,6 +51,8 @@ class TelegramMonitor:
             signal_price: Price from the signal
             is_valid: Whether the transaction is valid and will go through
             rejection_reason: Reason for rejection if transaction is invalid
+            success: Whether the transaction was successful
+            final_balances: Final wallet balances after the transaction
         """
         if not self.notification_group:
             try:
@@ -58,50 +69,59 @@ class TelegramMonitor:
                 logger.error(f"Failed to find notification group with ID {self.config.NOTIFICATION_GROUP_ID}: {e}")
                 return
 
-        # Fetch price from CoinGecko for the buy coin
+        # Determine which coin's price to check for slippage
+        price_check_coin = buy_coin
+        base_currencies = ['USDC', 'ETH', 'WETH']
+        if buy_coin.upper() in base_currencies:
+            # If we are buying a base currency, the price is for the other asset
+            price_check_coin = sell_coin
+            logger.info(f"[SLIPPAGE] Target is a base currency ({buy_coin}), checking price of {sell_coin} instead.")
+
+        # Fetch price from CoinGecko for the correct coin
         coingecko_price_value = None
         coingecko_price = "Price unavailable"
         try:
-            logger.info(f"[PRICE] Fetching CoinGecko price for {buy_coin}...")
-            coingecko_price_value = await self.price_service.get_coin_price(buy_coin)
+            logger.info(f"[PRICE] Fetching CoinGecko price for {price_check_coin}...")
+            coingecko_price_value = await self.price_service.get_coin_price(price_check_coin)
             if coingecko_price_value:
                 coingecko_price = f"${coingecko_price_value:.6f}"
-                logger.info(f"[SUCCESS] CoinGecko price for {buy_coin}: {coingecko_price}")
+                logger.info(f"[SUCCESS] CoinGecko price for {price_check_coin}: {coingecko_price}")
             else:
-                logger.warning(f"[WARNING] Could not fetch CoinGecko price for {buy_coin}")
+                logger.warning(f"[WARNING] Could not fetch CoinGecko price for {price_check_coin}")
         except Exception as e:
-            logger.error(f"[ERROR] Error fetching CoinGecko price for {buy_coin}: {e}")
+            logger.error(f"[ERROR] Error fetching CoinGecko price for {price_check_coin}: {e}")
 
         # Slippage information
         slippage_info = "Slippage: Not calculated"
         slippage_threshold = self.config.SLIPPAGE_PERCENTAGE
         price_difference_percent = None
+        price_difference_info = "Price Difference: Not calculated"
 
         # Slippage protection check
         if signal_price and coingecko_price_value:
             price_difference_percent = abs(coingecko_price_value - signal_price) / signal_price * 100
 
-            logger.info(f"[SLIPPAGE] Signal price: ${signal_price:.6f}")
-            logger.info(f"[SLIPPAGE] Current market price: ${coingecko_price_value:.6f}")
-            logger.info(f"[SLIPPAGE] Price difference: {price_difference_percent:.2f}%")
-            logger.info(f"[SLIPPAGE] Slippage threshold: {slippage_threshold:.1f}%")
+            logger.info(f"[PRICE_CHECK] Signal price: ${signal_price:.6f}")
+            logger.info(f"[PRICE_CHECK] Current market price: ${coingecko_price_value:.6f}")
+            logger.info(f"[PRICE_CHECK] Price difference: {price_difference_percent:.2f}%")
+            logger.info(f"[PRICE_CHECK] Price difference threshold: {self.trading_engine.get_price_threshold():.1f}%")
 
-            slippage_info = f"Slippage: {price_difference_percent:.2f}% (Threshold: {slippage_threshold:.1f}%)"
+            price_difference_info = f"Price Difference: {price_difference_percent:.2f}% (Threshold: {self.trading_engine.get_price_threshold():.1f}%)"
+            slippage_info = f"Slippage Tolerance: {self.config.DEX_SLIPPAGE_PERCENTAGE}%"
 
-            # Update rejection reason if slippage is too high
-            if price_difference_percent > slippage_threshold:
-                is_valid = False
-                rejection_reason = f"Price slippage too high ({price_difference_percent:.2f}% > {slippage_threshold:.1f}%)"
-                logger.warning(f"❌ SLIPPAGE PROTECTION: {rejection_reason}")
-                logger.warning(f"❌ TRANSACTION BLOCKED: Signal ${signal_price:.6f} vs Market ${coingecko_price_value:.6f}")
+            # This check is now handled inside the trading engine, but we can log it here
+            if price_difference_percent > self.trading_engine.get_price_threshold():
+                logger.warning(f"❌ PRICE DIFFERENCE HIGH: {price_difference_info}")
+                # The engine will reject this, this is just for notification purposes.
             else:
-                logger.info(f"✅ SLIPPAGE CHECK PASSED: {price_difference_percent:.2f}% <= {slippage_threshold:.1f}%")
+                logger.info(f"✅ PRICE DIFFERENCE OK: {price_difference_percent:.2f}% <= {self.trading_engine.get_price_threshold():.1f}%")
+
         elif signal_price:
-            slippage_info = "Slippage: Could not calculate - CoinGecko price unavailable"
-            logger.warning(f"[WARNING] Cannot perform slippage check - CoinGecko price unavailable")
+            price_difference_info = "Price Difference: Could not calculate - CoinGecko price unavailable"
+            logger.warning(f"[WARNING] Cannot perform price difference check - CoinGecko price unavailable")
         else:
-            slippage_info = "Slippage: Could not calculate - Signal price not provided"
-            logger.warning(f"[WARNING] Cannot perform slippage check - signal price not provided")
+            price_difference_info = "Price Difference: Could not calculate - Signal price not provided"
+            logger.warning(f"[WARNING] Cannot perform price difference check - signal price not provided")
 
         # Determine transaction type and validation status
         # We're buying the buy_coin and selling the sell_coin
@@ -118,29 +138,51 @@ class TelegramMonitor:
         # Build notification message with improved formatting
         if is_valid:
             message = (
-                f"🚨 TRADE SIGNAL DETECTED!\n\n"
+                f"🚨 TRADE SIGNAL PROCESSED!\n\n"
                 f"Transaction Type: {transaction_type} {buy_coin}\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"🔄 Pair: {sell_coin}/{buy_coin}\n"
-                f"💲 Signal Price: ${signal_price if signal_price else 'N/A'}\n"
+                f"💲 Signal Price: ${signal_price:.6f}\n"
                 f"📊 CoinGecko Price: {coingecko_price}\n"
-                f"📈 {slippage_info}\n"
+                f"📈 {price_difference_info}\n"
                 f"💰 Amount: ${amount:.2f}\n"
                 f"⏱️ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             )
         else:
             message = (
-                f"🚨 TRADE SIGNAL DETECTED!\n\n"
+                f"🚨 TRADE SIGNAL REJECTED!\n\n"
                 f"Transaction Type: {transaction_type} {buy_coin}\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"🔄 Pair: {sell_coin}/{buy_coin}\n"
-                f"💲 Signal Price: ${signal_price if signal_price else 'N/A'}\n"
+                f"💲 Signal Price: ${signal_price:.6f}\n"
                 f"📊 CoinGecko Price: {coingecko_price}\n"
-                f"📈 {slippage_info}\n"
+                f"📈 {price_difference_info}\n"
                 f"💰 Amount: ${amount:.2f}\n"
                 f"⏱️ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
                 f"❌ Reason: {rejection_reason if rejection_reason else 'Unknown error'}"
             )
+
+        # Add trade summary
+        message += f"\n\nProposed trade: To buy {buy_coin} in exchange for ${amount:.2f} of {sell_coin}."
+
+        # Add final status and wallet balances
+        if success is True:
+            message += "\n\n✅ Transaction Successful"
+        elif success is False:
+            message += f"\n\n❌ Transaction Failed: {rejection_reason}"
+
+        if final_balances:
+            balance_lines = []
+            for token, balance in final_balances.items():
+                if balance > 0:
+                    # Format based on token value
+                    if balance > 0.0001:
+                        balance_lines.append(f"- {token.upper()}: {balance:,.4f}")
+                    else:
+                        balance_lines.append(f"- {token.upper()}: {balance:.8f}")
+
+            if balance_lines:
+                message += "\n\n💰 Wallet Balance:\n" + "\n".join(balance_lines)
 
         # Send notification regardless of transaction validity
         try:
@@ -321,93 +363,72 @@ class TelegramMonitor:
                     logger.info(f"{message}")
                     logger.info("-" * 60)
 
-                    sell_coin, buy_coin, price, is_valid = self._parse_enhanced_signal(message)
+                    # The new parser returns a reason for failure
+                    sell_coin, buy_coin, price, is_valid, rejection_reason = self._parse_enhanced_signal(message)
 
-                    # Always process the signal regardless of validity
-                    rejection_reason = None
-
-                    # Handle case when we have all required elements
-                    if sell_coin and buy_coin and price:
-                        if is_valid:
-                            logger.info(f"[SUCCESS] VALID TRADE: {sell_coin}/{buy_coin} @ ${price}")
-
-                            # Determine exchange type based on configuration
-                            exchange_type = getattr(self.config, "PREFERRED_EXCHANGE_TYPE", "cex").lower()
-                            logger.info(f"[TRADE] Using {exchange_type.upper()} for trading")
-
-                            try:
-                                if exchange_type == "dex":
-                                    # For DEX, we need to pass the sell_coin as well
-                                    success = await self.trading_engine.process_signal(
-                                        coin_symbol=buy_coin,
-                                        signal_price=price,
-                                        exchange_type="dex",
-                                        sell_coin=sell_coin
-                                    )
-                                else:
-                                    # For CEX, we use the original YoBit logic
-                                    success = await self.trading_engine.process_signal(
-                                        coin_symbol=buy_coin,
-                                        signal_price=price,
-                                        exchange_type="cex"
-                                    )
-
-                                if success:
-                                    logger.info(f"[SUCCESS] Trade execution successful for {buy_coin}")
-                                else:
-                                    logger.warning(f"[WARNING] Trade execution failed for {buy_coin}")
-                                    is_valid = False
-                                    rejection_reason = "Trading engine failed to execute the transaction"
-                            except Exception as e:
-                                logger.error(f"[ERROR] Failed to process signal: {e}")
-                                is_valid = False
-                                rejection_reason = f"Error processing signal: {str(e)}"
-                        else:
-                            # Transaction is invalid - specify reason
-                            rejection_reason = f"Invalid base currency (selling {sell_coin}). Only ETH/USDC allowed."
-                            logger.warning(f"[IGNORED] {rejection_reason}")
-
-                        # Send notification for both valid and invalid transactions
-                        try:
-                            await self._send_notification(
-                                sell_coin=sell_coin,
-                                buy_coin=buy_coin,
-                                amount=10.0,
-                                signal_price=price,
-                                is_valid=is_valid,
-                                rejection_reason=rejection_reason
-                            )
-                        except Exception as e:
-                            logger.error(f"[ERROR] Failed to send notification: {e}")
-                    else:
-                        # Failed to parse the signal
-                        failure_reason = "Could not parse trade signal"
-                        if not sell_coin:
-                            failure_reason = "Could not identify sell coin"
-                        elif not buy_coin:
-                            failure_reason = "Could not identify buy coin"
-                        elif not price:
-                            failure_reason = "Could not identify price"
-
+                    # Handle case where parsing fails to find essential info
+                    if not (sell_coin and buy_coin and price):
+                        failure_reason = rejection_reason or "Could not parse trade signal."
                         logger.warning(f"[WARNING] {failure_reason} from {sender_display}")
+                        await self._send_parsing_failure_notification(
+                            message_text=message,
+                            failure_reason=failure_reason
+                        )
+                        return
 
-                        # Send notification about parsing failure
-                        try:
-                            await self._send_parsing_failure_notification(
-                                message_text=message,
-                                failure_reason=failure_reason
-                            )
-                        except Exception as e:
-                            logger.error(f"[ERROR] Failed to send parsing failure notification: {e}")
+                    # Handle case where the pair is invalid (e.g., not ETH/USDC based)
+                    if not is_valid:
+                        logger.warning(f"[IGNORED] {rejection_reason}")
+                        await self._send_notification(
+                            sell_coin=sell_coin,
+                            buy_coin=buy_coin,
+                            amount=self.config.TRADE_AMOUNT,
+                            signal_price=price,
+                            is_valid=False,
+                            rejection_reason=rejection_reason,
+                            success=False,
+                            final_balances=await self.trading_engine.get_all_wallet_balances()
+                        )
+                        return
 
-                        # Send parsing failure notification
-                        try:
-                            await self._send_parsing_failure_notification(
-                                message_text=message,
-                                failure_reason=failure_reason
-                            )
-                        except Exception as e:
-                            logger.error(f"[ERROR] Failed to send parsing failure notification: {e}")
+                    # If we reach here, the signal is valid and parsed. Proceed with trade.
+                    logger.info(f"[SUCCESS] VALID TRADE: {sell_coin}/{buy_coin} @ ${price}")
+                    exchange_type = getattr(self.config, "PREFERRED_EXCHANGE_TYPE", "dex").lower()
+                    logger.info(f"[TRADE] Using {exchange_type.upper()} for trading")
+
+                    try:
+                        success, reason = await self.trading_engine.process_signal(
+                            coin_symbol=buy_coin,
+                            signal_price=price,
+                            exchange_type=exchange_type,
+                            sell_coin=sell_coin
+                        )
+
+                        final_balances = await self.trading_engine.get_all_wallet_balances()
+
+                        await self._send_notification(
+                            sell_coin=sell_coin,
+                            buy_coin=buy_coin,
+                            amount=self.config.TRADE_AMOUNT,
+                            signal_price=price,
+                            is_valid=True,
+                            rejection_reason=reason, # reason for failure from engine
+                            success=success,
+                            final_balances=final_balances
+                        )
+
+                    except Exception as e:
+                        logger.error(f"[ERROR] An unexpected error occurred in the trading engine: {e}", exc_info=True)
+                        rejection_reason = f"Trading engine failed: {e}"
+                        await self._send_notification(
+                            sell_coin=sell_coin,
+                            buy_coin=buy_coin,
+                            amount=self.config.TRADE_AMOUNT,
+                            is_valid=True, # It was valid, but failed during processing
+                            rejection_reason=rejection_reason,
+                            success=False,
+                            final_balances=await self.trading_engine.get_all_wallet_balances()
+                        )
                 else:
                     if message:
                         logger.info(f"[INFO] Regular message (not a trade signal) - ignoring")
@@ -429,11 +450,11 @@ class TelegramMonitor:
             except Exception as e:
                 logger.error(f"[ERROR] Error in message handler: {e}", exc_info=True)
 
-    def _parse_enhanced_signal(self, text: str) -> Tuple[Optional[str], Optional[str], Optional[float], bool]:
+    def _parse_enhanced_signal(self, text: str) -> Tuple[Optional[str], Optional[str], Optional[float], bool, Optional[str]]:
         """
-        Enhanced parsing to extract sell_coin, buy_coin, price, and validate ETH/USDC requirement
-        Handles both "trade detected" and "swap detected" formats with different coin symbol positions
-        Returns: (sell_coin, buy_coin, price, is_valid_transaction)
+        Enhanced parsing to extract sell_coin, buy_coin, price, and validate the pair.
+        Handles both "trade detected" and "swap detected" formats.
+        Returns: (sell_coin, buy_coin, price, is_valid, rejection_reason)
         """
         logger.info(f"Enhanced parsing: {text[:200]}...")
 
@@ -441,6 +462,31 @@ class TelegramMonitor:
         buy_coin = None
         price = None
         is_valid_transaction = False
+        rejection_reason = "Signal could not be parsed."
+
+        # Helper function to find a coin symbol in a line of text
+        def find_coin_symbol(line: str) -> Optional[str]:
+            # Priority 1: Check for symbol in parentheses, e.g., "Name (SYMBOL)"
+            # This is the most reliable format.
+            match = re.search(r'\(([A-Z0-9]{2,10})\)', line, re.IGNORECASE)
+            if match:
+                logger.info(f"Parser found symbol in parentheses: {match.group(1)}")
+                return match.group(1).upper().strip()
+
+            # Priority 2: Check for symbol before parentheses, e.g., "1,000 SYMBOL (Name)"
+            match = re.search(r'[\d,.]+\s+([A-Z0-9]{2,10})\s+\(', line, re.IGNORECASE)
+            if match:
+                logger.info(f"Parser found symbol before parentheses: {match.group(1)}")
+                return match.group(1).upper().strip()
+
+            # Priority 3: Check for symbol at the end of the line
+            match = re.search(r'[\d,.]+\s+([A-Z0-9]{2,10})\s*$', line, re.IGNORECASE)
+            if match:
+                logger.info(f"Parser found symbol at end of line: {match.group(1)}")
+                return match.group(1).upper().strip()
+
+            logger.warning(f"Could not find a coin symbol in line: '{line}'")
+            return None
 
         # Determine if this is a swap or trade message
         text_lower = text.lower()
@@ -474,65 +520,6 @@ class TelegramMonitor:
         else:
             logger.warning(f"[WARNING] Could not determine transaction type")
 
-        # Define patterns based on signal type
-        if is_swap_message:
-            logger.info(f"[SWAP] Using swap-specific parsing patterns")
-            # SWAP format: symbol appears in final parentheses
-            # Example: 🟢 + 5,575.48 USDT (USDT) (https://solscan.io/token/...)
-            # Example: 🔴 - 5,000 SPX6900 (Wormhole) (SPX) (https://solscan.io/token/...)
-            green_patterns = [
-                # Format: 🟢 + 5,575.48 USDT (USDT) (https://...)
-                r'🟢\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
-                # Format: 🟢 + 5,575.48 USDT (USD Tether) (USDT) (https://...)
-                r'🟢\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
-                # Fallback: symbol in any parentheses on green line
-                r'🟢[^(]*\(([A-Z0-9]{2,10})\)',
-                # Direct symbol after amount (trade format compatibility)
-                r'🟢\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
-            ]
-
-            red_patterns = [
-                # Format: 🔴 - 5,000 SPX6900 (Wormhole) (SPX) (https://...)
-                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
-                # Format: 🔴 - 5,000 SPX6900 (Wormhole Token) (SPX) (https://...)
-                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\([^)]*\)\s*\([^)]*\)\s*\(([A-Z0-9]{1,10})\)',
-                # Fallback: symbol in any parentheses on red line
-                r'🔴[^(]*\(([A-Z0-9]{2,10})\)',
-                # Direct symbol after amount (trade format compatibility)
-                r'🔴\s*[+-]\s*[\d,.]+\s*([A-Z0-9]{1,10})',
-            ]
-        else:
-            logger.info(f"[TRADE] Using trade-specific parsing patterns")
-            # TRADE format: symbol appears immediately after amount
-            # Example: 🟢 + 1,200 LINK (Chainlink)
-            green_patterns = [
-                # Format: 🟢 + 1,200 LINK (Chainlink) - prioritize symbol before parentheses (MOST SPECIFIC)
-                r'🟢\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s+\(',
-                # Format: 🟢 + 1,200 LINK (no parentheses)
-                r'🟢\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})$',
-                # Format: 🟢 + 1,200 LINK (end of line or whitespace)
-                r'🟢\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s*$',
-                # More flexible patterns if above fail
-                r'🟢[^A-Z]*([A-Z0-9]{2,10})',
-            ]
-
-            red_patterns = [
-                # Format: 🔴 - 2.5 ETH (Ethereum) - prioritize symbol before parentheses (MOST SPECIFIC)
-                r'🔴\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s+\(',
-                # Format: 🔴 + 2,550 USDC (no parentheses)
-                r'🔴\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})$',
-                # Format: 🔴 + 2,550 USDC (end of line or whitespace)
-                r'🔴\s*[+-]\s*[\d,.]+\s+([A-Z0-9]{1,10})\s*$',
-                # Format: 🔴 - 18,000 USD Coin (USDC (https://etherscan.io/address/...))
-                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\s*\(',
-                # Format: 🔴 - 18,000 USD Coin (USDC) - LEAST SPECIFIC, only if above fail
-                r'🔴\s*[+-]\s*[\d,.]+\s*[^(]*\(([A-Z0-9]{1,10})\)',
-            ]
-
-        # Extract coins from green and red lines with enhanced debugging
-        green_coin = None
-        red_coin = None
-
         # Extract the actual green and red lines for debugging
         green_line_match = re.search(r'(🟢[^\n\r]*)', text)
         red_line_match = re.search(r'(🔴[^\n\r]*)', text)
@@ -543,44 +530,12 @@ class TelegramMonitor:
         logger.info(f"Green line: {green_line}")
         logger.info(f"Red line: {red_line}")
 
-        # Find coin in green line
-        for i, pattern in enumerate(green_patterns):
-            match = re.search(pattern, green_line, re.IGNORECASE)
-            if match:
-                green_coin = match.group(1).upper().strip()
-                logger.info(f"✅ Found green coin symbol: {green_coin} using pattern {i+1}: {pattern}")
-                break
+        # Find coin symbols using the new helper function
+        green_coin = find_coin_symbol(green_line)
+        red_coin = find_coin_symbol(red_line)
 
-        if not green_coin:
-            logger.warning(f"⚠️ Failed to parse green coin symbol with patterns")
-            # Enhanced fallback - look for common crypto symbols
-            common_tokens = ['ETH', 'BTC', 'WBTC', 'USDC', 'USDT', 'LINK', 'AAVE', 'UNI', 'COMP', 'MKR', 'SNX', 'YFI', 'SHIB', 'DOGE', 'SPX', 'SPX6900']
-            for token in common_tokens:
-                if re.search(rf'\b{token}\b', green_line, re.IGNORECASE):
-                    green_coin = token
-                    logger.info(f"✅ Found green coin using fallback: {green_coin}")
-                    break
-
-        # Find coin in red line
-        for i, pattern in enumerate(red_patterns):
-            match = re.search(pattern, red_line, re.IGNORECASE)
-            if match:
-                red_coin = match.group(1).upper().strip()
-                logger.info(f"✅ Found red coin symbol: {red_coin} using pattern {i+1}: {pattern}")
-                break
-
-        if not red_coin:
-            logger.warning(f"⚠️ Failed to parse red coin symbol with patterns")
-            # Enhanced fallback - look for common base currencies first
-            base_currencies = ['USDC', 'USDT', 'ETH', 'DAI', 'WETH']
-            common_tokens = ['BTC', 'WBTC', 'LINK', 'AAVE', 'UNI', 'COMP', 'MKR', 'SNX', 'YFI', 'SHIB', 'DOGE', 'SPX', 'SPX6900']
-
-            # Try base currencies first (more likely to be red/selling)
-            for token in base_currencies + common_tokens:
-                if re.search(rf'\b{token}\b', red_line, re.IGNORECASE):
-                    red_coin = token
-                    logger.info(f"✅ Found red coin using fallback: {red_coin}")
-                    break
+        if not green_coin: logger.warning(f"⚠️ Failed to parse green coin symbol.")
+        if not red_coin: logger.warning(f"⚠️ Failed to parse red coin symbol.")
 
         # Determine buy_coin and sell_coin based on transaction type
         if transaction_type == "BUY":
@@ -607,16 +562,24 @@ class TelegramMonitor:
                 sell_coin = green_coin
                 buy_coin = red_coin
 
-        # Validate that sell coin is ETH or USDC
-        if sell_coin and sell_coin in ['ETH', 'USDC']:
-            is_valid_transaction = True
-            logger.info(f"✅ Valid transaction: Selling {sell_coin}")
-        elif sell_coin:
-            logger.warning(f"❌ Invalid transaction: Selling {sell_coin} (only ETH/USDC allowed)")
+        # Validate that one of the coins in the pair is a base currency
+        base_currencies = ['ETH', 'USDC', 'WETH']
+        if sell_coin and buy_coin:
+            is_buy_base = buy_coin.upper() in base_currencies
+            is_sell_base = sell_coin.upper() in base_currencies
+
+            if is_buy_base or is_sell_base:
+                is_valid_transaction = True
+                rejection_reason = None
+                logger.info(f"✅ Valid transaction pair: {sell_coin}/{buy_coin}")
+            else:
+                is_valid_transaction = False
+                rejection_reason = f"Invalid pair: neither {sell_coin} nor {buy_coin} is a base currency (e.g., ETH, USDC)."
+                logger.warning(f"❌ {rejection_reason}")
+        elif not sell_coin or not buy_coin:
             is_valid_transaction = False
-        else:
-            logger.warning(f"❌ Could not determine sell coin")
-            is_valid_transaction = False
+            rejection_reason = "Could not parse a valid trading pair from the signal."
+            logger.warning(f"❌ {rejection_reason}")
 
         # Extract price
         price_patterns = [
@@ -636,8 +599,12 @@ class TelegramMonitor:
                 except (ValueError, IndexError):
                     continue
 
-        logger.info(f"Parsed result: sell={sell_coin}, buy={buy_coin}, price=${price}, valid={is_valid_transaction}")
-        return sell_coin, buy_coin, price, is_valid_transaction
+        if not price and is_valid_transaction:
+            rejection_reason = "Could not identify price in signal."
+            is_valid_transaction = False
+
+        logger.info(f"Parsed result: sell={sell_coin}, buy={buy_coin}, price=${price}, valid={is_valid_transaction}, reason={rejection_reason}")
+        return sell_coin, buy_coin, price, is_valid_transaction, rejection_reason
 
     async def start(self):
         """Start the Telegram monitor - async method"""
@@ -659,6 +626,10 @@ class TelegramMonitor:
             logger.info("[MONITOR] Now monitoring ALL messages in the target group...")
             logger.info("[LOG] All message activity will be logged. Press Ctrl+C to stop.")
             logger.info("=" * 80)
+
+            # Check wallet connection on startup
+            if self.trading_engine and hasattr(self.trading_engine, 'check_wallet_connection'):
+                await self.trading_engine.check_wallet_connection()
 
             # Run until disconnected
             await self.client.run_until_disconnected()

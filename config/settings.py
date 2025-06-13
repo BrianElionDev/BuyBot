@@ -60,11 +60,22 @@ TOKEN_ADDRESS_MAP = {
     "CRV": "0xD533a949740bb3306d119CC777fa900bA034cd52",  # Curve DAO Token
     "1INCH": "0x111111111117dC0aa78b770fA6A738034120C302",  # 1inch
 
+    # Additional tokens from failed signals
+    "DSYNC": "0x2dA89AD7eeEFFe5Fc1f96a8d69B7850e4E9e9FB8",  # Destra Network (Placeholder - need real address)
+    "PENGU": "0x8B8B309bCF3a68F33d862d5c6B1Ae6b70a1Db2a8",  # Pengu (Placeholder - need real address)
+    "0X0": "0x4F9254C83EB525f9FCf346490bbb3ed28a81C667",  # 0x0 AI (Placeholder - need real address)
+    "DOGE": "0xBA2aE424d960c26247Dd6c32edC70B295c744C43",  # Dogecoin (Wrapped)
+
     # Gaming & Metaverse
     "AXS": "0xBB0E17EF65F82Ab018d8EDd776e8DD940327B28b",  # Axie Infinity
     "MANA": "0x0F5D2fB29fb7d3CFeE444a200298f468908cC942",  # Decentraland
     "SAND": "0x3845badAde8e6dFF049820680d1F14bD3903a5d0",  # The Sandbox
-    "ENJ": "0xF629cBd94d3791C9250152BD8dfBDF380E2a3B9c"   # Enjin Coin
+    "ENJ": "0xF629cBd94d3791C9250152BD8dfBDF380E2a3B9c",   # Enjin Coin
+
+    # Additional tokens
+    "PENGU": "0x9e20461bc2c4c980f62f1B279D71734207a6A356",  # Pudgy Penguins
+    "DSYNC": "0x83e9F223e1edb3486F876EE888d76bFba26c475A",  # Destra Network (DSYNC)
+    "DOGE": "0x4206931337dc273a630d328dA6441786BfaD668f",  # Dogecoin (ERC-20)
 }
 
 # DEX Trading Parameters
@@ -86,11 +97,15 @@ TX_RETRY_DELAY = int(os.getenv("TX_RETRY_DELAY", "5"))  # Base delay between ret
 
 # Trading
 RISK_PERCENTAGE = float(os.getenv("RISK_PERCENTAGE", "2.0"))
+TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "10.00"))
 MIN_TRADE_AMOUNT = float(os.getenv("MIN_TRADE_AMOUNT", "10.0"))
 MAX_TRADE_AMOUNT = float(os.getenv("MAX_TRADE_AMOUNT", "100.0"))
 PRICE_THRESHOLD = float(os.getenv("PRICE_THRESHOLD", "5.0"))  # % price difference
 SLIPPAGE_PERCENTAGE = float(os.getenv("SLIPPAGE_PERCENTAGE", "20.0"))  # % slippage tolerance
 TRADE_COOLDOWN = int(os.getenv("TRADE_COOLDOWN", "300"))  # seconds
+
+# Minimum ETH balance to maintain for gas fees
+MIN_ETH_BALANCE = float(os.getenv("MIN_ETH_BALANCE", 0.01))
 
 # Setup logging
 def setup_logging():
