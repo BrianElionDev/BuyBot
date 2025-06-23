@@ -1,10 +1,13 @@
 import logging
 import time
 import asyncio
-from typing import Dict, Set, Tuple, Optional, Any, Union, Literal
+from typing import Dict, Set, Tuple, Optional, Any, Union, Literal, List
 from config import settings as config
 from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
+from src.exchange.uniswap_exchange import UniswapExchange
+from datetime import datetime
+from config.settings import TRADE_AMOUNT, SLIPPAGE_PERCENTAGE, MIN_ETH_BALANCE, PRICE_THRESHOLD, TOKEN_ADDRESS_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +51,18 @@ class TradingEngine:
         else:
             logger.warning("UniswapExchange not available. DEX functionality will be disabled.")
 
+        self.base_currencies = ['USDC', 'ETH']
+
     def _is_cooled_down(self, symbol: str) -> bool:
         """Check if trade cooldown period has passed for the given symbol."""
         last_trade = self.trade_cooldowns.get(symbol, 0)
         return time.time() - last_trade > config.TRADE_COOLDOWN
 
     async def process_signal(self, coin_symbol: str, signal_price: float,
-                           exchange_type: str = "None", sell_coin: str = "None") -> Tuple[bool, Optional[str]]:
+                           exchange_type: str = "None", sell_coin: str = "None",
+                           order_type: str = "MARKET", stop_loss: Optional[float] = None,
+                           take_profits: Optional[List[float]] = None,
+                           dca_range: Optional[List[float]] = None) -> Tuple[bool, Optional[str]]:
         """
         Process trading signal and execute trade if conditions are met.
 
@@ -63,6 +71,10 @@ class TradingEngine:
             signal_price: Price from the signal message
             exchange_type: "cex" (Binance) or "dex" (Uniswap), defaults to config.PREFERRED_EXCHANGE_TYPE
             sell_coin: Symbol of coin to sell (e.g., "ETH", "USDC"), required for DEX trades
+            order_type: Type of order ("MARKET", "LIMIT", "SPOT")
+            stop_loss: Optional stop loss price
+            take_profits: Optional list of take profit prices
+            dca_range: Optional list of [high, low] prices for DCA
 
         Returns:
             A tuple of (bool, Optional[str]) indicating success and a reason for failure
@@ -74,6 +86,12 @@ class TradingEngine:
         # Validate exchange type
         if exchange_type not in ["cex", "dex"]:
             reason = f"Invalid exchange_type: {exchange_type}. Must be 'cex' or 'dex'"
+            logger.error(reason)
+            return False, reason
+
+        # Validate order type
+        if order_type not in ["MARKET", "LIMIT", "SPOT"]:
+            reason = f"Invalid order_type: {order_type}. Must be 'MARKET', 'LIMIT', or 'SPOT'"
             logger.error(reason)
             return False, reason
 
@@ -89,9 +107,12 @@ class TradingEngine:
                 return False, reason
             return await self._process_dex_signal(sell_coin, coin_symbol, signal_price)
         else:  # cex
-            return await self._process_cex_signal(coin_symbol, signal_price)
+            return await self._process_cex_signal(coin_symbol, signal_price, order_type, stop_loss, take_profits, dca_range)
 
-    async def _process_cex_signal(self, coin_symbol: str, signal_price: float) -> Tuple[bool, Optional[str]]:
+    async def _process_cex_signal(self, coin_symbol: str, signal_price: float,
+                                order_type: str = "MARKET", stop_loss: Optional[float] = None,
+                                take_profits: Optional[List[float]] = None,
+                                dca_range: Optional[List[float]] = None) -> Tuple[bool, Optional[str]]:
         """Process a trading signal using the centralized exchange (Binance)."""
         # Check cooldown
         if not self._is_cooled_down(f"cex_{coin_symbol}"):
@@ -100,6 +121,13 @@ class TradingEngine:
             return False, reason
 
         logger.info(f"Processing CEX signal: {coin_symbol} @ ${signal_price}")
+        logger.info(f"Order Type: {order_type}")
+        if stop_loss:
+            logger.info(f"Stop Loss: ${stop_loss}")
+        if take_profits:
+            logger.info(f"Take Profits: {', '.join([f'${tp:.8f}' for tp in take_profits])}")
+        if dca_range:
+            logger.info(f"DCA Range: ${dca_range[0]:.8f} - ${dca_range[1]:.8f}")
 
         # Get current market price
         current_price = await self.price_service.get_coin_price(coin_symbol)
@@ -187,8 +215,8 @@ class TradingEngine:
         logger.info(f"Processing DEX signal: Sell {sell_coin} to buy {buy_coin} @ ${signal_price}")
 
         # Get addresses from the token map
-        sell_token_address = config.TOKEN_ADDRESS_MAP.get(sell_coin.upper())
-        buy_token_address = config.TOKEN_ADDRESS_MAP.get(buy_coin.upper())
+        sell_token_address = TOKEN_ADDRESS_MAP.get(sell_coin.upper())
+        buy_token_address = TOKEN_ADDRESS_MAP.get(buy_coin.upper())
 
         if not sell_token_address or not buy_token_address:
             reason = f"Missing token address mapping for {sell_coin} or {buy_coin}"
@@ -319,7 +347,7 @@ class TradingEngine:
         if self.uniswap_exchange:
             try:
                 eth_balance = await self.uniswap_exchange.get_eth_balance()
-                usdc_address = config.TOKEN_ADDRESS_MAP.get("USDC")
+                usdc_address = TOKEN_ADDRESS_MAP.get("USDC")
                 usdc_balance = 0.0
                 if usdc_address:
                     usdc_balance = await self.uniswap_exchange.get_token_balance(usdc_address)
@@ -346,7 +374,7 @@ class TradingEngine:
                     balances['eth'] = eth_balance
 
                 # Get balances for all tokens in the map
-                for symbol, address in config.TOKEN_ADDRESS_MAP.items():
+                for symbol, address in TOKEN_ADDRESS_MAP.items():
                     # Skip WETH as we already have ETH
                     if symbol.upper() == 'WETH':
                         continue
@@ -389,12 +417,12 @@ class TradingEngine:
                 logger.info(f"[WALLET] Connected to Ethereum - Latest block: {block_number}")
 
                 # Check USDC and WETH balances
-                usdc_address = config.TOKEN_ADDRESS_MAP.get("USDC")
+                usdc_address = TOKEN_ADDRESS_MAP.get("USDC")
                 if usdc_address:
                     usdc_balance = await self.uniswap_exchange.get_token_balance(usdc_address)
                     logger.info(f"[WALLET] USDC Balance: {usdc_balance:.6f}")
 
-                weth_address = config.TOKEN_ADDRESS_MAP.get("WETH")
+                weth_address = TOKEN_ADDRESS_MAP.get("WETH")
                 if weth_address:
                     weth_balance = await self.uniswap_exchange.get_token_balance(weth_address)
                     logger.info(f"[WALLET] WETH Balance: {weth_balance:.6f}")
@@ -417,3 +445,138 @@ class TradingEngine:
         # Close Uniswap exchange if initialized
         if hasattr(self, 'uniswap_exchange') and self.uniswap_exchange:
             await self.uniswap_exchange.close()
+
+    def _determine_transaction_type(self, buy_coin: str, sell_coin: str) -> Optional[str]:
+        """Determine if it's a buy or sell transaction."""
+        if buy_coin in self.base_currencies and sell_coin not in self.base_currencies:
+            return 'sell'
+        if sell_coin in self.base_currencies and buy_coin not in self.base_currencies:
+            return 'buy'
+        return None
+
+    def _create_response_message(self, **kwargs) -> str:
+        """Create a formatted response message."""
+        base_message = (
+            f"Transaction Type: {kwargs.get('tx_type')}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔄 Pair: {kwargs.get('pair')}\n"
+            f"💲 Signal Price: ${kwargs.get('signal_price'):.6f}\n"
+            f"📊 CoinGecko Price: {kwargs.get('coingecko_price')}\n"
+            f"📈 Price Difference: {kwargs.get('price_diff')}\n"
+            f"💰 Amount: ${kwargs.get('amount'):.2f}\n"
+            f"⏱️ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"Proposed trade: {kwargs.get('trade_proposal')}\n\n"
+        )
+
+        if kwargs.get('success'):
+            final_message = f"✅ Transaction Successful!\n\n{kwargs.get('tx_hash')}"
+        else:
+            final_message = f"❌ Transaction Failed: {kwargs.get('failure_reason')}"
+
+        wallet_balance = "\n💰 Wallet Balance:\n" + "\n".join(
+            [f"- {coin.upper()}: {bal:.4f}" for coin, bal in kwargs.get('wallet_balance', {}).items()]
+        )
+
+        return f"{kwargs.get('status_header')}\n\n{base_message}{final_message}{wallet_balance}"
+
+    async def process_signal(self, coin_symbol: str, signal_price: float, sell_coin: str) -> Tuple[bool, str]:
+        """Process a trading signal."""
+        buy_coin = coin_symbol
+        tx_type_str = self._determine_transaction_type(buy_coin, sell_coin)
+
+        if not tx_type_str:
+            failure_reason = f"Invalid pair: neither {buy_coin} nor {sell_coin} is a base currency (e.g., ETH, USDC)."
+            return False, self._create_response_message(
+                status_header="🚨 TRADE SIGNAL REJECTED!",
+                tx_type=f"Buy {buy_coin}",
+                pair=f"{sell_coin}/{buy_coin}",
+                signal_price=signal_price,
+                coingecko_price="N/A",
+                price_diff="N/A",
+                amount=TRADE_AMOUNT,
+                trade_proposal=f"To buy {buy_coin} in exchange for ${TRADE_AMOUNT:.2f} of {sell_coin}.",
+                success=False,
+                failure_reason=failure_reason,
+                wallet_balance=await self.get_wallet_balances()
+            )
+
+        trade_coin = buy_coin if tx_type_str == 'buy' else sell_coin
+        base_coin = sell_coin if tx_type_str == 'buy' else buy_coin
+
+        coingecko_price = await self.price_service.get_price(trade_coin)
+        price_diff_percent = "N/A"
+        price_diff = float('inf')
+
+        if coingecko_price is not None:
+            price_diff = abs(signal_price - coingecko_price)
+            price_diff_percent = f"{(price_diff / coingecko_price) * 100:.2f}%"
+
+        if coingecko_price is not None and (price_diff / coingecko_price) > (PRICE_THRESHOLD / 100):
+            failure_reason = f"Price difference too high: {price_diff_percent} (threshold: {PRICE_THRESHOLD}%)"
+            return False, self._create_response_message(
+                status_header="🚨 TRADE SIGNAL PROCESSED!",
+                tx_type=f"Buy {trade_coin}",
+                pair=f"{base_coin}/{trade_coin}",
+                signal_price=signal_price,
+                coingecko_price=f"${coingecko_price:.6f}",
+                price_diff=price_diff_percent,
+                amount=TRADE_AMOUNT,
+                trade_proposal=f"To buy {trade_coin} in exchange for ${TRADE_AMOUNT:.2f} of {base_coin}.",
+                success=False,
+                failure_reason=failure_reason,
+                wallet_balance=await self.get_wallet_balances()
+            )
+
+        try:
+            sell_token_address = TOKEN_ADDRESS_MAP.get(base_coin)
+            buy_token_address = TOKEN_ADDRESS_MAP.get(trade_coin)
+
+            if not sell_token_address or not buy_token_address:
+                raise ValueError(f"Token address not found for {base_coin} or {trade_coin}")
+
+            # The amount to trade is always TRADE_AMOUNT in the base currency
+            amount_in_base = TRADE_AMOUNT
+
+            # For DEX, amount needs to be in atomic units
+            if base_coin == 'ETH':
+                amount_in_atomic = self.uniswap_exchange.w3.to_wei(amount_in_base, 'ether')
+            else:
+                decimals = await self.uniswap_exchange.get_token_decimals(sell_token_address)
+                amount_in_atomic = int(amount_in_base * (10**decimals))
+
+            tx_hash = await self.uniswap_exchange.execute_swap(
+                sell_token_address=sell_token_address,
+                buy_token_address=buy_token_address,
+                amount_in_atomic=amount_in_atomic,
+                slippage_percentage=SLIPPAGE_PERCENTAGE
+            )
+
+            return True, self._create_response_message(
+                status_header="🚨 TRADE SIGNAL PROCESSED!",
+                tx_type=f"Buy {trade_coin}",
+                pair=f"{base_coin}/{trade_coin}",
+                signal_price=signal_price,
+                coingecko_price=f"${coingecko_price:.6f}" if coingecko_price else "Price unavailable",
+                price_diff=price_diff_percent,
+                amount=TRADE_AMOUNT,
+                trade_proposal=f"To buy {trade_coin} in exchange for ${TRADE_AMOUNT:.2f} of {base_coin}.",
+                success=True,
+                tx_hash=tx_hash,
+                wallet_balance=await self.get_wallet_balances()
+            )
+
+        except Exception as e:
+            logger.error(f"Transaction failed: {e}")
+            return False, self._create_response_message(
+                status_header="🚨 TRADE SIGNAL PROCESSED!",
+                tx_type=f"Buy {trade_coin}",
+                pair=f"{base_coin}/{trade_coin}",
+                signal_price=signal_price,
+                coingecko_price=f"${coingecko_price:.6f}" if coingecko_price else "Price unavailable",
+                price_diff=price_diff_percent,
+                amount=TRADE_AMOUNT,
+                trade_proposal=f"To buy {trade_coin} in exchange for ${TRADE_AMOUNT:.2f} of {base_coin}.",
+                success=False,
+                failure_reason=str(e),
+                wallet_balance=await self.get_wallet_balances()
+            )
