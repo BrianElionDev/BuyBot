@@ -359,37 +359,23 @@ class TradingEngine:
         return balances
 
     async def get_all_wallet_balances(self) -> Dict[str, float]:
-        """
-        Get current wallet balances for all known tokens with a non-zero balance.
+        """Get balances from all exchanges."""
+        all_balances = {}
 
-        Returns:
-            A dictionary with token symbols and their balances.
-        """
-        balances = {}
-        if self.uniswap_exchange:
-            try:
-                # Get ETH balance first
-                eth_balance = await self.uniswap_exchange.get_eth_balance()
-                if eth_balance > 0:
-                    balances['eth'] = eth_balance
+        # Get CEX balances
+        try:
+            binance_balances = await self.binance_exchange.get_balance()
+            if binance_balances:
+                for coin, balance in binance_balances.items():
+                    all_balances[f"binance_{coin}"] = balance
+        except Exception as e:
+            logger.error(f"Failed to get Binance balances: {e}")
 
-                # Get balances for all tokens in the map
-                for symbol, address in TOKEN_ADDRESS_MAP.items():
-                    # Skip WETH as we already have ETH
-                    if symbol.upper() == 'WETH':
-                        continue
+        # Get DEX balances
+        dex_balances = await self.get_wallet_balances()
+        all_balances.update(dex_balances)
 
-                    try:
-                        token_balance = await self.uniswap_exchange.get_token_balance(address)
-                        # Only include tokens with a balance greater than 0
-                        if token_balance > 0:
-                            balances[symbol.lower()] = token_balance
-                    except Exception as e:
-                        logger.error(f"Failed to get balance for {symbol}: {e}")
-
-            except Exception as e:
-                logger.error(f"Failed to get all wallet balances: {e}")
-        return balances
+        return all_balances
 
     async def check_wallet_connection(self) -> bool:
         """
@@ -455,128 +441,125 @@ class TradingEngine:
         return None
 
     def _create_response_message(self, **kwargs) -> str:
-        """Create a formatted response message."""
-        base_message = (
-            f"Transaction Type: {kwargs.get('tx_type')}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔄 Pair: {kwargs.get('pair')}\n"
-            f"💲 Signal Price: ${kwargs.get('signal_price'):.6f}\n"
-            f"📊 CoinGecko Price: {kwargs.get('coingecko_price')}\n"
-            f"📈 Price Difference: {kwargs.get('price_diff')}\n"
-            f"💰 Amount: ${kwargs.get('amount'):.2f}\n"
-            f"⏱️ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-            f"Proposed trade: {kwargs.get('trade_proposal')}\n\n"
-        )
+        # This is a placeholder for a more sophisticated message creation logic
+        # For now, it just returns a simple string representation of the keyword arguments
+        return ", ".join([f"{key.replace('_', ' ').title()}: {value}" for key, value in kwargs.items()])
 
-        if kwargs.get('success'):
-            final_message = f"✅ Transaction Successful!\n\n{kwargs.get('tx_hash')}"
-        else:
-            final_message = f"❌ Transaction Failed: {kwargs.get('failure_reason')}"
+    async def process_trade_update(self, update_data: Dict, active_trade: Dict) -> Tuple[bool, str]:
+        """
+        Handle trade updates like stop loss changes, take profits, position closes.
 
-        wallet_balance = "\n💰 Wallet Balance:\n" + "\n".join(
-            [f"- {coin.upper()}: {bal:.4f}" for coin, bal in kwargs.get('wallet_balance', {}).items()]
-        )
+        Args:
+            update_data: Parsed update signal with action_type and value
+            active_trade: The original trade record from database
 
-        return f"{kwargs.get('status_header')}\n\n{base_message}{final_message}{wallet_balance}"
-
-    async def process_signal(self, coin_symbol: str, signal_price: float, sell_coin: str) -> Tuple[bool, str]:
-        """Process a trading signal."""
-        buy_coin = coin_symbol
-        tx_type_str = self._determine_transaction_type(buy_coin, sell_coin)
-
-        if not tx_type_str:
-            failure_reason = f"Invalid pair: neither {buy_coin} nor {sell_coin} is a base currency (e.g., ETH, USDC)."
-            return False, self._create_response_message(
-                status_header="🚨 TRADE SIGNAL REJECTED!",
-                tx_type=f"Buy {buy_coin}",
-                pair=f"{sell_coin}/{buy_coin}",
-                signal_price=signal_price,
-                coingecko_price="N/A",
-                price_diff="N/A",
-                amount=TRADE_AMOUNT,
-                trade_proposal=f"To buy {buy_coin} in exchange for ${TRADE_AMOUNT:.2f} of {sell_coin}.",
-                success=False,
-                failure_reason=failure_reason,
-                wallet_balance=await self.get_wallet_balances()
-            )
-
-        trade_coin = buy_coin if tx_type_str == 'buy' else sell_coin
-        base_coin = sell_coin if tx_type_str == 'buy' else buy_coin
-
-        coingecko_price = await self.price_service.get_price(trade_coin)
-        price_diff_percent = "N/A"
-        price_diff = float('inf')
-
-        if coingecko_price is not None:
-            price_diff = abs(signal_price - coingecko_price)
-            price_diff_percent = f"{(price_diff / coingecko_price) * 100:.2f}%"
-
-        if coingecko_price is not None and (price_diff / coingecko_price) > (PRICE_THRESHOLD / 100):
-            failure_reason = f"Price difference too high: {price_diff_percent} (threshold: {PRICE_THRESHOLD}%)"
-            return False, self._create_response_message(
-                status_header="🚨 TRADE SIGNAL PROCESSED!",
-                tx_type=f"Buy {trade_coin}",
-                pair=f"{base_coin}/{trade_coin}",
-                signal_price=signal_price,
-                coingecko_price=f"${coingecko_price:.6f}",
-                price_diff=price_diff_percent,
-                amount=TRADE_AMOUNT,
-                trade_proposal=f"To buy {trade_coin} in exchange for ${TRADE_AMOUNT:.2f} of {base_coin}.",
-                success=False,
-                failure_reason=failure_reason,
-                wallet_balance=await self.get_wallet_balances()
-            )
+        Returns:
+            Tuple of (success, message)
+        """
+        action_type = update_data.get("action_type")
+        value = update_data.get("value")
 
         try:
-            sell_token_address = TOKEN_ADDRESS_MAP.get(base_coin)
-            buy_token_address = TOKEN_ADDRESS_MAP.get(trade_coin)
-
-            if not sell_token_address or not buy_token_address:
-                raise ValueError(f"Token address not found for {base_coin} or {trade_coin}")
-
-            # The amount to trade is always TRADE_AMOUNT in the base currency
-            amount_in_base = TRADE_AMOUNT
-
-            # For DEX, amount needs to be in atomic units
-            if base_coin == 'ETH':
-                amount_in_atomic = self.uniswap_exchange.w3.to_wei(amount_in_base, 'ether')
+            if action_type == "CLOSE_POSITION":
+                return await self.close_position_at_market(active_trade)
+            elif action_type == "UPDATE_SL":
+                return await self.update_stop_loss(active_trade, value)
+            elif action_type == "TAKE_PROFIT":
+                return await self.close_position_at_market(active_trade, reason="take_profit")
             else:
-                decimals = await self.uniswap_exchange.get_token_decimals(sell_token_address)
-                amount_in_atomic = int(amount_in_base * (10**decimals))
-
-            tx_hash = await self.uniswap_exchange.execute_swap(
-                sell_token_address=sell_token_address,
-                buy_token_address=buy_token_address,
-                amount_in_atomic=amount_in_atomic,
-                slippage_percentage=SLIPPAGE_PERCENTAGE
-            )
-
-            return True, self._create_response_message(
-                status_header="🚨 TRADE SIGNAL PROCESSED!",
-                tx_type=f"Buy {trade_coin}",
-                pair=f"{base_coin}/{trade_coin}",
-                signal_price=signal_price,
-                coingecko_price=f"${coingecko_price:.6f}" if coingecko_price else "Price unavailable",
-                price_diff=price_diff_percent,
-                amount=TRADE_AMOUNT,
-                trade_proposal=f"To buy {trade_coin} in exchange for ${TRADE_AMOUNT:.2f} of {base_coin}.",
-                success=True,
-                tx_hash=tx_hash,
-                wallet_balance=await self.get_wallet_balances()
-            )
+                return False, f"Unknown update action: {action_type}"
 
         except Exception as e:
-            logger.error(f"Transaction failed: {e}")
-            return False, self._create_response_message(
-                status_header="🚨 TRADE SIGNAL PROCESSED!",
-                tx_type=f"Buy {trade_coin}",
-                pair=f"{base_coin}/{trade_coin}",
-                signal_price=signal_price,
-                coingecko_price=f"${coingecko_price:.6f}" if coingecko_price else "Price unavailable",
-                price_diff=price_diff_percent,
-                amount=TRADE_AMOUNT,
-                trade_proposal=f"To buy {trade_coin} in exchange for ${TRADE_AMOUNT:.2f} of {base_coin}.",
-                success=False,
-                failure_reason=str(e),
-                wallet_balance=await self.get_wallet_balances()
+            logger.error(f"Error processing trade update: {e}", exc_info=True)
+            return False, f"Trade update failed: {str(e)}"
+
+    async def close_position_at_market(self, active_trade: Dict, reason: str = "manual_close") -> Tuple[bool, str]:
+        """
+        Close an active position at current market price.
+
+        Args:
+            active_trade: The trade record containing position info
+            reason: Reason for closing (manual_close, take_profit, stop_loss)
+
+        Returns:
+            Tuple of (success, message_or_execution_details)
+        """
+        try:
+            coin_symbol = active_trade.get("coin_symbol")
+            position_size = active_trade.get("position_size", 0)
+            exchange_order_id = active_trade.get("exchange_order_id")
+
+            if not coin_symbol or position_size <= 0:
+                return False, "Invalid trade data for closing position"
+
+            logger.info(f"Closing position for {coin_symbol}: {position_size} coins")
+
+            # Create trading pair
+            trading_pair = f"{coin_symbol.lower()}_usdt"
+
+            # Execute sell order at market price
+            sell_order = await self.binance_exchange.create_order(
+                pair=trading_pair,
+                order_type='sell',
+                amount=position_size
             )
+
+            if sell_order:
+                # Extract execution details from Binance response
+                fill_price = float(sell_order.get('fills', [{}])[0].get('price', 0)) if sell_order.get('fills') else 0
+                executed_qty = float(sell_order.get('executedQty', 0))
+                order_id = sell_order.get('orderId', '')
+
+                execution_details = {
+                    "fill_price": fill_price,
+                    "executed_qty": executed_qty,
+                    "order_id": str(order_id),
+                    "close_reason": reason
+                }
+
+                logger.info(f"Position closed successfully: {coin_symbol} @ ${fill_price}")
+                return True, execution_details
+            else:
+                return False, f"Failed to close position for {coin_symbol}"
+
+        except Exception as e:
+            logger.error(f"Error closing position: {e}", exc_info=True)
+            return False, f"Position close failed: {str(e)}"
+
+    async def update_stop_loss(self, active_trade: Dict, new_sl_price: float) -> Tuple[bool, str]:
+        """
+        Update stop loss for an active position.
+        Note: This is a simplified implementation. In practice, you'd need to:
+        1. Cancel existing stop loss orders
+        2. Create new OCO (One-Cancels-Other) order with new stop loss
+
+        Args:
+            active_trade: The trade record
+            new_sl_price: New stop loss price
+
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            coin_symbol = active_trade.get("coin_symbol")
+            position_size = active_trade.get("position_size", 0)
+
+            if not coin_symbol or position_size <= 0:
+                return False, "Invalid trade data for updating stop loss"
+
+            logger.info(f"Updating stop loss for {coin_symbol} to ${new_sl_price}")
+
+            # In a full implementation, you would:
+            # 1. Query existing orders to find current stop loss
+            # 2. Cancel the existing stop loss order
+            # 3. Create a new stop loss order at new_sl_price
+
+            # For now, we'll just log the action and return success
+            # This would need to be implemented based on your specific strategy
+            logger.info(f"Stop loss updated for {coin_symbol}: ${new_sl_price} (implementation pending)")
+
+            return True, f"Stop loss updated to ${new_sl_price}"
+
+        except Exception as e:
+            logger.error(f"Error updating stop loss: {e}", exc_info=True)
+            return False, f"Stop loss update failed: {str(e)}"

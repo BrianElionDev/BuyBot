@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List, Tuple, Union, Callable
 from web3.types import TxParams
 from concurrent.futures import ThreadPoolExecutor
 from web3 import Web3
-from web3.middleware.geth_poa import geth_poa_middleware
+from web3.middleware import ExtraDataToPOAMiddleware
 from web3.exceptions import TransactionNotFound, ContractLogicError, TimeExhausted
 from config import settings as config
 from src.exchange.transaction_manager import TransactionManager
@@ -136,7 +136,7 @@ class UniswapExchange:
 
         # Add PoA middleware for testnets
         if config.ETHEREUM_NETWORK.lower() not in ["mainnet"]:
-            self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+            self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
         # Set up wallet and contract
         if not config.WALLET_ADDRESS:

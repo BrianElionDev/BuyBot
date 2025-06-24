@@ -2,18 +2,18 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, Body
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
 import logging
-from ..bot.discord_bot import DiscordBot
+from discord_bot.discord_bot import discord_bot
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# In a real application, you'd manage this instance better (e.g., singleton)
-discord_bot = DiscordBot()
-
 class DiscordSignal(BaseModel):
     timestamp: str
-    content: Dict
+    content: str
     structured: str
+    trader: Optional[str] = None
+    trade: Optional[str] = None  # Reference to original trade signal_id
+    discord_id: Optional[str] = None
 
 class DiscordSignalBatch(BaseModel):
     signals: List[DiscordSignal]
@@ -21,9 +21,11 @@ class DiscordSignalBatch(BaseModel):
 async def process_signal_background(signal: DiscordSignal):
     """Process a signal in the background."""
     try:
-        success, message = await discord_bot.process_signal(signal.dict())
-        if not success:
-            logger.error(f"Failed to process signal: {message}")
+        result = await discord_bot.process_signal(signal.dict())
+        if result["status"] != "success":
+            logger.error(f"Failed to process signal: {result['message']}")
+        else:
+            logger.info(f"Signal processed successfully: {result['message']}")
     except Exception as e:
         logger.error(f"Error processing signal in background: {str(e)}")
 
@@ -89,11 +91,11 @@ async def handle_discord_webhook(payload: Dict[str, Any] = Body(...)):
     # We can process multiple signals in parallel
     for signal_data in payload:
         try:
-            success, message = await discord_bot.process_signal(signal_data)
-            if success:
-                logger.info(f"Signal processed successfully: {message}")
+            result = await discord_bot.process_signal(signal_data)
+            if result["status"] == "success":
+                logger.info(f"Signal processed successfully: {result['message']}")
             else:
-                logger.warning(f"Failed to process signal: {message}")
+                logger.warning(f"Failed to process signal: {result['message']}")
         except Exception as e:
             logger.error(f"Error processing a signal from webhook: {e}", exc_info=True)
             # Continue to next signal

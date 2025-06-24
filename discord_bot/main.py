@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 import logging
-from .discord_endpoint import router as discord_router
+from discord_bot.discord_endpoint import router as discord_router
 
 # Configure logging for the Discord service
 logging.basicConfig(
