@@ -19,7 +19,7 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application for the Discord service."""
     app = FastAPI(title="Rubicon Trading Bot - Discord Service")
 
-    app.include_router(discord_router, prefix="/api/v1/discord", tags=["discord"])
+    app.include_router(discord_router, prefix="/api/v1", tags=["discord"])
 
     @app.get("/")
     async def root():

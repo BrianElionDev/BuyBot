@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .discord_endpoint import router as discord_router
+from discord_bot.discord_endpoint import router as discord_router
 
 app = FastAPI(title="Trading Bot API")
 

@@ -1,103 +1,81 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Body
-from pydantic import BaseModel
-from typing import Dict, List, Optional, Any
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
 import logging
 from discord_bot.discord_bot import discord_bot
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-class DiscordSignal(BaseModel):
+class InitialDiscordSignal(BaseModel):
     timestamp: str
     content: str
     structured: str
+
+class DiscordUpdateSignal(BaseModel):
+    timestamp: str
+    content: str
+    trade: str = Field(..., description="Reference to original trade signal_id")
+    discord_id: str
     trader: Optional[str] = None
-    trade: Optional[str] = None  # Reference to original trade signal_id
-    discord_id: Optional[str] = None
+    structured: Optional[str] = None # Not always present in updates
 
-class DiscordSignalBatch(BaseModel):
-    signals: List[DiscordSignal]
-
-async def process_signal_background(signal: DiscordSignal):
-    """Process a signal in the background."""
+async def process_initial_signal_background(signal: InitialDiscordSignal):
+    """Process an initial signal in the background."""
     try:
-        result = await discord_bot.process_signal(signal.dict())
-        if result["status"] != "success":
-            logger.error(f"Failed to process signal: {result['message']}")
+        result = await discord_bot.process_initial_signal(signal.dict())
+        if result.get("status") != "success":
+            logger.error(f"Failed to process initial signal: {result.get('message')}")
         else:
-            logger.info(f"Signal processed successfully: {result['message']}")
+            logger.info(f"Initial signal processed successfully: {result.get('message')}")
     except Exception as e:
-        logger.error(f"Error processing signal in background: {str(e)}")
+        logger.error(f"Error processing initial signal in background: {str(e)}")
 
-@router.post("/discord/signal")
-async def receive_signal(signal: DiscordSignal, background_tasks: BackgroundTasks):
+async def process_update_signal_background(signal: DiscordUpdateSignal):
+    """Process an update signal in the background."""
+    try:
+        result = await discord_bot.process_update_signal(signal.dict())
+        if result.get("status") != "success":
+            logger.error(f"Failed to process update signal: {result.get('message')}")
+        else:
+            logger.info(f"Update signal processed successfully: {result.get('message')}")
+    except Exception as e:
+        logger.error(f"Error processing update signal in background: {str(e)}")
+
+@router.post("/discord/signal", summary="Receive an initial trade signal")
+async def receive_initial_signal(signal: InitialDiscordSignal, background_tasks: BackgroundTasks):
     """
-    Receive a single Discord signal.
+    Receives an initial Discord signal to open a new trade.
 
-    Args:
-        signal: The Discord signal to process
-        background_tasks: FastAPI background tasks
-
-    Returns:
-        Dict containing processing status
+    This endpoint should be used when a new trade is announced. It finds a pre-existing
+    trade row in the database by its timestamp, parses the content using AI to determine
+    trade parameters, and executes the trade via the trading engine.
     """
     try:
-        # Add signal processing to background tasks
-        background_tasks.add_task(process_signal_background, signal)
-
+        background_tasks.add_task(process_initial_signal_background, signal)
         return {
             "status": "success",
-            "message": "Signal received and queued for processing"
+            "message": "Initial signal received and queued for processing"
         }
     except Exception as e:
-        logger.error(f"Error receiving signal: {str(e)}")
+        logger.error(f"Error receiving initial signal: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/discord/signals")
-async def receive_signals(signals: DiscordSignalBatch, background_tasks: BackgroundTasks):
+@router.post("/discord/signal/update", summary="Receive a trade update signal")
+async def receive_update_signal(signal: DiscordUpdateSignal, background_tasks: BackgroundTasks):
     """
-    Receive multiple Discord signals.
+    Receives a follow-up signal to update an existing trade.
 
-    Args:
-        signals: Batch of Discord signals to process
-        background_tasks: FastAPI background tasks
-
-    Returns:
-        Dict containing processing status
+    This endpoint handles updates for trades that are already active, such as
+    "stop loss hit" or "position closed". It finds the original trade using the
+    `trade` (signal_id) field and updates its status in the database.
     """
     try:
-        # Add each signal to background tasks
-        for signal in signals.signals:
-            background_tasks.add_task(process_signal_background, signal)
-
+        background_tasks.add_task(process_update_signal_background, signal)
         return {
             "status": "success",
-            "message": f"{len(signals.signals)} signals received and queued for processing"
+            "message": "Update signal received and queued for processing"
         }
     except Exception as e:
-        logger.error(f"Error receiving signals: {str(e)}")
+        logger.error(f"Error receiving update signal: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/webhook", status_code=200)
-async def handle_discord_webhook(payload: Dict[str, Any] = Body(...)):
-    """
-    Handles incoming signals from a Discord webhook.
-    The payload is expected to be a list of signal objects.
-    """
-    logger.info(f"Received webhook payload: {payload}")
-    if not isinstance(payload, list):
-        raise HTTPException(status_code=400, detail="Payload must be a list of signals.")
-
-    # We can process multiple signals in parallel
-    for signal_data in payload:
-        try:
-            result = await discord_bot.process_signal(signal_data)
-            if result["status"] == "success":
-                logger.info(f"Signal processed successfully: {result['message']}")
-            else:
-                logger.warning(f"Failed to process signal: {result['message']}")
-        except Exception as e:
-            logger.error(f"Error processing a signal from webhook: {e}", exc_info=True)
-            # Continue to next signal
-
-    return {"status": "Webhook processed"}

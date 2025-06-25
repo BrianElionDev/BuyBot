@@ -30,54 +30,22 @@ class DiscordBot:
         self.signal_parser = DiscordSignalParser()
         logger.info("DiscordBot initialized with AI Signal Parser.")
 
-    async def process_signal(self, signal_data: Dict[str, Any]) -> Dict[str, str]:
+    async def process_initial_signal(self, signal_data: Dict[str, Any]) -> Dict[str, str]:
         """
-        Process Discord trading signal and update existing database rows.
-
-        Logic:
-        - If signal has 'trade' field: This is a follow-up signal, find original by signal_id
-        - If signal has no 'trade' field: This is initial signal, find by timestamp
-        """
-        try:
-            # Validate and parse the signal
-            signal = DiscordSignal(**signal_data)
-            logger.info(f"Processing signal: {signal.structured}")
-
-            # Determine signal type and find the corresponding trade
-            if signal.trade:
-                # Follow-up signal - find original trade by signal_id
-                trade_row = await find_trade_by_signal_id(signal.trade)
-                if not trade_row:
-                    error_msg = f"No original trade found for signal_id: {signal.trade}"
-                    logger.error(error_msg)
-                    return {"status": "error", "message": error_msg}
-
-                # Process as update signal
-                return await self._process_update_signal(signal, trade_row)
-
-            else:
-                # Initial signal - find trade by timestamp
-                trade_row = await find_trade_by_timestamp(signal.timestamp)
-                if not trade_row:
-                    clean_timestamp = signal.timestamp.replace('T', ' ').rstrip('Z')
-                    error_msg = f"No existing trade found for timestamp: '{signal.timestamp}'. Query was performed using cleaned timestamp: '{clean_timestamp}'"
-                    logger.error(error_msg)
-                    return {"status": "error", "message": f"No existing trade found for timestamp: {signal.timestamp}"}
-
-                # Process as initial execution signal
-                return await self._process_initial_signal(signal, trade_row)
-
-        except Exception as e:
-            error_msg = f"Error processing signal: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return {"status": "error", "message": error_msg}
-
-    async def _process_initial_signal(self, signal: DiscordSignal, trade_row: Dict[str, Any]) -> Dict[str, str]:
-        """
-        Process initial trading signal by parsing the content with AI
+        Process initial trading signal by finding the trade, parsing the content with AI,
         and then executing the trade.
         """
         try:
+            signal = DiscordSignal(**signal_data)
+            logger.info(f"Processing initial signal: {signal.structured}")
+
+            trade_row = await find_trade_by_timestamp(signal.timestamp)
+            if not trade_row:
+                clean_timestamp = signal.timestamp.replace('T', ' ').rstrip('Z')
+                error_msg = f"No existing trade found for timestamp: '{signal.timestamp}'. Query was performed using cleaned timestamp: '{clean_timestamp}'"
+                logger.error(error_msg)
+                return {"status": "error", "message": f"No existing trade found for timestamp: {signal.timestamp}"}
+
             # 1. Parse the signal content using the AI parser
             logger.info(f"Parsing signal content with AI: '{signal.content}'")
             parsed_data = await self.signal_parser.parse_new_trade_signal(signal.content)
@@ -127,20 +95,35 @@ class DiscordBot:
                 }
 
         except Exception as e:
-            # Update database with failed status
-            updates = {"status": "FAILED"}
-            await update_existing_trade(trade_id=trade_row["id"], updates=updates)
+            # This part is tricky because we might not have trade_row['id'] if the timestamp search fails
+            trade_id = locals().get('trade_row', {}).get('id')
+            if trade_id:
+                # Update database with failed status
+                updates = {"status": "FAILED"}
+                await update_existing_trade(trade_id=trade_id, updates=updates)
 
             error_msg = f"Error executing initial trade: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {"status": "error", "message": error_msg}
 
-    async def _process_update_signal(self, signal: DiscordSignal, trade_row: Dict[str, Any]) -> Dict[str, str]:
+    async def process_update_signal(self, signal_data: Dict[str, Any]) -> Dict[str, str]:
         """
         Process follow-up signal (stop loss hit, position closed, etc.)
         Updates the existing trade row with new information.
         """
         try:
+            signal = DiscordSignal(**signal_data)
+            logger.info(f"Processing update signal: {signal.content}")
+
+            if not signal.trade:
+                 return {"status": "error", "message": "Update signal must contain a 'trade' field (original signal ID)"}
+
+            trade_row = await find_trade_by_signal_id(signal.trade)
+            if not trade_row:
+                error_msg = f"No original trade found for signal_id: {signal.trade}"
+                logger.error(error_msg)
+                return {"status": "error", "message": error_msg}
+
             content_lower = signal.content.lower()
 
             # Determine update type based on content
@@ -150,7 +133,13 @@ class DiscordBot:
 
                 # Close position on exchange if still active
                 if trade_row.get("status") == "ACTIVE":
-                    symbol = f"{trade_row['coin_symbol']}USDT"
+                    # This needs coin_symbol from the parsed_signal of the trade_row
+                    parsed_signal = trade_row.get('parsed_signal', {})
+                    coin_symbol = parsed_signal.get('coin_symbol')
+                    if not coin_symbol:
+                        return {"status": "error", "message": f"Could not determine coin_symbol for trade ID {trade_row['id']}"}
+
+                    symbol = f"{coin_symbol}USDT"
                     close_result = await self.trading_engine.close_position_at_market(symbol)
 
                     exit_price = close_result.get("fill_price", 0)
@@ -175,7 +164,12 @@ class DiscordBot:
 
                 # Similar logic to stop loss
                 if trade_row.get("status") == "ACTIVE":
-                    symbol = f"{trade_row['coin_symbol']}USDT"
+                    parsed_signal = trade_row.get('parsed_signal', {})
+                    coin_symbol = parsed_signal.get('coin_symbol')
+                    if not coin_symbol:
+                        return {"status": "error", "message": f"Could not determine coin_symbol for trade ID {trade_row['id']}"}
+
+                    symbol = f"{coin_symbol}USDT"
                     close_result = await self.trading_engine.close_position_at_market(symbol)
 
                     exit_price = close_result.get("fill_price", 0)
