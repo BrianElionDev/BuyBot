@@ -7,14 +7,15 @@ from config import settings as config
 logger = logging.getLogger(__name__)
 
 class BinanceExchange:
-    def __init__(self):
+    def __init__(self, market_type='spot'):
         """Initialize Binance exchange client."""
+        self.market_type = market_type
         self.client = Client(
             config.BINANCE_API_KEY,
             config.BINANCE_API_SECRET,
             testnet=config.BINANCE_TESTNET  # Use testnet if configured
         )
-        logger.info("BinanceExchange initialized")
+        logger.info(f"BinanceExchange initialized for {market_type}")
 
     async def get_balance(self) -> Dict[str, float]:
         """
@@ -180,6 +181,61 @@ class BinanceExchange:
         except BinanceAPIException as e:
             logger.error(f"Failed to cancel order: {e}")
             return False
+
+    async def create_futures_order(
+        self,
+        pair: str,
+        order_type: str,
+        amount: float,
+        price: Optional[float] = None,
+        leverage: int = 1
+    ) -> Optional[Dict]:
+        """
+        Create a new futures order.
+        Args:
+            pair: Trading pair (e.g., 'BTCUSDT')
+            order_type: 'buy' or 'sell'
+            amount: Order amount
+            price: Price for limit orders (optional)
+            leverage: The leverage to use for the order
+        Returns:
+            Order information dictionary or None if failed
+        """
+        try:
+            # Set leverage
+            self.client.futures_change_leverage(symbol=pair, leverage=leverage)
+
+            # Convert pair format (e.g., btc_usd -> BTCUSDT)
+            formatted_pair = pair.replace('_', '').upper()
+
+            # Convert order type to Binance format
+            side = Client.SIDE_BUY if order_type.lower() == 'buy' else Client.SIDE_SELL
+
+            if price:
+                # Place limit order
+                order = self.client.futures_create_order(
+                    symbol=formatted_pair,
+                    side=side,
+                    type=Client.ORDER_TYPE_LIMIT,
+                    timeInForce=Client.TIME_IN_FORCE_GTC,
+                    quantity=amount,
+                    price=price
+                )
+            else:
+                # Place market order
+                order = self.client.futures_create_order(
+                    symbol=formatted_pair,
+                    side=side,
+                    type=Client.ORDER_TYPE_MARKET,
+                    quantity=amount
+                )
+
+            logger.info(f"Futures order placed successfully: {order}")
+            return order
+
+        except BinanceAPIException as e:
+            logger.error(f"Failed to create futures order: {e}")
+            return None
 
     async def close(self):
         """Close the exchange connection."""
