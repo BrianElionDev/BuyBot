@@ -20,7 +20,7 @@ except ImportError:
     logger.warning("UniswapExchange not available. DEX functionality will be disabled.")
 
 class TradingEngine:
-    def __init__(self, loop: Optional[asyncio.AbstractEventLoop] = None):
+    def __init__(self, api_key: str, api_secret: str, is_testnet: bool, loop: Optional[asyncio.AbstractEventLoop] = None):
         """Initialize trading engine with both CEX and DEX support."""
         # Initialize event loop
         self.loop = loop or asyncio.get_event_loop()
@@ -32,7 +32,9 @@ class TradingEngine:
         self.trade_cooldowns: Dict[str, float] = {}
 
         # Initialize CEX (Binance)
-        self.binance_exchange = BinanceExchange()
+        self.binance_exchange = BinanceExchange(
+            api_key=api_key, api_secret=api_secret, is_testnet=is_testnet
+        )
         logger.info("BinanceExchange initialized")
 
         # Initialize DEX (Uniswap) if available
@@ -59,6 +61,7 @@ class TradingEngine:
         return time.time() - last_trade > config.TRADE_COOLDOWN
 
     async def process_signal(self, coin_symbol: str, signal_price: float,
+                           position_type: str = "SPOT",
                            exchange_type: str = "None", sell_coin: str = "None",
                            order_type: str = "MARKET", stop_loss: Optional[float] = None,
                            take_profits: Optional[List[float]] = None,
@@ -69,6 +72,7 @@ class TradingEngine:
         Args:
             coin_symbol: Symbol of coin to buy (e.g., "DSYNC")
             signal_price: Price from the signal message
+            position_type: 'LONG', 'SHORT', or 'SPOT'
             exchange_type: "cex" (Binance) or "dex" (Uniswap), defaults to config.PREFERRED_EXCHANGE_TYPE
             sell_coin: Symbol of coin to sell (e.g., "ETH", "USDC"), required for DEX trades
             order_type: Type of order ("MARKET", "LIMIT", "SPOT")
@@ -107,10 +111,11 @@ class TradingEngine:
                 return False, reason
             return await self._process_dex_signal(sell_coin, coin_symbol, signal_price)
         else:  # cex
-            return await self._process_cex_signal(coin_symbol, signal_price, order_type, stop_loss, take_profits, dca_range)
+            return await self._process_cex_signal(coin_symbol, signal_price, position_type, order_type, stop_loss, take_profits, dca_range)
 
     async def _process_cex_signal(self, coin_symbol: str, signal_price: float,
-                                order_type: str = "MARKET", stop_loss: Optional[float] = None,
+                                position_type: str, order_type: str = "MARKET",
+                                stop_loss: Optional[float] = None,
                                 take_profits: Optional[List[float]] = None,
                                 dca_range: Optional[List[float]] = None) -> Tuple[bool, Optional[str]]:
         """Process a trading signal using the centralized exchange (Binance)."""
@@ -143,15 +148,24 @@ class TradingEngine:
             logger.warning(reason)
             return False, reason
 
+        # Determine if it's a futures or spot trade
+        is_futures = position_type.upper() in ['LONG', 'SHORT']
+
         # Check account balance
-        balances = await self.binance_exchange.get_balance()
+        if is_futures:
+            balances = await self.binance_exchange.get_futures_balance()
+        else:
+            balances = await self.binance_exchange.get_spot_balance()
+
         if not balances:
-            reason = "Failed to get account balances from Binance"
+            market_type = "Futures" if is_futures else "Spot"
+            reason = f"Failed to get account balances from Binance {market_type}"
             logger.error(reason)
             return False, reason
 
         usdt_balance = balances.get('usdt', 0)
-        logger.info(f"Available USDT balance on Binance: ${usdt_balance}")
+        market_type = "Futures" if is_futures else "Spot"
+        logger.info(f"Available USDT balance on Binance {market_type}: ${usdt_balance}")
 
         # Calculate trade amount
         trade_amount = min(
@@ -180,12 +194,21 @@ class TradingEngine:
 
         logger.info(f"Executing CEX trade: {coin_amount:.8f} {coin_symbol} @ ${buy_price}")
 
-        order_result = await self.binance_exchange.create_order(
-            pair=trading_pair,
-            order_type='buy',
-            amount=coin_amount,
-            price=buy_price
-        )
+        if is_futures:
+            order_result = await self.binance_exchange.create_futures_order(
+                pair=trading_pair,
+                order_type='buy' if position_type.upper() == 'LONG' else 'sell',
+                amount=coin_amount,
+                price=buy_price,
+                leverage=20 # Default leverage, can be made configurable
+            )
+        else:
+            order_result = await self.binance_exchange.create_order(
+                pair=trading_pair,
+                order_type='buy',
+                amount=coin_amount,
+                price=buy_price
+            )
 
         if order_result:
             self.trade_cooldowns[f"cex_{coin_symbol}"] = time.time()
@@ -364,12 +387,12 @@ class TradingEngine:
 
         # Get CEX balances
         try:
-            binance_balances = await self.binance_exchange.get_balance()
+            binance_balances = await self.binance_exchange.get_spot_balance()
             if binance_balances:
                 for coin, balance in binance_balances.items():
-                    all_balances[f"binance_{coin}"] = balance
+                    all_balances[f"binance_spot_{coin}"] = balance
         except Exception as e:
-            logger.error(f"Failed to get Binance balances: {e}")
+            logger.error(f"Failed to get Binance Spot balances: {e}")
 
         # Get DEX balances
         dex_balances = await self.get_wallet_balances()

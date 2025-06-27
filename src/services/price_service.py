@@ -157,31 +157,52 @@ class PriceService:
                 None, self.cg.get_coins_list
             )
 
-            # First pass: Exact symbol match (best match)
-            for coin in coins_list:
-                if coin['symbol'].upper() == symbol:
-                    # Verify this isn't a scam or fake coin
+            # Strict matching: find coins where the symbol from the API matches our query
+            candidates = [
+                coin for coin in coins_list
+                if coin['symbol'].upper() == symbol
+            ]
+
+            if not candidates:
+                logger.warning(f"No coins found with symbol '{symbol}' on CoinGecko.")
+                return None
+
+            # If there's only one candidate, it's our best bet, but we still check its legitimacy.
+            if len(candidates) == 1:
+                if self._is_likely_legitimate_coin(candidates[0]):
+                    coin_id = candidates[0]['id']
+                    logger.info(f"Single exact match found for {symbol}: {coin_id}")
+                    self._coin_cache[symbol] = coin_id
+                    return coin_id
+                else:
+                    logger.warning(f"Single candidate for {symbol} rejected as illegitimate: {candidates[0]['id']}")
+                    return None
+
+            # If multiple candidates, we need to find the best one.
+            # We prefer exact name matches or highest market cap.
+            logger.info(f"Found {len(candidates)} candidates for symbol {symbol}. Evaluating best match...")
+
+            # First, check for an exact name match (case-insensitive)
+            for coin in candidates:
+                if coin['name'].upper() == symbol:
                     if self._is_likely_legitimate_coin(coin):
-                        self._coin_cache[symbol] = coin['id']
-                        logger.info(f"Exact match: {symbol} -> {coin['id']}")
-                        return coin['id']
+                        coin_id = coin['id']
+                        logger.info(f"Exact name match for {symbol}: {coin_id}")
+                        self._coin_cache[symbol] = coin_id
+                        return coin_id
 
-            # Second pass: Market cap ordered exact symbol match
-            # Get market data for all coins with matching symbol
-            matching_symbols = [coin for coin in coins_list if coin['symbol'].upper() == symbol]
-            if matching_symbols:
-                # Get market data for candidates
-                try:
-                    best_match = await self._get_highest_market_cap_coin(matching_symbols)
-                    if best_match:
-                        self._coin_cache[symbol] = best_match
-                        logger.info(f"Market cap match: {symbol} -> {best_match}")
-                        return best_match
-                except Exception as e:
-                    logger.warning(f"Failed to get market data: {e}")
+            # If no exact name match, fall back to the highest market cap
+            try:
+                best_match_id = await self._get_highest_market_cap_coin(candidates)
+                if best_match_id:
+                    self._coin_cache[symbol] = best_match_id
+                    logger.info(f"Best match by market cap for {symbol}: {best_match_id}")
+                    return best_match_id
+            except Exception as e:
+                logger.error(f"Failed to determine best match by market cap for {symbol}: {e}")
 
-            # No exact match found
-            logger.warning(f"No exact match found for {symbol}")
+            # If all else fails, log a warning and return None
+            logger.warning(f"Could not determine a legitimate coin for symbol {symbol} from multiple candidates.")
             return None
 
         except Exception as e:
