@@ -137,10 +137,25 @@ async def find_trade_by_signal_id(signal_id: str) -> Optional[Dict[str, Any]]:
 
 async def find_trade_by_discord_id(discord_id: str) -> Optional[Dict[str, Any]]:
     """
-    Find trade by the 'trade' field in follow-up signals.
-    This is a wrapper that calls find_trade_by_signal_id for backward compatibility.
+    Find a trade by its unique Discord message ID.
     """
-    return await find_trade_by_signal_id(discord_id)
+    if not supabase:
+        logger.error("Supabase client not available.")
+        return None
+
+    try:
+        response = supabase.from_("trades").select("*").eq("discord_id", discord_id).limit(1).execute()
+
+        if response.data:
+            logger.info(f"Found trade by discord_id {discord_id}: ID {response.data[0]['id']}")
+            return response.data[0]
+        else:
+            logger.info(f"No trade found for discord_id: {discord_id}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error finding trade by discord_id {discord_id}: {e}", exc_info=True)
+        return None
 
 async def update_existing_trade(signal_id: str = None, trade_id: int = None, updates: Dict = None) -> bool:
     """

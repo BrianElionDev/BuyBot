@@ -7,10 +7,11 @@ from fastapi import HTTPException
 from src.bot.trading_engine import TradingEngine
 from .database import (
     find_trade_by_timestamp,
-    find_trade_by_signal_id,
+    find_trade_by_discord_id,
     update_existing_trade
 )
 from .discord_signal_parser import DiscordSignalParser
+from config import settings as config
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -26,7 +27,11 @@ class DiscordSignal(BaseModel):
 
 class DiscordBot:
     def __init__(self):
-        self.trading_engine = TradingEngine()
+        self.trading_engine = TradingEngine(
+            api_key=config.BINANCE_API_KEY,
+            api_secret=config.BINANCE_API_SECRET,
+            is_testnet=config.BINANCE_TESTNET
+        )
         self.signal_parser = DiscordSignalParser()
         logger.info("DiscordBot initialized with AI Signal Parser.")
 
@@ -61,6 +66,7 @@ class DiscordBot:
             engine_params = {
                 'coin_symbol': parsed_data.get('coin_symbol'),
                 'signal_price': float(parsed_data.get('entry_prices', [0])[0]),
+                'position_type': parsed_data.get('position_type', 'SPOT'),
                 'sell_coin': 'USDT',
                 'order_type': parsed_data.get('order_type', 'LIMIT'),
                 'stop_loss': parsed_data.get('stop_loss'),
@@ -115,12 +121,12 @@ class DiscordBot:
             signal = DiscordSignal(**signal_data)
             logger.info(f"Processing update signal: {signal.content}")
 
-            if not signal.trade:
-                 return {"status": "error", "message": "Update signal must contain a 'trade' field (original signal ID)"}
+            if not signal.discord_id:
+                 return {"status": "error", "message": "Update signal must contain a 'discord_id' field."}
 
-            trade_row = await find_trade_by_signal_id(signal.trade)
+            trade_row = await find_trade_by_discord_id(signal.discord_id)
             if not trade_row:
-                error_msg = f"No original trade found for signal_id: {signal.trade}"
+                error_msg = f"No original trade found for discord_id: {signal.discord_id}"
                 logger.error(error_msg)
                 return {"status": "error", "message": error_msg}
 

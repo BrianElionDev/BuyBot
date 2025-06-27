@@ -4,7 +4,8 @@ from telethon import TelegramClient, events
 from telethon.tl.types import PeerChannel
 from config.settings import (
     TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE,
-    TARGET_GROUP_ID, NOTIFICATION_GROUP_ID
+    TARGET_GROUP_ID, NOTIFICATION_GROUP_ID,
+    BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET
 )
 from .signal_parser import SignalParser
 from .trading_engine import TradingEngine
@@ -17,7 +18,12 @@ class TelegramBot:
         self.loop = loop or asyncio.get_event_loop()
         self.client = TelegramClient('trading_bot_session', TELEGRAM_API_ID, TELEGRAM_API_HASH, loop=self.loop)
         self.signal_parser = SignalParser()
-        self.trading_engine = TradingEngine(loop=self.loop)
+        self.trading_engine = TradingEngine(
+            api_key=BINANCE_API_KEY,
+            api_secret=BINANCE_API_SECRET,
+            is_testnet=BINANCE_TESTNET,
+            loop=self.loop
+        )
         self.target_group_id = TARGET_GROUP_ID
         self.notification_group_id = NOTIFICATION_GROUP_ID if NOTIFICATION_GROUP_ID else None
 
