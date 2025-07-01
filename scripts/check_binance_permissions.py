@@ -17,7 +17,7 @@ def check_permissions():
 
     api_key = os.getenv("BINANCE_API_KEY")
     api_secret = os.getenv("BINANCE_API_SECRET")
-    is_testnet = False
+    is_testnet = True
 
     if not api_key or not api_secret:
         logging.error("API Key or Secret not found in .env file.")

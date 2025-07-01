@@ -192,14 +192,14 @@ class PriceService:
                         return coin_id
 
             # If no exact name match, fall back to the highest market cap
-            try:
-                best_match_id = await self._get_highest_market_cap_coin(candidates)
-                if best_match_id:
-                    self._coin_cache[symbol] = best_match_id
-                    logger.info(f"Best match by market cap for {symbol}: {best_match_id}")
-                    return best_match_id
-            except Exception as e:
-                logger.error(f"Failed to determine best match by market cap for {symbol}: {e}")
+                try:
+                    best_match_id = await self._get_highest_market_cap_coin(candidates)
+                    if best_match_id:
+                        self._coin_cache[symbol] = best_match_id
+                        logger.info(f"Best match by market cap for {symbol}: {best_match_id}")
+                        return best_match_id
+                except Exception as e:
+                    logger.error(f"Failed to determine best match by market cap for {symbol}: {e}")
 
             # If all else fails, log a warning and return None
             logger.warning(f"Could not determine a legitimate coin for symbol {symbol} from multiple candidates.")
