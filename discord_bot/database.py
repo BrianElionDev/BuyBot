@@ -198,15 +198,39 @@ async def save_signal_to_db(signal_data: Dict[str, Any]) -> Optional[Dict[str, A
 
     try:
         response = supabase.from_("trades").insert(signal_data).execute()
+
         if response.data:
-            logger.info(f"Successfully saved signal to DB with trade_group_id: {signal_data.get('trade_group_id')}")
+            logger.info(f"Successfully saved signal to database. ID: {response.data[0]['id']}")
             return response.data[0]
         else:
-            logger.error(f"Failed to save signal to DB. Response: {response}")
+            logger.error("Failed to save signal to database: no data returned")
             return None
+
     except Exception as e:
-        logger.error(f"Error saving signal to DB: {e}", exc_info=True)
+        logger.error(f"Error saving signal to database: {e}", exc_info=True)
         return None
+
+async def save_alert_to_database(alert_data: Dict[str, Any]) -> bool:
+    """
+    Saves an alert record to the alerts table.
+    """
+    if not supabase:
+        logger.error("Supabase client not available.")
+        return False
+
+    try:
+        response = supabase.from_("alerts").insert(alert_data).execute()
+
+        if response.data:
+            logger.info(f"Successfully saved alert to database. ID: {response.data[0]['id']}")
+            return True
+        else:
+            logger.error("Failed to save alert to database: no data returned")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error saving alert to database: {e}", exc_info=True)
+        return False
 
 async def update_trade_status(trade_group_id: str, is_active: bool):
     """

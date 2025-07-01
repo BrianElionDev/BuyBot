@@ -208,7 +208,7 @@ class TradingEngine:
                 order_type='buy',
                 amount=coin_amount,
                 price=buy_price
-            )
+        )
 
         if order_result:
             self.trade_cooldowns[f"cex_{coin_symbol}"] = time.time()

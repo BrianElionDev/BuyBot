@@ -1,29 +1,21 @@
 import asyncio
 import logging
-from typing import Dict, Any, Optional
-from pydantic import BaseModel, Field
-from fastapi import HTTPException
+import time
+from typing import Dict, Any
 
 from src.bot.trading_engine import TradingEngine
 from .database import (
     find_trade_by_timestamp,
     find_trade_by_discord_id,
-    update_existing_trade
+    update_existing_trade,
+    save_alert_to_database
 )
 from .discord_signal_parser import DiscordSignalParser
+from .models import InitialDiscordSignal, DiscordUpdateSignal
 from config import settings as config
 
 # Setup logging
 logger = logging.getLogger(__name__)
-
-class DiscordSignal(BaseModel):
-    """Model for incoming Discord signals"""
-    timestamp: str
-    content: str  # This is a string, not a dict
-    structured: str
-    trader: Optional[str] = None
-    trade: Optional[str] = None  # Reference to original trade signal_id
-    discord_id: Optional[str] = None
 
 class DiscordBot:
     def __init__(self):
@@ -35,13 +27,89 @@ class DiscordBot:
         self.signal_parser = DiscordSignalParser()
         logger.info("DiscordBot initialized with AI Signal Parser.")
 
+    def parse_alert_content(self, content, original_trade_data):
+        """
+        Parse alert content and determine what action should be taken.
+        Returns structured data for logging.
+        """
+        content_lower = content.lower()
+
+        # Safely extract coin symbol with fallback
+        coin_symbol = 'UNKNOWN'
+        if original_trade_data and isinstance(original_trade_data.get('parsed_signal'), dict):
+            coin_symbol = original_trade_data.get('parsed_signal', {}).get('coin_symbol', 'UNKNOWN')
+
+        # Determine action type and details
+        if "stopped out" in content_lower or "stop loss" in content_lower or "stopped be" in content_lower:
+            return {
+                "action_type": "stop_loss_hit",
+                "action_description": f"Stop loss hit for {coin_symbol}",
+                "binance_action": "MARKET_SELL",
+                "position_status": "CLOSED",
+                "reason": "Stop loss triggered"
+            }
+
+        elif "closed" in content_lower and ("profit" in content_lower or "be" in content_lower):
+            return {
+                "action_type": "position_closed",
+                "action_description": f"Position closed for {coin_symbol}",
+                "binance_action": "MARKET_SELL",
+                "position_status": "CLOSED",
+                "reason": "Manual close" if "profit" in content_lower else "Break even close"
+            }
+
+        elif "tp1" in content_lower:
+            return {
+                "action_type": "take_profit_1",
+                "action_description": f"Take Profit 1 hit for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP1 target reached"
+            }
+
+        elif "tp2" in content_lower:
+            return {
+                "action_type": "take_profit_2",
+                "action_description": f"Take Profit 2 hit for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP2 target reached"
+            }
+
+        elif "stops moved to be" in content_lower or "sl to be" in content_lower:
+            return {
+                "action_type": "stop_loss_update",
+                "action_description": f"Stop loss moved to break even for {coin_symbol}",
+                "binance_action": "UPDATE_STOP_ORDER",
+                "position_status": "ACTIVE",
+                "reason": "Risk management - move to break even"
+            }
+
+        elif "limit order cancelled" in content_lower:
+            return {
+                "action_type": "order_cancelled",
+                "action_description": f"Limit order cancelled for {coin_symbol}",
+                "binance_action": "CANCEL_ORDER",
+                "position_status": "CANCELLED",
+                "reason": "Order cancellation"
+            }
+
+        else:
+            return {
+                "action_type": "unknown_update",
+                "action_description": f"Update for {coin_symbol}: {content}",
+                "binance_action": "NO_ACTION",
+                "position_status": "UNKNOWN",
+                "reason": "Unrecognized alert type"
+            }
+
     async def process_initial_signal(self, signal_data: Dict[str, Any]) -> Dict[str, str]:
         """
         Process initial trading signal by finding the trade, parsing the content with AI,
         and then executing the trade.
         """
         try:
-            signal = DiscordSignal(**signal_data)
+            signal = InitialDiscordSignal(**signal_data)
             logger.info(f"Processing initial signal: {signal.structured}")
 
             trade_row = await find_trade_by_timestamp(signal.timestamp)
@@ -115,31 +183,57 @@ class DiscordBot:
     async def process_update_signal(self, signal_data: Dict[str, Any]) -> Dict[str, str]:
         """
         Process follow-up signal (stop loss hit, position closed, etc.)
-        Updates the existing trade row with new information.
+        Updates the existing trade row with new information and stores the alert.
         """
         try:
-            signal = DiscordSignal(**signal_data)
+            signal = DiscordUpdateSignal(**signal_data)
             logger.info(f"Processing update signal: {signal.content}")
 
-            if not signal.discord_id:
-                 return {"status": "error", "message": "Update signal must contain a 'discord_id' field."}
-
-            trade_row = await find_trade_by_discord_id(signal.discord_id)
+            # The 'trade' field in the update signal refers to the discord_id of the original trade
+            trade_row = await find_trade_by_discord_id(signal.trade)
             if not trade_row:
-                error_msg = f"No original trade found for discord_id: {signal.discord_id}"
+                error_msg = f"No original trade found for discord_id: {signal.trade}"
                 logger.error(error_msg)
                 return {"status": "error", "message": error_msg}
 
-            content_lower = signal.content.lower()
+            # Parse the alert content to determine action
+            parsed_action = self.parse_alert_content(signal.content, trade_row)
 
-            # Determine update type based on content
-            if "stopped out" in content_lower or "stop loss" in content_lower:
-                # Position was stopped out
+            # Create the parsed_alert data structure
+            parsed_alert_data = {
+                "original_content": signal.content,
+                "processed_at": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "action_determined": parsed_action,
+                "original_trade_id": trade_row.get("id"),
+                "coin_symbol": trade_row.get('parsed_signal', {}).get('coin_symbol', 'UNKNOWN') if trade_row.get('parsed_signal') else 'UNKNOWN',
+                "trader": signal.trader
+            }
+
+            # Save the alert to the alerts table with parsed data
+            alert_saved = await save_alert_to_database({
+                "discord_id": signal.discord_id,
+                "trade": signal.trade,
+                "trader": signal.trader,
+                "content": signal.content,
+                "timestamp": signal.timestamp,
+                "parsed_alert": parsed_alert_data
+            })
+
+            if not alert_saved:
+                logger.warning("Failed to save alert to database, but continuing with processing")
+
+            # Execute trading actions based on the parsed content
+            trade_updates = {}
+
+            content_lower = signal.content.lower()
+            action_type = parsed_action["action_type"]
+
+            # Determine what trading action to take based on the parsed action
+            if action_type == "stop_loss_hit":
                 logger.info(f"Processing stop loss for trade {trade_row['id']}")
 
                 # Close position on exchange if still active
                 if trade_row.get("status") == "ACTIVE":
-                    # This needs coin_symbol from the parsed_signal of the trade_row
                     parsed_signal = trade_row.get('parsed_signal', {})
                     coin_symbol = parsed_signal.get('coin_symbol')
                     if not coin_symbol:
@@ -155,20 +249,17 @@ class DiscordBot:
                         position_size=trade_row.get("position_size", 0)
                     )
 
-                    updates = {
+                    trade_updates = {
                         "status": "CLOSED",
                         "exit_price": exit_price,
                         "pnl_usd": pnl
                     }
                 else:
-                    # Trade already closed, just update status
-                    updates = {"status": "CLOSED"}
+                    trade_updates = {"status": "CLOSED"}
 
-            elif "closed" in content_lower or "exit" in content_lower:
-                # Position was manually closed
+            elif action_type == "position_closed":
                 logger.info(f"Processing manual close for trade {trade_row['id']}")
 
-                # Similar logic to stop loss
                 if trade_row.get("status") == "ACTIVE":
                     parsed_signal = trade_row.get('parsed_signal', {})
                     coin_symbol = parsed_signal.get('coin_symbol')
@@ -185,32 +276,48 @@ class DiscordBot:
                         position_size=trade_row.get("position_size", 0)
                     )
 
-                    updates = {
+                    trade_updates = {
                         "status": "CLOSED",
                         "exit_price": exit_price,
                         "pnl_usd": pnl
                     }
                 else:
-                    updates = {"status": "CLOSED"}
+                    trade_updates = {"status": "CLOSED"}
+
+            elif action_type in ["take_profit_1", "take_profit_2"]:
+                logger.info(f"Processing {action_type} for trade {trade_row['id']}")
+                # For TP hits, we typically sell a portion and update stop loss
+                # For now, just log the action - implement specific TP logic as needed
+                trade_updates = {"status": "PARTIALLY_CLOSED"}
+
+            elif action_type == "stop_loss_update":
+                logger.info(f"Processing stop loss update for trade {trade_row['id']}")
+                # Update stop loss order on exchange
+                # For now, just log - implement stop loss update logic as needed
+                pass
+
+            elif action_type == "order_cancelled":
+                logger.info(f"Processing order cancellation for trade {trade_row['id']}")
+                trade_updates = {"status": "CANCELLED"}
 
             else:
-                # Generic update (might be status update, comment, etc.)
-                logger.info(f"Processing generic update for trade {trade_row['id']}")
-                updates = {}  # Could add timestamp or other metadata if needed
+                logger.info(f"Processing generic update for trade {trade_row['id']}: {action_type}")
+                # No specific action needed for unknown updates
 
-            # Update the database
-            if updates:
+            # Update the trade in database if we have updates
+            if trade_updates:
                 success = await update_existing_trade(
                     trade_id=trade_row["id"],
-                    updates=updates
+                    updates=trade_updates
                 )
 
                 if success:
-                    return {"status": "success", "message": f"Trade updated successfully"}
+                    logger.info(f"Trade {trade_row['id']} updated successfully with: {trade_updates}")
+                    return {"status": "success", "message": f"Update signal processed and trade updated: {parsed_action['action_description']}"}
                 else:
                     return {"status": "error", "message": "Failed to update trade in database"}
             else:
-                return {"status": "success", "message": "Signal processed (no updates needed)"}
+                return {"status": "success", "message": f"Update signal processed: {parsed_action['action_description']}"}
 
         except Exception as e:
             error_msg = f"Error processing update signal: {str(e)}"
