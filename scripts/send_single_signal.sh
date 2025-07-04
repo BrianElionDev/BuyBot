@@ -2,9 +2,9 @@
 curl -X POST http://0.0.0.0:8001/api/v1/discord/signal \
 -H "Content-Type: application/json" \
 -d '{
-  "timestamp": "2025-06-05T14:17:51.472Z",
-  "content": "@Johnny TAO limit 313 - 295 sl 284.4",
-  "structured": "LIMIT|TAO|Entry:|313-295|SL:|284.4"
+  "timestamp": "2025-06-05T20:56:11.028Z",
+  "content": "@-JDrip ETH limit long 2350-2250 SL 2150",
+  "structured": "LIMIT|ETH|Entry:|2350-2250|SL:|2150"
 }'
 
 (venv) ngigi@saitama:~/Documents/Brayo/rubicon-trading-bot$ python3 -m discord_bot.main

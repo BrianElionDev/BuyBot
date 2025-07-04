@@ -3,6 +3,7 @@ import time
 import asyncio
 from typing import Dict, Set, Tuple, Optional, Any, Union, Literal, List
 from config import settings as config
+from config.settings import reload_env  # Import the reload function
 from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
 from src.exchange.uniswap_exchange import UniswapExchange
@@ -41,19 +42,58 @@ class TradingEngine:
         self.uniswap_exchange = None
         if UNISWAP_AVAILABLE:
             try:
-                # Only reference UniswapExchange if import succeeded
-                if config.INFURA_PROJECT_ID and config.WALLET_PRIVATE_KEY:
-                    from src.exchange.uniswap_exchange import UniswapExchange
-                    self.uniswap_exchange = UniswapExchange(loop=self.loop)
-                    logger.info("UniswapExchange initialized")
-                else:
-                    logger.warning("Uniswap DEX functionality is not available: missing configuration")
+                self.uniswap_exchange = UniswapExchange(loop=self.loop)
+                logger.info("UniswapExchange initialized")
             except Exception as e:
                 logger.error(f"Failed to initialize UniswapExchange: {e}")
-        else:
-            logger.warning("UniswapExchange not available. DEX functionality will be disabled.")
 
-        self.base_currencies = ['USDC', 'ETH']
+        # Common base currencies for transaction type detection
+        self.base_currencies = {'usdt', 'busd', 'eth', 'btc', 'bnb', 'usdc'}
+
+    async def reload_credentials(self) -> bool:
+        """
+        Reload environment variables and reinitialize the Binance exchange.
+        Use this after switching between different credential sets.
+
+        Returns:
+            bool: True if credentials were successfully reloaded and tested, False otherwise
+        """
+        try:
+            logger.info("🔄 Reloading Binance credentials...")
+
+            # Reload environment variables
+            reload_env()
+
+            # Re-import the updated configuration
+            from config import settings as updated_config
+
+            # Close existing exchange connection
+            if hasattr(self, 'binance_exchange'):
+                await self.binance_exchange.close()
+
+            # Initialize new exchange with updated credentials
+            self.binance_exchange = BinanceExchange(
+                api_key=updated_config.BINANCE_API_KEY,
+                api_secret=updated_config.BINANCE_API_SECRET,
+                is_testnet=updated_config.BINANCE_TESTNET
+            )
+
+            # Test the new credentials
+            try:
+                # Test with a simple balance check
+                balances = await self.binance_exchange.get_spot_balance()
+                logger.info("✅ Credentials reloaded successfully")
+                logger.info(f"   Using API Key: {updated_config.BINANCE_API_KEY[:10]}...{updated_config.BINANCE_API_KEY[-5:] if updated_config.BINANCE_API_KEY else 'None'}")
+                logger.info(f"   Testnet Mode: {updated_config.BINANCE_TESTNET}")
+                return True
+
+            except Exception as e:
+                logger.error(f"❌ Failed to test new credentials: {e}")
+                return False
+
+        except Exception as e:
+            logger.error(f"❌ Failed to reload credentials: {e}")
+            return False
 
     def _is_cooled_down(self, symbol: str) -> bool:
         """Check if trade cooldown period has passed for the given symbol."""
