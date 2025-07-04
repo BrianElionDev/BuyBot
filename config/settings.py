@@ -2,7 +2,85 @@ import os
 import logging
 from dotenv import load_dotenv
 
-load_dotenv()
+def reload_env():
+    """Reload environment variables from .env file."""
+    load_dotenv(override=True)  # override=True forces reload
+
+    # Update global variables with new values
+    global BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET
+    global TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE
+    global TARGET_GROUP_ID, NOTIFICATION_GROUP_ID
+    global INFURA_PROJECT_ID, ETHEREUM_NETWORK, INFURA_URL
+    global WALLET_ADDRESS, WALLET_PRIVATE_KEY
+
+    # Reload all environment variables
+    BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+    BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
+    BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
+
+    TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
+    TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
+    TELEGRAM_PHONE = os.getenv("TELEGRAM_PHONE")
+    TARGET_GROUP_ID = int(os.getenv("TARGET_GROUP_ID", "0"))
+    NOTIFICATION_GROUP_ID = int(os.getenv("NOTIFICATION_GROUP_ID", "0"))
+
+    INFURA_PROJECT_ID = os.getenv("INFURA_PROJECT_ID")
+    ETHEREUM_NETWORK = os.getenv("ETHEREUM_NETWORK", "mainnet")
+    INFURA_URL = f"https://{ETHEREUM_NETWORK}.infura.io/v3/{INFURA_PROJECT_ID}" if INFURA_PROJECT_ID else None
+    WALLET_ADDRESS = os.getenv("WALLET_ADDRESS")
+    WALLET_PRIVATE_KEY = os.getenv("WALLET_PRIVATE_KEY")
+
+    logging.info("Environment variables reloaded successfully")
+    logging.info(f"Using Binance API Key: {BINANCE_API_KEY[:10]}...{BINANCE_API_KEY[-5:] if BINANCE_API_KEY else 'None'}")
+
+def verify_env_loading():
+    """Verify that environment variables are properly loaded and log the details."""
+    print("="*70)
+    print("           ENVIRONMENT VARIABLE VERIFICATION")
+    print("="*70)
+
+    # Check for .env file existence
+    env_file_path = os.path.join(os.getcwd(), '.env')
+    if os.path.exists(env_file_path):
+        print(f"✅ .env file found at: {env_file_path}")
+        # Show last modified time
+        import time
+        mod_time = os.path.getmtime(env_file_path)
+        print(f"📅 .env file last modified: {time.ctime(mod_time)}")
+    else:
+        print(f"❌ .env file NOT found at: {env_file_path}")
+
+    # Show current working directory
+    print(f"📁 Current working directory: {os.getcwd()}")
+
+    # Show environment variable values (safely)
+    print("\n📊 Loaded Environment Variables:")
+    print(f"   BINANCE_API_KEY: {BINANCE_API_KEY[:15]}...{BINANCE_API_KEY[-10:] if BINANCE_API_KEY and len(BINANCE_API_KEY) > 25 else 'NOT_SET'}")
+    print(f"   BINANCE_API_SECRET: {BINANCE_API_SECRET[:15]}...{BINANCE_API_SECRET[-10:] if BINANCE_API_SECRET and len(BINANCE_API_SECRET) > 25 else 'NOT_SET'}")
+    print(f"   BINANCE_TESTNET: {BINANCE_TESTNET}")
+
+    # Check for any commented-out duplicates in .env file
+    if os.path.exists(env_file_path):
+        with open(env_file_path, 'r') as f:
+            content = f.read()
+            binance_key_lines = [line.strip() for line in content.split('\n') if 'BINANCE_API_KEY' in line]
+            binance_secret_lines = [line.strip() for line in content.split('\n') if 'BINANCE_API_SECRET' in line]
+
+            print(f"\n🔍 Found {len(binance_key_lines)} BINANCE_API_KEY lines in .env file:")
+            for i, line in enumerate(binance_key_lines, 1):
+                status = "ACTIVE" if not line.startswith('#') else "COMMENTED"
+                print(f"   {i}. [{status}] {line[:50]}{'...' if len(line) > 50 else ''}")
+
+            print(f"\n🔍 Found {len(binance_secret_lines)} BINANCE_API_SECRET lines in .env file:")
+            for i, line in enumerate(binance_secret_lines, 1):
+                status = "ACTIVE" if not line.startswith('#') else "COMMENTED"
+                print(f"   {i}. [{status}] {line[:50]}{'...' if len(line) > 50 else ''}")
+
+    print("="*70)
+
+# Force reload on import with override=True to ensure fresh values
+print("🔄 Loading environment variables...")
+load_dotenv(override=True)
 
 # Telegram
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
@@ -22,6 +100,9 @@ ETHEREUM_NETWORK = os.getenv("ETHEREUM_NETWORK", "mainnet")
 INFURA_URL = f"https://{ETHEREUM_NETWORK}.infura.io/v3/{INFURA_PROJECT_ID}" if INFURA_PROJECT_ID else None
 WALLET_ADDRESS = os.getenv("WALLET_ADDRESS")
 WALLET_PRIVATE_KEY = os.getenv("WALLET_PRIVATE_KEY")
+
+# Call verification function on import
+verify_env_loading()
 
 # Uniswap Configuration
 UNISWAP_ROUTER_ADDRESS = os.getenv("UNISWAP_ROUTER_ADDRESS", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")  # V2 Router
