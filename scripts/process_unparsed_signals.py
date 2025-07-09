@@ -20,7 +20,7 @@ def get_unparsed_trades(supabase: Client) -> list:
     """
     try:
         logging.info("Querying for trades with a NULL 'parsed_signal'...")
-        response = supabase.from_("trades").select("*").is_("parsed_signal", "NULL").execute()
+        response = supabase.from_("trades").select("*").execute()
 
         if response.data:
             logging.info(f"Found {len(response.data)} unparsed trades.")
@@ -68,7 +68,7 @@ def send_signal_to_bot(trade: dict):
     finally:
         # Add a delay between requests to avoid overwhelming the endpoint
         logging.info("--- Waiting 5 seconds before next request ---")
-        time.sleep(5)
+        time.sleep(10)
 
 
 def main():

@@ -35,8 +35,8 @@ async def find_active_trade_by_symbol(symbol: str) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        # Look for trades with status 'ACTIVE' for this symbol
-        response = supabase.from_("trades").select("*").eq("coin_symbol", symbol).eq("status", "ACTIVE").order("timestamp", desc=True).limit(1).execute()
+        # Look for trades with status 'OPEN' for this symbol
+        response = supabase.from_("trades").select("*").eq("coin_symbol", symbol).eq("status", "OPEN").order("timestamp", desc=True).limit(1).execute()
 
         if response.data:
             logger.info(f"Found active trade for {symbol}: ID {response.data[0]['id']}")
@@ -230,6 +230,26 @@ async def save_alert_to_database(alert_data: Dict[str, Any]) -> bool:
 
     except Exception as e:
         logger.error(f"Error saving alert to database: {e}", exc_info=True)
+        return False
+
+async def update_existing_alert(alert_id: int, updates: Dict) -> bool:
+    """
+    Updates an existing alert record in the database.
+    """
+    if not supabase:
+        logger.error("Supabase client not available.")
+        return False
+
+    if not updates:
+        logger.error("No updates provided for alert.")
+        return False
+
+    try:
+        response = supabase.from_("alerts").update(updates).eq("id", alert_id).execute()
+        logger.info(f"Successfully updated alert ID {alert_id} with: {updates}")
+        return True
+    except Exception as e:
+        logger.error(f"Error updating alert ID {alert_id}: {e}", exc_info=True)
         return False
 
 async def update_trade_status(trade_group_id: str, is_active: bool):

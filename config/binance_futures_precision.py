@@ -1,0 +1,7941 @@
+"""
+Binance Futures Symbol Precision Information
+Auto-generated file containing precision rules for futures trading.
+"""
+
+# Quantity precision information for futures symbols
+FUTURES_QUANTITY_PRECISION = {
+    "1000000BOBUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 9000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000000BOB",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000000MOGUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 200000.0,
+        "step_size": 0.1,
+        "base_asset": "1000000MOG",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000BONKUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000BONK",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "1000BONKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000BONK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000CATUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 40000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000CAT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000CHEEMSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000CHEEMS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000FLOKIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000FLOKI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000LUNCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000LUNC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000PEPEUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 800000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000PEPE",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "1000PEPEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000PEPE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000RATSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000RATS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000SATSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000SATS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000SHIBUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 800000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000SHIB",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "1000SHIBUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000SHIB",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000WHYUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000WHY",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000XECUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000XEC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1000XUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "1000X",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1INCHUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "1INCH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "1MBABYDOGEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 600000000.0,
+        "step_size": 1.0,
+        "base_asset": "1MBABYDOGE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AAVEUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000.0,
+        "step_size": 0.1,
+        "base_asset": "AAVE",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "AAVEUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000000.0,
+        "step_size": 0.1,
+        "base_asset": "AAVE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ABCCCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "ABCCC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ACEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000.0,
+        "step_size": 1.0,
+        "base_asset": "ACE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ACHUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ACH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ACTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "ACT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ACXUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 800000.0,
+        "step_size": 0.1,
+        "base_asset": "ACX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ADAUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ADA",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "ADAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ADA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AERGOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "AERGO",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "AEROUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 600000.0,
+        "step_size": 0.1,
+        "base_asset": "AERO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AEVOUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "AEVO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AGIXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "AGIX",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "AGLDUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "AGLD",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AGTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 30000000.0,
+        "step_size": 1.0,
+        "base_asset": "AGT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AI16ZUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 500000.0,
+        "step_size": 0.1,
+        "base_asset": "AI16Z",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AIOTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "AIOT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "AI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AIXBTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000.0,
+        "step_size": 1.0,
+        "base_asset": "AIXBT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AKTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 300000.0,
+        "step_size": 0.1,
+        "base_asset": "AKT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ALCHUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "ALCH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ALGOUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ALGO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ALICEUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ALICE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ALPACAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ALPACA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ALPHAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ALPHA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ALPINEUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ALPINE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ALTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "ALT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AMBUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "AMB",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "ANIMEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ANIME",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ANKRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ANKR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ANTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ANT",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "APEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "APE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "API3USDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "API3",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "APTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "APT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ARBUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ARB",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "ARBUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ARB",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ARCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "ARC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ARKMUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ARKM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ARKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ARK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ARPAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ARPA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ARUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "AR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ASRUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 500000.0,
+        "step_size": 0.1,
+        "base_asset": "ASR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ASTRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ASTR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ATAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "ATA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ATHUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000.0,
+        "step_size": 1.0,
+        "base_asset": "ATH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ATOMUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 10000.0,
+        "step_size": 0.01,
+        "base_asset": "ATOM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AUCTIONUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "AUCTION",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AUDIOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "AUDIO",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "AUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "A",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AVAAIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000.0,
+        "step_size": 1.0,
+        "base_asset": "AVAAI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AVAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 400000.0,
+        "step_size": 0.1,
+        "base_asset": "AVA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AVAXUSDC": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "AVAX",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "AVAXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "AVAX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AXLUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "AXL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "AXSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "AXS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "B2USDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1500000.0,
+        "step_size": 1.0,
+        "base_asset": "B2",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "B3USDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "B3",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BABYUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "BABY",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BADGERUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "BADGER",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "BAKEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "BAKE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BALUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "BAL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BANANAS31USDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 250000000.0,
+        "step_size": 1.0,
+        "base_asset": "BANANAS31",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BANANAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 100000.0,
+        "step_size": 0.1,
+        "base_asset": "BANANA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BANDUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "BAND",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BANKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "BANK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BANUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "BAN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BATUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "BAT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BBUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "BB",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BCHUSDC": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "BCH",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "BCHUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "BCH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BDXNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "BDXN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BEAMXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "BEAMX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BELUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "BEL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BERAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 150000.0,
+        "step_size": 0.1,
+        "base_asset": "BERA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BICOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "BICO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BIDUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 1.0,
+        "max_qty": 15000000.0,
+        "step_size": 0.1,
+        "base_asset": "BID",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "BIGTIMEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "BIGTIME",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BIOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1500000.0,
+        "step_size": 1.0,
+        "base_asset": "BIO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BLUEBIRDUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "BLUEBIRD",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "BLURUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "BLUR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BMTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "BMT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BNBUSDC": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 80000.0,
+        "step_size": 0.01,
+        "base_asset": "BNB",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "BNBUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 10000.0,
+        "step_size": 0.01,
+        "base_asset": "BNB",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BNTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "BNT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BNXUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "BNX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BOMEUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 200000000.0,
+        "step_size": 1.0,
+        "base_asset": "BOME",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "BOMEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 200000000.0,
+        "step_size": 1.0,
+        "base_asset": "BOME",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BONDUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "BOND",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BRETTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "BRETT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BROCCOLI714USDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "BROCCOLI714",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BROCCOLIF3BUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 50000000.0,
+        "step_size": 1.0,
+        "base_asset": "BROCCOLIF3B",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 6000000.0,
+        "step_size": 1.0,
+        "base_asset": "BR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BSVUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 100000.0,
+        "step_size": 0.1,
+        "base_asset": "BSV",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BSWUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "BSW",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BTCDOMUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "BTCDOM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BTCSTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "BTCST",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "BTCUSDC": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 800.0,
+        "step_size": 0.001,
+        "base_asset": "BTC",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "BTCUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 1000.0,
+        "step_size": 0.001,
+        "base_asset": "BTC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BTCUSDT_250627": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 500.0,
+        "step_size": 0.001,
+        "base_asset": "BTC",
+        "quote_asset": "USDT",
+        "status": "DELIVERING"
+    },
+    "BTCUSDT_250926": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 500.0,
+        "step_size": 0.001,
+        "base_asset": "BTC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BTCUSDT_251226": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 500.0,
+        "step_size": 0.001,
+        "base_asset": "BTC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BULLAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "BULLA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "BUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000.0,
+        "step_size": 1.0,
+        "base_asset": "B",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "C98USDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "C98",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CAKEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "CAKE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CATIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "CATI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CELOUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "CELO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CELRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "CELR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CETUSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "CETUS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CFXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "CFX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CGPTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "CGPT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CHESSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "CHESS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CHILLGUYUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "CHILLGUY",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CHRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "CHR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CHZUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "CHZ",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CKBUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "CKB",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "COMBOUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 5000000.0,
+        "step_size": 0.1,
+        "base_asset": "COMBO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "COMPUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "COMP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "COOKIEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1500000.0,
+        "step_size": 1.0,
+        "base_asset": "COOKIE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "COSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 600000000.0,
+        "step_size": 1.0,
+        "base_asset": "COS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "COTIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "COTI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "COWUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "COW",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CRVUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 3000000.0,
+        "step_size": 0.1,
+        "base_asset": "CRV",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "CRVUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "CRV",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CTKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "CTK",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "CTSIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "CTSI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "CVXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000.0,
+        "step_size": 1.0,
+        "base_asset": "CVX",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "CYBERUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000000.0,
+        "step_size": 0.1,
+        "base_asset": "CYBER",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DARUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "DAR",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "DASHUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "DASH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DEEPUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "DEEP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DEFIUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "DEFI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DEGENUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 40000000.0,
+        "step_size": 1.0,
+        "base_asset": "DEGEN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DEGOUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 300000.0,
+        "step_size": 0.1,
+        "base_asset": "DEGO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DENTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "DENT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DEXEUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 800000.0,
+        "step_size": 0.01,
+        "base_asset": "DEXE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DFUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "DF",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DGBUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "DGB",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "DIAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "DIA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DMCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000000.0,
+        "step_size": 1.0,
+        "base_asset": "DMC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DODOXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "DODOX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DOGEUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 50000000.0,
+        "step_size": 1.0,
+        "base_asset": "DOGE",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "DOGEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "DOGE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DOGSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000000.0,
+        "step_size": 1.0,
+        "base_asset": "DOGS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DOLOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "DOLO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DOODUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "DOOD",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "DOTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "DOT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DRIFTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "DRIFT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 6000000.0,
+        "step_size": 1.0,
+        "base_asset": "D",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DUSKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "DUSK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DYDXUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "DYDX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "DYMUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "DYM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "EDUUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "EDU",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "EGLDUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "EGLD",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "EIGENUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 100000.0,
+        "step_size": 0.1,
+        "base_asset": "EIGEN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ENAUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "ENA",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "ENAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "ENA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ENJUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ENJ",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ENSUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ENS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "EOSUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "EOS",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "EPICUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 500000.0,
+        "step_size": 0.1,
+        "base_asset": "EPIC",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "EPTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 60000000.0,
+        "step_size": 1.0,
+        "base_asset": "EPT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ETCUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "ETC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ETHBTC": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 10000.0,
+        "step_size": 0.01,
+        "base_asset": "ETH",
+        "quote_asset": "BTC",
+        "status": "TRADING"
+    },
+    "ETHFIUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ETHFI",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "ETHFIUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ETHFI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ETHUSDC": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 8000.0,
+        "step_size": 0.001,
+        "base_asset": "ETH",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "ETHUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "ETH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ETHUSDT_250627": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "ETH",
+        "quote_asset": "USDT",
+        "status": "DELIVERING"
+    },
+    "ETHUSDT_250926": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "ETH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ETHUSDT_251226": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "ETH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ETHWUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "ETHW",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FARTCOINUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 900000.0,
+        "step_size": 0.1,
+        "base_asset": "FARTCOIN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FETUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "FET",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FHEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 15000000.0,
+        "step_size": 1.0,
+        "base_asset": "FHE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FIDAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000.0,
+        "step_size": 1.0,
+        "base_asset": "FIDA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FILUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000000.0,
+        "step_size": 0.1,
+        "base_asset": "FIL",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "FILUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000000.0,
+        "step_size": 0.1,
+        "base_asset": "FIL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FIOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "FIO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FISUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "FIS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FLMUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "FLM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FLOWUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "FLOW",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FLUXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "FLUX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FOOTBALLUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 10000.0,
+        "step_size": 0.01,
+        "base_asset": "FOOTBALL",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "FORMUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 600000.0,
+        "step_size": 0.1,
+        "base_asset": "FORM",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "FORTHUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 500000.0,
+        "step_size": 0.1,
+        "base_asset": "FORTH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FTMUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "FTM",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "FUNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 200000000.0,
+        "step_size": 1.0,
+        "base_asset": "FUN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000000.0,
+        "step_size": 1.0,
+        "base_asset": "F",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "FXSUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "FXS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GALAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "GALA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GASUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "GAS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GHSTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "GHST",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GLMRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "GLMR",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "GLMUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "GLM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GMTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "GMT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GMXUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "GMX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GOATUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "GOAT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GPSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 7000000.0,
+        "step_size": 1.0,
+        "base_asset": "GPS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GRASSUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 200000.0,
+        "step_size": 0.1,
+        "base_asset": "GRASS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GRIFFAINUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "GRIFFAIN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GRTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "GRT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GTCUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "GTC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "GUNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "GUN",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "GUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "G",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HAEDALUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "HAEDAL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HBARUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000.0,
+        "step_size": 1.0,
+        "base_asset": "HBAR",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "HBARUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "HBAR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HEIUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "HEI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HFTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "HFT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HIFIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "HIFI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HIGHUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "HIGH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HIPPOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 50000000.0,
+        "step_size": 1.0,
+        "base_asset": "HIPPO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HIVEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "HIVE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HMSTRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 70000000.0,
+        "step_size": 1.0,
+        "base_asset": "HMSTR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HOMEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "HOME",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "HOOKUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "HOOK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HOTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "HOT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "H",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HYPERUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "HYPER",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "HYPEUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 30000.0,
+        "step_size": 0.01,
+        "base_asset": "HYPE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ICNTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "ICNT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ICXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ICX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "IDEXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "IDEX",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "IDOL": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 60000000.0,
+        "step_size": 1.0,
+        "base_asset": "IDOL",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "IDOLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 60000000.0,
+        "step_size": 1.0,
+        "base_asset": "IDOL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "IDUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ID",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ILVUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000.0,
+        "step_size": 0.1,
+        "base_asset": "ILV",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "IMXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "IMX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "INITUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "INIT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "INJUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "INJ",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "IOSTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "IOST",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "IOTAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "IOTA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "IOTXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "IOTX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "IOUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "IO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "IPUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 200000.0,
+        "step_size": 0.1,
+        "base_asset": "IP",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "IPUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 500000.0,
+        "step_size": 0.1,
+        "base_asset": "IP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "JASMYUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "JASMY",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "JELLYJELLYUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 30000000.0,
+        "step_size": 1.0,
+        "base_asset": "JELLYJELLY",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "JOEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "JOE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "JSTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 30000000.0,
+        "step_size": 1.0,
+        "base_asset": "JST",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "JTOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "JTO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "JUPUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "JUP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "KAIAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "KAIA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "KAITOUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 500000.0,
+        "step_size": 0.1,
+        "base_asset": "KAITO",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "KAITOUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "KAITO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "KASUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "KAS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "KAVAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "KAVA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "KDAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "KDA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "KERNELUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "KERNEL",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "KEYUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "KEY",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "KLAYUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "KLAY",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "KMNOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "KMNO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "KNCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "KNC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "KOMAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "KOMA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "KSMUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "KSM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LAYERUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 800000.0,
+        "step_size": 0.1,
+        "base_asset": "LAYER",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LDOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000.0,
+        "step_size": 1.0,
+        "base_asset": "LDO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LEVERUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "LEVER",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LINAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "LINA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LINKUSDC": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "LINK",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "LINKUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "LINK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LISTAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "LISTA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LITUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "LIT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LOKAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000.0,
+        "step_size": 1.0,
+        "base_asset": "LOKA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LOOMUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "LOOM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LPTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "LPT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LQTYUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "LQTY",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LRCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "LRC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LSKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "LSK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LTCUSDC": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "LTC",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "LTCUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "LTC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LUMIAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 600000.0,
+        "step_size": 0.1,
+        "base_asset": "LUMIA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "LUNA2USDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "LUNA2",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MAGICUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "MAGIC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MANAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "MANA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MANTAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "MANTA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MASKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "MASK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MAVIAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "MAVIA",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "MAVUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "MAV",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MBLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "MBL",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "MBOXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "MBOX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MDTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000000.0,
+        "step_size": 1.0,
+        "base_asset": "MDT",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "MELANIAUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 90000.0,
+        "step_size": 0.01,
+        "base_asset": "MELANIA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MEMEFIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 600000000.0,
+        "step_size": 1.0,
+        "base_asset": "MEMEFI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MEMEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "MEME",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MERLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 7000000.0,
+        "step_size": 1.0,
+        "base_asset": "MERL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "METISUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "METIS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MEUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 200000.0,
+        "step_size": 0.1,
+        "base_asset": "ME",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MEWUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 50000000.0,
+        "step_size": 1.0,
+        "base_asset": "MEW",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MILKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "MILK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MINAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "MINA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MKRUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "MKR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MLNUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 90000.0,
+        "step_size": 0.01,
+        "base_asset": "MLN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MOCAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "MOCA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MOODENGUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "MOODENG",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MORPHOUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 800000.0,
+        "step_size": 0.1,
+        "base_asset": "MORPHO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MOVEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1500000.0,
+        "step_size": 1.0,
+        "base_asset": "MOVE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MOVRUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "MOVR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MTLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "MTL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MUBARAKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "MUBARAK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MYROUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000000.0,
+        "step_size": 1.0,
+        "base_asset": "MYRO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "MYXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "MYX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NEARUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "NEAR",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "NEARUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "NEAR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NEIROETHUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "NEIROETH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NEIROUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000000.0,
+        "step_size": 1.0,
+        "base_asset": "NEIRO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NEOUSDC": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "NEO",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "NEOUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "NEO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NEWTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "NEWT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NFPUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "NFP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NILUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "NIL",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "NKNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "NKN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NMRUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "NMR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NOTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 30000000.0,
+        "step_size": 1.0,
+        "base_asset": "NOT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NTRNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "NTRN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NULSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "NULS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "NXPCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1500000.0,
+        "step_size": 1.0,
+        "base_asset": "NXPC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "OBOLUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "OBOL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "OCEANUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "OCEAN",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "OGNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "OGN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "OGUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 30000.0,
+        "step_size": 0.01,
+        "base_asset": "OG",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "OLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 30000000.0,
+        "step_size": 1.0,
+        "base_asset": "OL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "OMGUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "OMG",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "OMNIUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "OMNI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "OMUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000000.0,
+        "step_size": 0.1,
+        "base_asset": "OM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ONDOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "ONDO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ONEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ONE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ONGUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "ONG",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ONTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ONT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "OPUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000000.0,
+        "step_size": 0.1,
+        "base_asset": "OP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ORBSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ORBS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ORCAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 200000.0,
+        "step_size": 0.1,
+        "base_asset": "ORCA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ORDIUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 100000.0,
+        "step_size": 0.1,
+        "base_asset": "ORDI",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "ORDIUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 100000.0,
+        "step_size": 0.1,
+        "base_asset": "ORDI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "OXTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000000.0,
+        "step_size": 1.0,
+        "base_asset": "OXT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PARTIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "PARTI",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "PAXGUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 50.0,
+        "step_size": 0.001,
+        "base_asset": "PAXG",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PENDLEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "PENDLE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PENGUUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "PENGU",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PEOPLEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "PEOPLE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PERPUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "PERP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PHAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "PHA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PHBUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "PHB",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PIPPINUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "PIPPIN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PIXELUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "PIXEL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PLUMEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "PLUME",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PNUTUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "PNUT",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "PNUTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "PNUT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "POLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "POL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "POLYXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "POLYX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PONKEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "PONKE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "POPCATUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "POPCAT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PORT3USDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "PORT3",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PORTALUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "PORTAL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "POWRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "POWR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PROMPTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 6000000.0,
+        "step_size": 1.0,
+        "base_asset": "PROMPT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PROMUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 100000.0,
+        "step_size": 0.1,
+        "base_asset": "PROM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PUFFERUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000.0,
+        "step_size": 1.0,
+        "base_asset": "PUFFER",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PUMPBTCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "PUMPBTC",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "PUMPUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "PUMP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PUNDIXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "PUNDIX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "PYTHUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "PYTH",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "QNTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "QNT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "QTUMUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "QTUM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "QUICKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 30000000.0,
+        "step_size": 1.0,
+        "base_asset": "QUICK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RADUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "RAD",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "RAREUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "RARE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RAYSOLUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 200000.0,
+        "step_size": 0.1,
+        "base_asset": "RAYSOL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RDNTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "RDNT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "REDUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "RED",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "REEFUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "REEF",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "REIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "REI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RENDERUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "RENDER",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RENUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "REN",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "REZUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "REZ",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RIFUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "RIF",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RLCUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "RLC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RONINUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "RONIN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ROSEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ROSE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RPLUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 100000.0,
+        "step_size": 0.1,
+        "base_asset": "RPL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RSRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "RSR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RUNEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "RUNE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "RVNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "RVN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SAFEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 600000.0,
+        "step_size": 1.0,
+        "base_asset": "SAFE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SAGAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "SAGA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SAHARAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 8000000.0,
+        "step_size": 1.0,
+        "base_asset": "SAHARA",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "SANDUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "SAND",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SANTOSUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 200000.0,
+        "step_size": 0.1,
+        "base_asset": "SANTOS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SCRTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "SCRT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SCRUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "SCR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SEIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "SEI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SFPUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "SFP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SHELLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "SHELL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SIGNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 1.0,
+        "base_asset": "SIGN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SIRENUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 15000000.0,
+        "step_size": 1.0,
+        "base_asset": "SIREN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SKATEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 7000000.0,
+        "step_size": 1.0,
+        "base_asset": "SKATE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SKLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "SKL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SKYAIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 15000000.0,
+        "step_size": 1.0,
+        "base_asset": "SKYAI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SLERFUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "SLERF",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SLPUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "SLP",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "SNTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "SNT",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "SNXUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "SNX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SOLUSDC": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 800000.0,
+        "step_size": 0.01,
+        "base_asset": "SOL",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "SOLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "SOL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SOLVUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 6500000.0,
+        "step_size": 1.0,
+        "base_asset": "SOLV",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "SONICUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "SONIC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SOPHUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "SOPH",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "SPELLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 100.0,
+        "max_qty": 80000000.0,
+        "step_size": 1.0,
+        "base_asset": "SPELL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SPXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1500000.0,
+        "step_size": 1.0,
+        "base_asset": "SPX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SQDUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "SQD",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SSVUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 100000.0,
+        "step_size": 0.01,
+        "base_asset": "SSV",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "STEEMUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "STEEM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "STGUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "STG",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "STMXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "STMX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "STORJUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "STORJ",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "STOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "STO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "STPTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "STPT",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "STRAXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "STRAX",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "STRKUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "STRK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "STXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "STX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SUIUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000000.0,
+        "step_size": 0.1,
+        "base_asset": "SUI",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "SUIUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000000.0,
+        "step_size": 0.1,
+        "base_asset": "SUI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SUNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 50000000.0,
+        "step_size": 1.0,
+        "base_asset": "SUN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SUPERUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "SUPER",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "S",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SUSHIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "SUSHI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SWARMSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "SWARMS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SWELLUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 6000000.0,
+        "step_size": 1.0,
+        "base_asset": "SWELL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SXPUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "SXP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SXTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "SXT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SYNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "SYN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SYRUPUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 5000000.0,
+        "step_size": 1.0,
+        "base_asset": "SYRUP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "SYSUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "SYS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TAIKOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "TAIKO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TAOUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 300.0,
+        "step_size": 0.001,
+        "base_asset": "TAO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "THETAUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "THETA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "THEUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 700000.0,
+        "step_size": 0.1,
+        "base_asset": "THE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TIAUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "TIA",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "TIAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "TIA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TNSRUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "TNSR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TOKENUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "TOKEN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TOMOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "TOMO",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "TONUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "TON",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TRBUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "TRB",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TROYUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 300000000.0,
+        "step_size": 1.0,
+        "base_asset": "TROY",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TRUMPUSDC": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 70000.0,
+        "step_size": 0.01,
+        "base_asset": "TRUMP",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "TRUMPUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 50000.0,
+        "step_size": 0.01,
+        "base_asset": "TRUMP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TRUUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "TRU",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TRXUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "TRX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TSTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "TST",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TURBOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 50000000.0,
+        "step_size": 1.0,
+        "base_asset": "TURBO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 0.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "T",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "TUTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 1.0,
+        "max_qty": 20000000.0,
+        "step_size": 0.1,
+        "base_asset": "TUT",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "TWTUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "TWT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "UMAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "UMA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "UNFIUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "UNFI",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "UNIUSDC": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 300000.0,
+        "step_size": 1.0,
+        "base_asset": "UNI",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "UNIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "UNI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "USDCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "USDC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "USTCUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "USTC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "USUALUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "USUAL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "UXLINKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "UXLINK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VANAUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 400000.0,
+        "step_size": 0.01,
+        "base_asset": "VANA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VANRYUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "VANRY",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VELODROMEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "VELODROME",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VETUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "VET",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VICUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 3000000.0,
+        "step_size": 1.0,
+        "base_asset": "VIC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VIDTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 50000000.0,
+        "step_size": 1.0,
+        "base_asset": "VIDT",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VINEUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 4000000.0,
+        "step_size": 1.0,
+        "base_asset": "VINE",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VIRTUALUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 600000.0,
+        "step_size": 0.1,
+        "base_asset": "VIRTUAL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VOXELUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "VOXEL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VTHOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000000.0,
+        "step_size": 1.0,
+        "base_asset": "VTHO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "VVVUSDT": {
+        "quantity_precision": 2,
+        "min_qty": 0.01,
+        "max_qty": 90000.0,
+        "step_size": 0.01,
+        "base_asset": "VVV",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "WALUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "WAL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "WAVESUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "WAVES",
+        "quote_asset": "USDT",
+        "status": "SETTLING"
+    },
+    "WAXPUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "WAXP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "WCTUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2500000.0,
+        "step_size": 1.0,
+        "base_asset": "WCT",
+        "quote_asset": "USDT",
+        "status": "PENDING_TRADING"
+    },
+    "WIFUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "WIF",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "WIFUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "WIF",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "WLDUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "WLD",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "WLDUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "WLD",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "WOOUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "WOO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "WUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "W",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "XAIUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "XAI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "XCNUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 50000000.0,
+        "step_size": 1.0,
+        "base_asset": "XCN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "XEMUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "XEM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "XLMUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "XLM",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "XMRUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 100000000.0,
+        "step_size": 0.001,
+        "base_asset": "XMR",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "XRPUSDC": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 8000000.0,
+        "step_size": 0.1,
+        "base_asset": "XRP",
+        "quote_asset": "USDC",
+        "status": "TRADING"
+    },
+    "XRPUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "XRP",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "XTZUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 10000.0,
+        "step_size": 0.1,
+        "base_asset": "XTZ",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "XVGUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 100000000.0,
+        "step_size": 1.0,
+        "base_asset": "XVG",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "XVSUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "XVS",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "YFIUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 500.0,
+        "step_size": 0.001,
+        "base_asset": "YFI",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "YGGUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "YGG",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ZECUSDT": {
+        "quantity_precision": 3,
+        "min_qty": 0.001,
+        "max_qty": 10000.0,
+        "step_size": 0.001,
+        "base_asset": "ZEC",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ZENUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ZEN",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ZEREBROUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 2000000.0,
+        "step_size": 1.0,
+        "base_asset": "ZEREBRO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ZETAUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "ZETA",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ZILUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 10000000.0,
+        "step_size": 1.0,
+        "base_asset": "ZIL",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ZKJUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 500000.0,
+        "step_size": 0.1,
+        "base_asset": "ZKJ",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ZKUSDT": {
+        "quantity_precision": 0,
+        "min_qty": 1.0,
+        "max_qty": 1000000.0,
+        "step_size": 1.0,
+        "base_asset": "ZK",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ZROUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ZRO",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+    "ZRXUSDT": {
+        "quantity_precision": 1,
+        "min_qty": 0.1,
+        "max_qty": 1000000.0,
+        "step_size": 0.1,
+        "base_asset": "ZRX",
+        "quote_asset": "USDT",
+        "status": "TRADING"
+    },
+}
+
+# Price precision information for futures symbols
+FUTURES_PRICE_PRECISION = {
+    "1000000BOBUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "1000000MOGUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "1000BONKUSDC": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "1000BONKUSDT": {
+        "price_precision": 6,
+        "min_price": 0.000361,
+        "max_price": 0.60295,
+        "tick_size": 1e-06
+    },
+    "1000CATUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "1000CHEEMSUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "1000FLOKIUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "1000LUNCUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0035,
+        "max_price": 5.84764,
+        "tick_size": 1e-05
+    },
+    "1000PEPEUSDC": {
+        "price_precision": 7,
+        "min_price": 1e-07,
+        "max_price": 200.0,
+        "tick_size": 1e-07
+    },
+    "1000PEPEUSDT": {
+        "price_precision": 7,
+        "min_price": 3.66e-05,
+        "max_price": 0.0610535,
+        "tick_size": 1e-07
+    },
+    "1000RATSUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00728,
+        "max_price": 12.14102,
+        "tick_size": 1e-05
+    },
+    "1000SATSUSDT": {
+        "price_precision": 6,
+        "min_price": 1.8e-05,
+        "max_price": 0.03164,
+        "tick_size": 1e-06
+    },
+    "1000SHIBUSDC": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 2000.0,
+        "tick_size": 1e-06
+    },
+    "1000SHIBUSDT": {
+        "price_precision": 6,
+        "min_price": 0.000286,
+        "max_price": 0.4781,
+        "tick_size": 1e-06
+    },
+    "1000WHYUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "1000XECUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00102,
+        "max_price": 1.71642,
+        "tick_size": 1e-05
+    },
+    "1000XUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "1INCHUSDT": {
+        "price_precision": 4,
+        "min_price": 0.014,
+        "max_price": 23.3563,
+        "tick_size": 0.0001
+    },
+    "1MBABYDOGEUSDT": {
+        "price_precision": 7,
+        "min_price": 1e-07,
+        "max_price": 200.0,
+        "tick_size": 1e-07
+    },
+    "AAVEUSDC": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 40000.0,
+        "tick_size": 0.01
+    },
+    "AAVEUSDT": {
+        "price_precision": 2,
+        "min_price": 3.06,
+        "max_price": 5109.09,
+        "tick_size": 0.01
+    },
+    "ABCCCUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "ACEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.252,
+        "max_price": 420.0,
+        "tick_size": 0.0001
+    },
+    "ACHUSDT": {
+        "price_precision": 6,
+        "min_price": 0.0006,
+        "max_price": 1.00551,
+        "tick_size": 1e-06
+    },
+    "ACTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "ACXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ADAUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ADAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0168,
+        "max_price": 28.135,
+        "tick_size": 0.0001
+    },
+    "AERGOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "AEROUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "AEVOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.01,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "AGIXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0087,
+        "max_price": 14.6374,
+        "tick_size": 0.0001
+    },
+    "AGLDUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0375,
+        "max_price": 62.5968,
+        "tick_size": 0.0001
+    },
+    "AGTUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "AI16ZUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "AIOTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "AIUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "AIXBTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "AKTUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "ALCHUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "ALGOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0067,
+        "max_price": 11.17,
+        "tick_size": 0.0001
+    },
+    "ALICEUSDT": {
+        "price_precision": 3,
+        "min_price": 0.042,
+        "max_price": 70.9,
+        "tick_size": 0.001
+    },
+    "ALPACAUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "ALPHAUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0168,
+        "max_price": 28.0,
+        "tick_size": 1e-05
+    },
+    "ALPINEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ALTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "AMBUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00025,
+        "max_price": 0.42598,
+        "tick_size": 1e-05
+    },
+    "ANIMEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ANKRUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00091,
+        "max_price": 1.52717,
+        "tick_size": 1e-05
+    },
+    "ANTUSDT": {
+        "price_precision": 3,
+        "min_price": 0.181,
+        "max_price": 302.273,
+        "tick_size": 0.001
+    },
+    "APEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.052,
+        "max_price": 87.233,
+        "tick_size": 0.0001
+    },
+    "API3USDT": {
+        "price_precision": 3,
+        "min_price": 0.057,
+        "max_price": 96.132,
+        "tick_size": 0.001
+    },
+    "APTUSDT": {
+        "price_precision": 3,
+        "min_price": 0.299,
+        "max_price": 498.513,
+        "tick_size": 0.001
+    },
+    "ARBUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 20000.0,
+        "tick_size": 0.0001
+    },
+    "ARBUSDT": {
+        "price_precision": 4,
+        "min_price": 0.047,
+        "max_price": 78.4636,
+        "tick_size": 0.0001
+    },
+    "ARCUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "ARKMUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0115,
+        "max_price": 19.3282,
+        "tick_size": 0.0001
+    },
+    "ARKUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ARPAUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00123,
+        "max_price": 2.06106,
+        "tick_size": 1e-05
+    },
+    "ARUSDT": {
+        "price_precision": 3,
+        "min_price": 0.123,
+        "max_price": 205.758,
+        "tick_size": 0.001
+    },
+    "ASRUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 200.0,
+        "tick_size": 0.001
+    },
+    "ASTRUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00189,
+        "max_price": 3.1605,
+        "tick_size": 1e-05
+    },
+    "ATAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.002,
+        "max_price": 3.3899,
+        "tick_size": 0.0001
+    },
+    "ATHUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "ATOMUSDT": {
+        "price_precision": 3,
+        "min_price": 0.217,
+        "max_price": 363.214,
+        "tick_size": 0.001
+    },
+    "AUCTIONUSDT": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 2000.0,
+        "tick_size": 0.01
+    },
+    "AUDIOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0044,
+        "max_price": 7.4938,
+        "tick_size": 0.0001
+    },
+    "AUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "AVAAIUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "AVAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "AVAXUSDC": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "AVAXUSDT": {
+        "price_precision": 2,
+        "min_price": 0.29,
+        "max_price": 498.86,
+        "tick_size": 0.01
+    },
+    "AXLUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "AXSUSDT": {
+        "price_precision": 3,
+        "min_price": 0.143,
+        "max_price": 239.4,
+        "tick_size": 0.001
+    },
+    "B2USDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "B3USDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "BABYUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "BADGERUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 200.0,
+        "tick_size": 0.001
+    },
+    "BAKEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 47.3794,
+        "tick_size": 0.0001
+    },
+    "BALUSDT": {
+        "price_precision": 3,
+        "min_price": 0.103,
+        "max_price": 172.19,
+        "tick_size": 0.001
+    },
+    "BANANAS31USDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "BANANAUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "BANDUSDT": {
+        "price_precision": 4,
+        "min_price": 0.03,
+        "max_price": 50.051,
+        "tick_size": 0.0001
+    },
+    "BANKUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "BANUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "BATUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0051,
+        "max_price": 8.61,
+        "tick_size": 0.0001
+    },
+    "BBUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "BCHUSDC": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 100000.0,
+        "tick_size": 0.01
+    },
+    "BCHUSDT": {
+        "price_precision": 2,
+        "min_price": 5.71,
+        "max_price": 9521.0,
+        "tick_size": 0.01
+    },
+    "BDXNUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "BEAMXUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "BELUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0386,
+        "max_price": 64.4427,
+        "tick_size": 0.0001
+    },
+    "BERAUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "BICOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "BIDUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "BIGTIMEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "BIOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "BLUEBIRDUSDT": {
+        "price_precision": 3,
+        "min_price": 0.195,
+        "max_price": 326.422,
+        "tick_size": 0.001
+    },
+    "BLURUSDT": {
+        "price_precision": 4,
+        "min_price": 0.006,
+        "max_price": 10.095,
+        "tick_size": 0.0001
+    },
+    "BMTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "BNBUSDC": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 100000.0,
+        "tick_size": 0.01
+    },
+    "BNBUSDT": {
+        "price_precision": 3,
+        "min_price": 6.493,
+        "max_price": 10822.994,
+        "tick_size": 0.001
+    },
+    "BNTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0122,
+        "max_price": 20.5265,
+        "tick_size": 0.0001
+    },
+    "BNXUSDT": {
+        "price_precision": 3,
+        "min_price": 0.005,
+        "max_price": 9.553,
+        "tick_size": 0.001
+    },
+    "BOMEUSDC": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "BOMEUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "BONDUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "BRETTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "BROCCOLI714USDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "BROCCOLIF3BUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "BRUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "BSVUSDT": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 20000.0,
+        "tick_size": 0.01
+    },
+    "BSWUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "BTCDOMUSDT": {
+        "price_precision": 1,
+        "min_price": 52.1,
+        "max_price": 86841.4,
+        "tick_size": 0.1
+    },
+    "BTCSTUSDT": {
+        "price_precision": 3,
+        "min_price": 0.668,
+        "max_price": 1000000.0,
+        "tick_size": 0.001
+    },
+    "BTCUSDC": {
+        "price_precision": 1,
+        "min_price": 0.1,
+        "max_price": 500000.0,
+        "tick_size": 0.1
+    },
+    "BTCUSDT": {
+        "price_precision": 1,
+        "min_price": 261.1,
+        "max_price": 809484.0,
+        "tick_size": 0.1
+    },
+    "BTCUSDT_250627": {
+        "price_precision": 1,
+        "min_price": 576.3,
+        "max_price": 1000000.0,
+        "tick_size": 0.1
+    },
+    "BTCUSDT_250926": {
+        "price_precision": 1,
+        "min_price": 576.3,
+        "max_price": 1000000.0,
+        "tick_size": 0.1
+    },
+    "BTCUSDT_251226": {
+        "price_precision": 1,
+        "min_price": 576.3,
+        "max_price": 1000000.0,
+        "tick_size": 0.1
+    },
+    "BULLAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "BUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "C98USDT": {
+        "price_precision": 4,
+        "min_price": 0.0038,
+        "max_price": 6.4762,
+        "tick_size": 0.0001
+    },
+    "CAKEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "CATIUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "CELOUSDT": {
+        "price_precision": 3,
+        "min_price": 0.012,
+        "max_price": 20.994,
+        "tick_size": 0.001
+    },
+    "CELRUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00033,
+        "max_price": 0.55926,
+        "tick_size": 1e-05
+    },
+    "CETUSUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "CFXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0036,
+        "max_price": 6.0263,
+        "tick_size": 0.0001
+    },
+    "CGPTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "CHESSUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "CHILLGUYUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "CHRUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0024,
+        "max_price": 4.1565,
+        "tick_size": 0.0001
+    },
+    "CHZUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00185,
+        "max_price": 3.09496,
+        "tick_size": 1e-05
+    },
+    "CKBUSDT": {
+        "price_precision": 6,
+        "min_price": 8.1e-05,
+        "max_price": 0.135803,
+        "tick_size": 1e-06
+    },
+    "COMBOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0142,
+        "max_price": 23.7976,
+        "tick_size": 0.0001
+    },
+    "COMPUSDT": {
+        "price_precision": 2,
+        "min_price": 1.26,
+        "max_price": 2108.0,
+        "tick_size": 0.01
+    },
+    "COOKIEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "COSUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "COTIUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00115,
+        "max_price": 1.93326,
+        "tick_size": 1e-05
+    },
+    "COWUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "CRVUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "CRVUSDT": {
+        "price_precision": 3,
+        "min_price": 0.013,
+        "max_price": 22.181,
+        "tick_size": 0.001
+    },
+    "CTKUSDT": {
+        "price_precision": 4,
+        "min_price": 0.043,
+        "max_price": 72.197,
+        "tick_size": 0.0001
+    },
+    "CTSIUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0189,
+        "max_price": 31.5954,
+        "tick_size": 0.0001
+    },
+    "CVXUSDT": {
+        "price_precision": 3,
+        "min_price": 0.082,
+        "max_price": 138.286,
+        "tick_size": 0.001
+    },
+    "CYBERUSDT": {
+        "price_precision": 3,
+        "min_price": 0.114,
+        "max_price": 190.188,
+        "tick_size": 0.001
+    },
+    "DARUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0024,
+        "max_price": 4.0022,
+        "tick_size": 0.0001
+    },
+    "DASHUSDT": {
+        "price_precision": 2,
+        "min_price": 0.74,
+        "max_price": 1238.47,
+        "tick_size": 0.01
+    },
+    "DEEPUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "DEFIUSDT": {
+        "price_precision": 1,
+        "min_price": 12.7,
+        "max_price": 21250.0,
+        "tick_size": 0.1
+    },
+    "DEGENUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "DEGOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "DENTUSDT": {
+        "price_precision": 6,
+        "min_price": 1.8e-05,
+        "max_price": 0.030282,
+        "tick_size": 1e-06
+    },
+    "DEXEUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 20000.0,
+        "tick_size": 0.001
+    },
+    "DFUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "DGBUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00087,
+        "max_price": 1.4545,
+        "tick_size": 1e-05
+    },
+    "DIAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "DMCUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "DODOXUSDT": {
+        "price_precision": 6,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "DOGEUSDC": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "DOGEUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00217,
+        "max_price": 3.62393,
+        "tick_size": 1e-05
+    },
+    "DOGSUSDT": {
+        "price_precision": 7,
+        "min_price": 1e-07,
+        "max_price": 200.0,
+        "tick_size": 1e-07
+    },
+    "DOLOUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "DOODUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "DOTUSDT": {
+        "price_precision": 3,
+        "min_price": 0.163,
+        "max_price": 271.718,
+        "tick_size": 0.001
+    },
+    "DRIFTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "DUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "DUSKUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00404,
+        "max_price": 6.74733,
+        "tick_size": 1e-05
+    },
+    "DYDXUSDT": {
+        "price_precision": 3,
+        "min_price": 0.065,
+        "max_price": 108.435,
+        "tick_size": 0.001
+    },
+    "DYMUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "EDUUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0181,
+        "max_price": 30.3212,
+        "tick_size": 0.0001
+    },
+    "EGLDUSDT": {
+        "price_precision": 2,
+        "min_price": 1.01,
+        "max_price": 1685.58,
+        "tick_size": 0.01
+    },
+    "EIGENUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "ENAUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ENAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ENJUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0086,
+        "max_price": 14.345,
+        "tick_size": 0.0001
+    },
+    "ENSUSDT": {
+        "price_precision": 3,
+        "min_price": 0.277,
+        "max_price": 463.118,
+        "tick_size": 0.001
+    },
+    "EOSUSDT": {
+        "price_precision": 3,
+        "min_price": 0.021,
+        "max_price": 36.061,
+        "tick_size": 0.001
+    },
+    "EPICUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "EPTUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "ETCUSDT": {
+        "price_precision": 3,
+        "min_price": 0.567,
+        "max_price": 946.547,
+        "tick_size": 0.001
+    },
+    "ETHBTC": {
+        "price_precision": 5,
+        "min_price": 0.00185,
+        "max_price": 3.085,
+        "tick_size": 1e-05
+    },
+    "ETHFIUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "ETHFIUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "ETHUSDC": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 100000.0,
+        "tick_size": 0.01
+    },
+    "ETHUSDT": {
+        "price_precision": 2,
+        "min_price": 18.67,
+        "max_price": 95264.25,
+        "tick_size": 0.01
+    },
+    "ETHUSDT_250627": {
+        "price_precision": 2,
+        "min_price": 41.1,
+        "max_price": 100000.0,
+        "tick_size": 0.01
+    },
+    "ETHUSDT_250926": {
+        "price_precision": 2,
+        "min_price": 41.1,
+        "max_price": 100000.0,
+        "tick_size": 0.01
+    },
+    "ETHUSDT_251226": {
+        "price_precision": 2,
+        "min_price": 41.1,
+        "max_price": 100000.0,
+        "tick_size": 0.01
+    },
+    "ETHWUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "FARTCOINUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "FETUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0065,
+        "max_price": 10.975,
+        "tick_size": 0.0001
+    },
+    "FHEUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "FIDAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "FILUSDC": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 100000.0,
+        "tick_size": 0.001
+    },
+    "FILUSDT": {
+        "price_precision": 3,
+        "min_price": 0.13,
+        "max_price": 217.998,
+        "tick_size": 0.001
+    },
+    "FIOUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "FISUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "FLMUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0019,
+        "max_price": 3.22,
+        "tick_size": 0.0001
+    },
+    "FLOWUSDT": {
+        "price_precision": 3,
+        "min_price": 0.018,
+        "max_price": 30.304,
+        "tick_size": 0.001
+    },
+    "FLUXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "FOOTBALLUSDT": {
+        "price_precision": 2,
+        "min_price": 18.77,
+        "max_price": 20000.0,
+        "tick_size": 0.01
+    },
+    "FORMUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "FORTHUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "FTMUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0162,
+        "max_price": 27.1267,
+        "tick_size": 0.0001
+    },
+    "FUNUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "FUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "FXSUSDT": {
+        "price_precision": 4,
+        "min_price": 0.315,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "GALAUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0014,
+        "max_price": 2.3438,
+        "tick_size": 1e-05
+    },
+    "GASUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "GHSTUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 200.0,
+        "tick_size": 0.001
+    },
+    "GLMRUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "GLMUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "GMTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0131,
+        "max_price": 21.9847,
+        "tick_size": 0.0001
+    },
+    "GMXUSDT": {
+        "price_precision": 3,
+        "min_price": 2.31,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "GOATUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "GPSUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "GRASSUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "GRIFFAINUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "GRTUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00523,
+        "max_price": 8.72,
+        "tick_size": 1e-05
+    },
+    "GTCUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 124.0,
+        "tick_size": 0.001
+    },
+    "GUNUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "GUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "HAEDALUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "HBARUSDC": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "HBARUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00841,
+        "max_price": 14.0295,
+        "tick_size": 1e-05
+    },
+    "HEIUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "HFTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "HIFIUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "HIGHUSDT": {
+        "price_precision": 4,
+        "min_price": 0.116,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "HIPPOUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "HIVEUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "HMSTRUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "HOMEUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "HOOKUSDT": {
+        "price_precision": 3,
+        "min_price": 0.076,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "HOTUSDT": {
+        "price_precision": 6,
+        "min_price": 6.8e-05,
+        "max_price": 0.11345,
+        "tick_size": 1e-06
+    },
+    "HUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "HYPERUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "HYPEUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 20000.0,
+        "tick_size": 0.001
+    },
+    "ICNTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ICXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0304,
+        "max_price": 50.8,
+        "tick_size": 0.0001
+    },
+    "IDEXUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "IDOL": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "IDOLUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "IDUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "ILVUSDT": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 2000.0,
+        "tick_size": 0.01
+    },
+    "IMXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0303,
+        "max_price": 50.5451,
+        "tick_size": 0.0001
+    },
+    "INITUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "INJUSDT": {
+        "price_precision": 3,
+        "min_price": 0.128,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "IOSTUSDT": {
+        "price_precision": 6,
+        "min_price": 0.000396,
+        "max_price": 0.6614,
+        "tick_size": 1e-06
+    },
+    "IOTAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0077,
+        "max_price": 12.8692,
+        "tick_size": 0.0001
+    },
+    "IOTXUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00098,
+        "max_price": 1.6355,
+        "tick_size": 1e-05
+    },
+    "IOUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "IPUSDC": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 2000.0,
+        "tick_size": 1e-05
+    },
+    "IPUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "JASMYUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00021,
+        "max_price": 100.0,
+        "tick_size": 1e-05
+    },
+    "JELLYJELLYUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "JOEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "JSTUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "JTOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "JUPUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "KAIAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "KAITOUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "KAITOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "KASUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "KAVAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0297,
+        "max_price": 49.525,
+        "tick_size": 0.0001
+    },
+    "KDAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "KERNELUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "KEYUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "KLAYUSDT": {
+        "price_precision": 4,
+        "min_price": 0.009,
+        "max_price": 15.02,
+        "tick_size": 0.0001
+    },
+    "KMNOUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "KNCUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0262,
+        "max_price": 43.6875,
+        "tick_size": 0.0001
+    },
+    "KOMAUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "KSMUSDT": {
+        "price_precision": 2,
+        "min_price": 1.32,
+        "max_price": 2216.0,
+        "tick_size": 0.01
+    },
+    "LAYERUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "LDOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0833,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "LEVERUSDT": {
+        "price_precision": 7,
+        "min_price": 1e-06,
+        "max_price": 100.0,
+        "tick_size": 1e-07
+    },
+    "LINAUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00043,
+        "max_price": 0.728,
+        "tick_size": 1e-05
+    },
+    "LINKUSDC": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "LINKUSDT": {
+        "price_precision": 3,
+        "min_price": 0.233,
+        "max_price": 389.118,
+        "tick_size": 0.001
+    },
+    "LISTAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "LITUSDT": {
+        "price_precision": 3,
+        "min_price": 0.045,
+        "max_price": 75.569,
+        "tick_size": 0.001
+    },
+    "LOKAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "LOOMUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "LPTUSDT": {
+        "price_precision": 3,
+        "min_price": 1.059,
+        "max_price": 1765.155,
+        "tick_size": 0.001
+    },
+    "LQTYUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "LRCUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0127,
+        "max_price": 21.2609,
+        "tick_size": 0.0001
+    },
+    "LSKUSDT": {
+        "price_precision": 4,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "LTCUSDC": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 100000.0,
+        "tick_size": 0.01
+    },
+    "LTCUSDT": {
+        "price_precision": 1,
+        "min_price": 20.1,
+        "max_price": 1000.1,
+        "tick_size": 0.1
+    },
+    "LUMIAUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "LUNA2USDT": {
+        "price_precision": 4,
+        "min_price": 0.0548,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "MAGICUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0574,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "MANAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0214,
+        "max_price": 35.71,
+        "tick_size": 0.0001
+    },
+    "MANTAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 1000.0,
+        "tick_size": 0.0001
+    },
+    "MASKUSDT": {
+        "price_precision": 3,
+        "min_price": 0.121,
+        "max_price": 202.55,
+        "tick_size": 0.001
+    },
+    "MAVIAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "MAVUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "MBLUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "MBOXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "MDTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "MELANIAUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 20000.0,
+        "tick_size": 0.001
+    },
+    "MEMEFIUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "MEMEUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "MERLUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "METISUSDT": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 2000.0,
+        "tick_size": 0.01
+    },
+    "MEUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "MEWUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "MILKUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "MINAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.03,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "MKRUSDT": {
+        "price_precision": 1,
+        "min_price": 23.0,
+        "max_price": 38385.0,
+        "tick_size": 0.1
+    },
+    "MLNUSDT": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 20000.0,
+        "tick_size": 0.01
+    },
+    "MOCAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "MOODENGUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "MORPHOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "MOVEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "MOVRUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 5000.0,
+        "tick_size": 0.001
+    },
+    "MTLUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0436,
+        "max_price": 72.7546,
+        "tick_size": 0.0001
+    },
+    "MUBARAKUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "MYROUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "MYXUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "NEARUSDC": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "NEARUSDT": {
+        "price_precision": 3,
+        "min_price": 0.077,
+        "max_price": 128.641,
+        "tick_size": 0.001
+    },
+    "NEIROETHUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "NEIROUSDT": {
+        "price_precision": 8,
+        "min_price": 1e-08,
+        "max_price": 200.0,
+        "tick_size": 1e-08
+    },
+    "NEOUSDC": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 100000.0,
+        "tick_size": 0.001
+    },
+    "NEOUSDT": {
+        "price_precision": 3,
+        "min_price": 0.732,
+        "max_price": 1220.435,
+        "tick_size": 0.001
+    },
+    "NEWTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "NFPUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 1000.0,
+        "tick_size": 0.0001
+    },
+    "NILUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "NKNUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0086,
+        "max_price": 14.34653,
+        "tick_size": 1e-05
+    },
+    "NMRUSDT": {
+        "price_precision": 3,
+        "min_price": 34.0,
+        "max_price": 124.0,
+        "tick_size": 0.001
+    },
+    "NOTUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "NTRNUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "NULSUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "NXPCUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "OBOLUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "OCEANUSDT": {
+        "price_precision": 5,
+        "min_price": 0.01465,
+        "max_price": 24.42565,
+        "tick_size": 1e-05
+    },
+    "OGNUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0045,
+        "max_price": 7.61,
+        "tick_size": 0.0001
+    },
+    "OGUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "OLUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "OMGUSDT": {
+        "price_precision": 3,
+        "min_price": 0.055,
+        "max_price": 92.591,
+        "tick_size": 0.001
+    },
+    "OMNIUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 100000.0,
+        "tick_size": 1e-05
+    },
+    "OMUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "ONDOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ONEUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00079,
+        "max_price": 1.33,
+        "tick_size": 1e-05
+    },
+    "ONGUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ONTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0083,
+        "max_price": 13.8978,
+        "tick_size": 0.0001
+    },
+    "OPUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0748,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ORBSUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "ORCAUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "ORDIUSDC": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "ORDIUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "OXTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "PARTIUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "PAXGUSDT": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 200000.0,
+        "tick_size": 0.01
+    },
+    "PENDLEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "PENGUUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "PEOPLEUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00086,
+        "max_price": 2000.0,
+        "tick_size": 1e-05
+    },
+    "PERPUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "PHAUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "PHBUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0438,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "PIPPINUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "PIXELUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "PLUMEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "PNUTUSDC": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "PNUTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "POLUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "POLYXUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "PONKEUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "POPCATUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "PORT3USDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "PORTALUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "POWRUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "PROMPTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "PROMUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "PUFFERUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "PUMPBTCUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "PUMPUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "PUNDIXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "PYTHUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "QNTUSDT": {
+        "price_precision": 2,
+        "min_price": 4.14,
+        "max_price": 2000.0,
+        "tick_size": 0.01
+    },
+    "QTUMUSDT": {
+        "price_precision": 3,
+        "min_price": 0.113,
+        "max_price": 189.594,
+        "tick_size": 0.001
+    },
+    "QUICKUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "RADUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "RAREUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "RAYSOLUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "RDNTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "REDUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "REEFUSDT": {
+        "price_precision": 6,
+        "min_price": 0.000109,
+        "max_price": 0.182942,
+        "tick_size": 1e-06
+    },
+    "REIUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "RENDERUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "RENUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00292,
+        "max_price": 4.88045,
+        "tick_size": 1e-05
+    },
+    "REZUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "RIFUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "RLCUSDT": {
+        "price_precision": 4,
+        "min_price": 0.064,
+        "max_price": 106.7243,
+        "tick_size": 0.0001
+    },
+    "RONINUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 200.0,
+        "tick_size": 0.001
+    },
+    "ROSEUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00236,
+        "max_price": 3.934,
+        "tick_size": 1e-05
+    },
+    "RPLUSDT": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 2000.0,
+        "tick_size": 0.01
+    },
+    "RSRUSDT": {
+        "price_precision": 6,
+        "min_price": 0.000774,
+        "max_price": 1.290556,
+        "tick_size": 1e-06
+    },
+    "RUNEUSDT": {
+        "price_precision": 3,
+        "min_price": 0.053,
+        "max_price": 89.5,
+        "tick_size": 0.001
+    },
+    "RVNUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0028,
+        "max_price": 4.67471,
+        "tick_size": 1e-05
+    },
+    "SAFEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SAGAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "SAHARAUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SANDUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0238,
+        "max_price": 39.6893,
+        "tick_size": 0.0001
+    },
+    "SANTOSUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "SCRTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SCRUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 200.0,
+        "tick_size": 0.001
+    },
+    "SEIUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SFPUSDT": {
+        "price_precision": 4,
+        "min_price": 0.032,
+        "max_price": 53.395,
+        "tick_size": 0.0001
+    },
+    "SHELLUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SIGNUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SIRENUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SKATEUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SKLUSDT": {
+        "price_precision": 5,
+        "min_price": 0.0017,
+        "max_price": 2.84912,
+        "tick_size": 1e-05
+    },
+    "SKYAIUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SLERFUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SLPUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "SNTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SNXUSDT": {
+        "price_precision": 3,
+        "min_price": 0.079,
+        "max_price": 132.131,
+        "tick_size": 0.001
+    },
+    "SOLUSDC": {
+        "price_precision": 3,
+        "min_price": 0.1,
+        "max_price": 100000.0,
+        "tick_size": 0.001
+    },
+    "SOLUSDT": {
+        "price_precision": 1,
+        "min_price": 0.1,
+        "max_price": 2000.0,
+        "tick_size": 0.1
+    },
+    "SOLVUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SONICUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "SOPHUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "SPELLUSDT": {
+        "price_precision": 7,
+        "min_price": 2.74e-05,
+        "max_price": 100.0,
+        "tick_size": 1e-07
+    },
+    "SPXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SQDUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SSVUSDT": {
+        "price_precision": 3,
+        "min_price": 0.01,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "STEEMUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "STGUSDT": {
+        "price_precision": 4,
+        "min_price": 0.033,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "STMXUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00021,
+        "max_price": 0.354,
+        "tick_size": 1e-05
+    },
+    "STORJUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0137,
+        "max_price": 22.8581,
+        "tick_size": 0.0001
+    },
+    "STOUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "STPTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "STRAXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "STRKUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "STXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0196,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SUIUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 20000.0,
+        "tick_size": 0.0001
+    },
+    "SUIUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "SUNUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "SUPERUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SUSHIUSDT": {
+        "price_precision": 3,
+        "min_price": 0.043,
+        "max_price": 72.35,
+        "tick_size": 0.001
+    },
+    "SWARMSUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SWELLUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SXPUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0104,
+        "max_price": 17.4211,
+        "tick_size": 0.0001
+    },
+    "SXTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SYNUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "SYRUPUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "SYSUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "TAIKOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "TAOUSDT": {
+        "price_precision": 2,
+        "min_price": 0.01,
+        "max_price": 100000.0,
+        "tick_size": 0.01
+    },
+    "THETAUSDT": {
+        "price_precision": 3,
+        "min_price": 0.037,
+        "max_price": 62.015,
+        "tick_size": 0.001
+    },
+    "THEUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "TIAUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "TIAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "TNSRUSDT": {
+        "price_precision": 4,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "TOKENUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "TOMOUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0158,
+        "max_price": 26.4244,
+        "tick_size": 0.0001
+    },
+    "TONUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "TRBUSDT": {
+        "price_precision": 2,
+        "min_price": 0.89,
+        "max_price": 1488.05,
+        "tick_size": 0.01
+    },
+    "TROYUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "TRUMPUSDC": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 20000.0,
+        "tick_size": 0.001
+    },
+    "TRUMPUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 20000.0,
+        "tick_size": 0.001
+    },
+    "TRUUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "TRXUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00212,
+        "max_price": 3.53444,
+        "tick_size": 1e-05
+    },
+    "TSTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "TURBOUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "TUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00125,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "TUTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "TWTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "UMAUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "UNFIUSDT": {
+        "price_precision": 3,
+        "min_price": 0.212,
+        "max_price": 354.1,
+        "tick_size": 0.001
+    },
+    "UNIUSDC": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 3000.0,
+        "tick_size": 0.001
+    },
+    "UNIUSDT": {
+        "price_precision": 3,
+        "min_price": 0.213,
+        "max_price": 355.459,
+        "tick_size": 0.001
+    },
+    "USDCUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "USTCUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "USUALUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "UXLINKUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "VANAUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 20000.0,
+        "tick_size": 0.001
+    },
+    "VANRYUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "VELODROMEUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "VETUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00092,
+        "max_price": 1.53872,
+        "tick_size": 1e-05
+    },
+    "VICUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "VIDTUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "VINEUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "VIRTUALUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "VOXELUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "VTHOUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "VVVUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 20000.0,
+        "tick_size": 0.001
+    },
+    "WALUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "WAVESUSDT": {
+        "price_precision": 3,
+        "min_price": 0.085,
+        "max_price": 143.165,
+        "tick_size": 0.001
+    },
+    "WAXPUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "WCTUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "WIFUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 1000.0,
+        "tick_size": 0.0001
+    },
+    "WIFUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 1000.0,
+        "tick_size": 0.0001
+    },
+    "WLDUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "WLDUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "WOOUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00749,
+        "max_price": 12.4855,
+        "tick_size": 1e-05
+    },
+    "WUSDT": {
+        "price_precision": 4,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.0001
+    },
+    "XAIUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "XCNUSDT": {
+        "price_precision": 5,
+        "min_price": 1e-05,
+        "max_price": 200.0,
+        "tick_size": 1e-05
+    },
+    "XEMUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0035,
+        "max_price": 5.8462,
+        "tick_size": 0.0001
+    },
+    "XLMUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00284,
+        "max_price": 4.7445,
+        "tick_size": 1e-05
+    },
+    "XMRUSDT": {
+        "price_precision": 3,
+        "min_price": 4.836,
+        "max_price": 8060.08,
+        "tick_size": 0.001
+    },
+    "XRPUSDC": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 100000.0,
+        "tick_size": 0.0001
+    },
+    "XRPUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0117,
+        "max_price": 19.605,
+        "tick_size": 0.0001
+    },
+    "XTZUSDT": {
+        "price_precision": 3,
+        "min_price": 0.037,
+        "max_price": 62.15,
+        "tick_size": 0.001
+    },
+    "XVGUSDT": {
+        "price_precision": 6,
+        "min_price": 1e-06,
+        "max_price": 200.0,
+        "tick_size": 1e-06
+    },
+    "XVSUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "YFIUSDT": {
+        "price_precision": 1,
+        "min_price": 222.9,
+        "max_price": 371600.0,
+        "tick_size": 0.1
+    },
+    "YGGUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ZECUSDT": {
+        "price_precision": 2,
+        "min_price": 1.46,
+        "max_price": 2445.24,
+        "tick_size": 0.01
+    },
+    "ZENUSDT": {
+        "price_precision": 3,
+        "min_price": 0.42,
+        "max_price": 700.4,
+        "tick_size": 0.001
+    },
+    "ZEREBROUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ZETAUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ZILUSDT": {
+        "price_precision": 5,
+        "min_price": 0.00098,
+        "max_price": 1.6345,
+        "tick_size": 1e-05
+    },
+    "ZKJUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "ZKUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0001,
+        "max_price": 200.0,
+        "tick_size": 0.0001
+    },
+    "ZROUSDT": {
+        "price_precision": 3,
+        "min_price": 0.001,
+        "max_price": 2000.0,
+        "tick_size": 0.001
+    },
+    "ZRXUSDT": {
+        "price_precision": 4,
+        "min_price": 0.0079,
+        "max_price": 13.2541,
+        "tick_size": 0.0001
+    },
+}
+
+def get_quantity_precision(symbol: str) -> int:
+    """
+    Get the quantity precision for a futures symbol.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTCUSDT")
+    
+    Returns:
+        Number of decimal places allowed for quantity
+    """
+    return FUTURES_QUANTITY_PRECISION.get(symbol, {}).get("quantity_precision", 8)
+
+def get_price_precision(symbol: str) -> int:
+    """
+    Get the price precision for a futures symbol.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTCUSDT")
+    
+    Returns:
+        Number of decimal places allowed for price
+    """
+    return FUTURES_PRICE_PRECISION.get(symbol, {}).get("price_precision", 8)
+
+def round_quantity(symbol: str, quantity: float) -> float:
+    """
+    Round quantity to the correct precision for a futures symbol.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTCUSDT")
+        quantity: Quantity to round
+    
+    Returns:
+        Rounded quantity
+    """
+    precision = get_quantity_precision(symbol)
+    return round(quantity, precision)
+
+def round_price(symbol: str, price: float) -> float:
+    """
+    Round price to the correct precision for a futures symbol.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTCUSDT")
+        price: Price to round
+    
+    Returns:
+        Rounded price
+    """
+    precision = get_price_precision(symbol)
+    return round(price, precision)
+
+def validate_quantity(symbol: str, quantity: float) -> bool:
+    """
+    Validate if quantity meets minimum requirements for a futures symbol.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTCUSDT")
+        quantity: Quantity to validate
+    
+    Returns:
+        True if quantity is valid, False otherwise
+    """
+    info = FUTURES_QUANTITY_PRECISION.get(symbol, {})
+    min_qty = info.get("min_qty", 0)
+    max_qty = info.get("max_qty", float("inf"))
+    
+    return min_qty <= quantity <= max_qty
