@@ -35,8 +35,8 @@ async def process_june_trades():
     logging.info("--- Starting Historical Trade Processing for June 2025 ---")
 
     # 1. Fetch all trades from June
-    start_date = '2025-06-01T00:00:00.000Z'
-    end_date = '2025-06-30T23:59:59.999Z'
+    start_date = '2025-07-01T00:00:00.000Z'
+    end_date = '2025-07-31T23:59:59.999Z'
 
     try:
         response = supabase.from_("trades").select("*").gte("timestamp", start_date).lte("timestamp", end_date).execute()

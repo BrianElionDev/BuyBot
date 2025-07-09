@@ -9,7 +9,9 @@ from src.exchange.binance_exchange import BinanceExchange
 from src.exchange.uniswap_exchange import UniswapExchange
 from datetime import datetime
 from config.settings import TRADE_AMOUNT, SLIPPAGE_PERCENTAGE, MIN_ETH_BALANCE, PRICE_THRESHOLD, TOKEN_ADDRESS_MAP
-from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET, FUTURE_ORDER_TYPE_STOP_MARKET
+from binance.enums import (FUTURE_ORDER_TYPE_MARKET, FUTURE_ORDER_TYPE_STOP_MARKET,
+                           ORDER_TYPE_MARKET,
+                           SIDE_BUY, SIDE_SELL)
 
 logger = logging.getLogger(__name__)
 
@@ -601,7 +603,7 @@ class TradingEngine:
 
     async def close_position_at_market(self, active_trade: Dict, reason: str = "manual_close", close_percentage: float = 100.0) -> Tuple[bool, Dict]:
         """
-        Close an active position at current market price.
+        Close an active position at current market price. Handles both CEX futures and spot.
 
         Args:
             active_trade: The trade record containing position info
@@ -615,6 +617,7 @@ class TradingEngine:
             # --- BEGIN ROBUST SIZE & SYMBOL LOOKUP ---
             parsed_signal = active_trade.get("parsed_signal") or {}
             coin_symbol = parsed_signal.get("coin_symbol")
+            position_type = parsed_signal.get("position_type", "SPOT").upper() # Default to SPOT, ensure uppercase
             position_size = float(active_trade.get("position_size") or 0.0)
 
             if position_size <= 0:
@@ -636,35 +639,52 @@ class TradingEngine:
 
             # Create trading pair
             trading_pair = f"{coin_symbol.lower()}_usdt"
+            close_order = None
+            is_futures = position_type in ['LONG', 'SHORT']
 
-            # Execute sell order at market price
-            # NOTE: This assumes closing a LONG position. A full implementation needs to check position_type.
-            sell_order = await self.binance_exchange.create_order(
-                pair=trading_pair,
-                side='sell',
-                order_type_market='MARKET',
-                amount=amount_to_close
-            )
+            if is_futures:
+                # Determine the correct side to close a futures position
+                # To close a LONG, you SELL. To close a SHORT, you BUY.
+                close_side = SIDE_SELL if position_type == 'LONG' else SIDE_BUY
+                logger.info(f"Executing FUTURES close order for {position_type} position. Side: {close_side}")
+                close_order = await self.binance_exchange.create_futures_order(
+                    pair=trading_pair,
+                    side=close_side,
+                    order_type_market=FUTURE_ORDER_TYPE_MARKET,
+                    amount=amount_to_close,
+                    reduce_only=True # Set reduceOnly to true to ensure it only closes a position
+                )
+            else:
+                # Fallback to SPOT order logic
+                logger.info(f"Executing SPOT close order.")
+                # For spot, we are always selling back to USDT.
+                close_order = await self.binance_exchange.create_order(
+                    pair=trading_pair,
+                    side='sell',
+                    order_type_market='MARKET',
+                    amount=amount_to_close
+                )
 
-            if sell_order and 'orderId' in sell_order:
+
+            if close_order and 'orderId' in close_order:
                 # Extract execution details from Binance response
-                fill_price = float(sell_order.get('fills', [{}])[0].get('price', 0)) if sell_order.get('fills') else 0
-                executed_qty = float(sell_order.get('executedQty', 0))
-                order_id = sell_order.get('orderId', '')
+                fill_price = float(close_order.get('avgPrice', 0)) if is_futures else (float(close_order.get('fills', [{}])[0].get('price', 0)) if close_order.get('fills') else 0)
+                executed_qty = float(close_order.get('executedQty', 0))
+                order_id = close_order.get('orderId', '')
 
                 execution_details = {
                     "fill_price": fill_price,
                     "executed_qty": executed_qty,
                     "order_id": str(order_id),
                     "close_reason": reason,
-                    "binance_response": sell_order # Include the full response
+                    "binance_response": close_order # Include the full response
                 }
 
                 logger.info(f"Position closed successfully: {coin_symbol} @ ${fill_price}")
                 return True, execution_details
             else:
-                logger.error(f"Failed to close position for {coin_symbol}. Response: {sell_order}")
-                return False, sell_order
+                logger.error(f"Failed to close position for {coin_symbol}. Response: {close_order}")
+                return False, close_order
 
         except Exception as e:
             logger.error(f"Error closing position: {e}", exc_info=True)
@@ -724,7 +744,7 @@ class TradingEngine:
                 order_type_market=FUTURE_ORDER_TYPE_STOP_MARKET,
                 stop_price=new_sl_price,
                 amount=position_size,
-                leverage=20 # This should ideally match original leverage
+                reduce_only=True
             )
 
             if new_sl_order_result and 'orderId' in new_sl_order_result:
