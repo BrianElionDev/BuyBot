@@ -27,77 +27,59 @@ except Exception as e:
 def parse_alert_content(content, original_trade_data):
     """
     Parse alert content and determine what action should be taken.
-    Returns structured data for logging.
+    Returns a structured command for execution.
     """
     content_lower = content.lower()
 
-    # Safely extract coin symbol with fallback
+    # Safely extract coin symbol for context, though not part of the command
     coin_symbol = 'UNKNOWN'
     if original_trade_data and isinstance(original_trade_data.get('parsed_signal'), dict):
         coin_symbol = original_trade_data.get('parsed_signal', {}).get('coin_symbol', 'UNKNOWN')
 
-    # Determine action type and details
+    # Determine the command to be executed
     if "stopped out" in content_lower or "stop loss" in content_lower or "stopped be" in content_lower:
         return {
-            "action_type": "stop_loss_hit",
-            "action_description": f"Stop loss hit for {coin_symbol}",
-            "binance_action": "MARKET_SELL",
-            "position_status": "CLOSED",
-            "reason": "Stop loss triggered"
+            "action_type": "CLOSE_POSITION",
+            "reason": f"Stop loss hit for {coin_symbol}"
         }
 
     elif "closed" in content_lower and ("profit" in content_lower or "be" in content_lower):
         return {
-            "action_type": "position_closed",
-            "action_description": f"Position closed for {coin_symbol}",
-            "binance_action": "MARKET_SELL",
-            "position_status": "CLOSED",
-            "reason": "Manual close" if "profit" in content_lower else "Break even close"
+            "action_type": "CLOSE_POSITION",
+            "reason": "Position closed manually"
         }
 
     elif "tp1" in content_lower:
         return {
-            "action_type": "take_profit_1",
-            "action_description": f"Take Profit 1 hit for {coin_symbol}",
-            "binance_action": "PARTIAL_SELL",
-            "position_status": "PARTIALLY_CLOSED",
-            "reason": "TP1 target reached"
+            "action_type": "TAKE_PROFIT",
+            "value": 1,
+            "reason": f"TP1 hit for {coin_symbol}"
         }
 
     elif "tp2" in content_lower:
         return {
-            "action_type": "take_profit_2",
-            "action_description": f"Take Profit 2 hit for {coin_symbol}",
-            "binance_action": "PARTIAL_SELL",
-            "position_status": "PARTIALLY_CLOSED",
-            "reason": "TP2 target reached"
+            "action_type": "TAKE_PROFIT",
+            "value": 2,
+            "reason": f"TP2 hit for {coin_symbol}"
         }
 
     elif "stops moved to be" in content_lower or "sl to be" in content_lower:
         return {
-            "action_type": "stop_loss_update",
-            "action_description": f"Stop loss moved to break even for {coin_symbol}",
-            "binance_action": "UPDATE_STOP_ORDER",
-            "position_status": "ACTIVE",
-            "reason": "Risk management - move to break even"
+            "action_type": "UPDATE_SL",
+            "value": "breakeven",
+            "reason": f"Stop loss moved to break even for {coin_symbol}"
         }
 
     elif "limit order cancelled" in content_lower:
         return {
-            "action_type": "order_cancelled",
-            "action_description": f"Limit order cancelled for {coin_symbol}",
-            "binance_action": "CANCEL_ORDER",
-            "position_status": "CANCELLED",
-            "reason": "Order cancellation"
+            "action_type": "CANCEL_ORDER",
+            "reason": f"Limit order cancelled for {coin_symbol}"
         }
 
     else:
         return {
-            "action_type": "unknown_update",
-            "action_description": f"Update for {coin_symbol}: {content}",
-            "binance_action": "NO_ACTION",
-            "position_status": "UNKNOWN",
-            "reason": "Unrecognized alert type"
+            "action_type": "UNKNOWN",
+            "reason": f"Unrecognized alert type for {coin_symbol}"
         }
 
 def process_alerts():
@@ -107,7 +89,7 @@ def process_alerts():
     """
     try:
         # Fetch all alerts that haven't been processed yet (where parsed_alert is null)
-        response = supabase.table("alerts").select("*").is_("parsed_alert", "null").execute()
+        response = supabase.table("alerts").select("*").execute()
 
         if not hasattr(response, 'data') or not response.data:
             print("No unprocessed alerts found.")
@@ -121,37 +103,25 @@ def process_alerts():
 
             try:
                 # Get the original trade data
-                trade_response = supabase.table("trades").select("*").eq("discord_id", alert["trade"]).execute()
+                # Assuming 'trade' column in alerts links to 'discord_id' in trades
+                response = supabase.table("trades").select("*").eq("discord_id", alert["trade"]).limit(1).execute()
 
-                if not trade_response.data:
+                if not response.data:
                     print(f"Warning: No original trade found for discord_id {alert['trade']}")
-                    # Still create a parsed_alert entry for tracking
                     parsed_alert_data = {
-                        "alert_id": alert["id"],
-                        "original_content": alert["content"],
-                        "processed_at": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         "error": "Original trade not found",
-                        "coin_symbol": "UNKNOWN",
-                        "trader": alert["trader"]
+                        "original_content": alert["content"],
                     }
                 else:
-                    original_trade = trade_response.data[0]
+                    original_trade = response.data[0]
 
-                    # Parse the alert content
-                    parsed_action = parse_alert_content(alert["content"], original_trade)
+                    # Parse the alert content to get the executable command
+                    command_to_execute = parse_alert_content(alert["content"], original_trade)
 
-                    # Create the parsed_alert data structure
-                    parsed_alert_data = {
-                        "alert_id": alert["id"],
-                        "original_content": alert["content"],
-                        "processed_at": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                        "action_determined": parsed_action,
-                        "original_trade_id": original_trade.get("id"),
-                        "coin_symbol": original_trade.get('parsed_signal', {}).get('coin_symbol', 'UNKNOWN') if original_trade.get('parsed_signal') else 'UNKNOWN',
-                        "trader": alert["trader"]
-                    }
+                    # This is what will be stored in the parsed_alert column
+                    parsed_alert_data = command_to_execute
 
-                # Update the alerts table with parsed information
+                # Update the alerts table with the parsed command
                 update_response = supabase.table("alerts").update({
                     "parsed_alert": parsed_alert_data
                 }).eq("id", alert["id"]).execute()
@@ -159,30 +129,27 @@ def process_alerts():
                 if "error" in parsed_alert_data:
                     print(f"⚠ Updated alert ID {alert['id']} - Error: {parsed_alert_data['error']}")
                 else:
-                    print(f"✓ Updated alert ID {alert['id']} - Action: {parsed_action['action_type']}")
+                    print(f"✓ Updated alert ID {alert['id']} - Command: {parsed_alert_data}")
 
             except Exception as e:
                 print(f"Error processing alert ID {alert['id']}: {e}")
                 # Create an error entry
                 try:
                     error_data = {
-                        "alert_id": alert["id"],
-                        "original_content": alert["content"],
-                        "processed_at": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         "error": str(e),
-                        "trader": alert.get("trader", "UNKNOWN")
+                        "original_content": alert.get("content", "N/A"),
                     }
                     supabase.table("alerts").update({
                         "parsed_alert": error_data
                     }).eq("id", alert["id"]).execute()
-                except:
-                    pass  # If we can't even save the error, just continue
+                except Exception as db_error:
+                    print(f"Could not even save the error to the database: {db_error}")
 
             # Small delay between processing
-            time.sleep(0.5)
+            time.sleep(1) # Reduced for faster processing if needed
 
     except Exception as e:
-        print(f"Error processing alerts: {e}")
+        print(f"An error occurred in the main processing loop: {e}")
 
 if __name__ == "__main__":
     process_alerts()

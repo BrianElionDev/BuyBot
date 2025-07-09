@@ -1,0 +1,2371 @@
+{
+  "description": "Detailed information for all futures symbols",
+  "environment": "testnet",
+  "symbols": {
+    "BTCUSDT": {
+      "baseAsset": "BTC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ETHUSDT": {
+      "baseAsset": "ETH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BCHUSDT": {
+      "baseAsset": "BCH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "XRPUSDT": {
+      "baseAsset": "XRP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LTCUSDT": {
+      "baseAsset": "LTC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TRXUSDT": {
+      "baseAsset": "TRX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ETCUSDT": {
+      "baseAsset": "ETC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LINKUSDT": {
+      "baseAsset": "LINK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "XLMUSDT": {
+      "baseAsset": "XLM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ADAUSDT": {
+      "baseAsset": "ADA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DASHUSDT": {
+      "baseAsset": "DASH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ZECUSDT": {
+      "baseAsset": "ZEC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "XTZUSDT": {
+      "baseAsset": "XTZ",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BNBUSDT": {
+      "baseAsset": "BNB",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ATOMUSDT": {
+      "baseAsset": "ATOM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ONTUSDT": {
+      "baseAsset": "ONT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "IOTAUSDT": {
+      "baseAsset": "IOTA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BATUSDT": {
+      "baseAsset": "BAT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VETUSDT": {
+      "baseAsset": "VET",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NEOUSDT": {
+      "baseAsset": "NEO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "QTUMUSDT": {
+      "baseAsset": "QTUM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "IOSTUSDT": {
+      "baseAsset": "IOST",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "THETAUSDT": {
+      "baseAsset": "THETA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ALGOUSDT": {
+      "baseAsset": "ALGO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ZILUSDT": {
+      "baseAsset": "ZIL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KNCUSDT": {
+      "baseAsset": "KNC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ZRXUSDT": {
+      "baseAsset": "ZRX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "COMPUSDT": {
+      "baseAsset": "COMP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "OMGUSDT": {
+      "baseAsset": "OMG",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DOGEUSDT": {
+      "baseAsset": "DOGE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SXPUSDT": {
+      "baseAsset": "SXP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KAVAUSDT": {
+      "baseAsset": "KAVA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BANDUSDT": {
+      "baseAsset": "BAND",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RLCUSDT": {
+      "baseAsset": "RLC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MKRUSDT": {
+      "baseAsset": "MKR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SNXUSDT": {
+      "baseAsset": "SNX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DOTUSDT": {
+      "baseAsset": "DOT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DEFIUSDT": {
+      "baseAsset": "DEFI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "YFIUSDT": {
+      "baseAsset": "YFI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BALUSDT": {
+      "baseAsset": "BAL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CRVUSDT": {
+      "baseAsset": "CRV",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TRBUSDT": {
+      "baseAsset": "TRB",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RUNEUSDT": {
+      "baseAsset": "RUNE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SUSHIUSDT": {
+      "baseAsset": "SUSHI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "EGLDUSDT": {
+      "baseAsset": "EGLD",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SOLUSDT": {
+      "baseAsset": "SOL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ICXUSDT": {
+      "baseAsset": "ICX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "STORJUSDT": {
+      "baseAsset": "STORJ",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "UNIUSDT": {
+      "baseAsset": "UNI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AVAXUSDT": {
+      "baseAsset": "AVAX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ENJUSDT": {
+      "baseAsset": "ENJ",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FLMUSDT": {
+      "baseAsset": "FLM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KSMUSDT": {
+      "baseAsset": "KSM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NEARUSDT": {
+      "baseAsset": "NEAR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AAVEUSDT": {
+      "baseAsset": "AAVE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FILUSDT": {
+      "baseAsset": "FIL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RSRUSDT": {
+      "baseAsset": "RSR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LRCUSDT": {
+      "baseAsset": "LRC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BELUSDT": {
+      "baseAsset": "BEL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AXSUSDT": {
+      "baseAsset": "AXS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ALPHAUSDT": {
+      "baseAsset": "ALPHA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ZENUSDT": {
+      "baseAsset": "ZEN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SKLUSDT": {
+      "baseAsset": "SKL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GRTUSDT": {
+      "baseAsset": "GRT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BNTUSDT": {
+      "baseAsset": "BNT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1INCHUSDT": {
+      "baseAsset": "1INCH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CHZUSDT": {
+      "baseAsset": "CHZ",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SANDUSDT": {
+      "baseAsset": "SAND",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ANKRUSDT": {
+      "baseAsset": "ANKR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LITUSDT": {
+      "baseAsset": "LIT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RVNUSDT": {
+      "baseAsset": "RVN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SFPUSDT": {
+      "baseAsset": "SFP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "XEMUSDT": {
+      "baseAsset": "XEM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "COTIUSDT": {
+      "baseAsset": "COTI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CHRUSDT": {
+      "baseAsset": "CHR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MANAUSDT": {
+      "baseAsset": "MANA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ALICEUSDT": {
+      "baseAsset": "ALICE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HBARUSDT": {
+      "baseAsset": "HBAR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ONEUSDT": {
+      "baseAsset": "ONE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LINAUSDT": {
+      "baseAsset": "LINA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "STMXUSDT": {
+      "baseAsset": "STMX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DENTUSDT": {
+      "baseAsset": "DENT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CELRUSDT": {
+      "baseAsset": "CELR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HOTUSDT": {
+      "baseAsset": "HOT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MTLUSDT": {
+      "baseAsset": "MTL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "OGNUSDT": {
+      "baseAsset": "OGN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NKNUSDT": {
+      "baseAsset": "NKN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000SHIBUSDT": {
+      "baseAsset": "1000SHIB",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BAKEUSDT": {
+      "baseAsset": "BAKE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GTCUSDT": {
+      "baseAsset": "GTC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BTCDOMUSDT": {
+      "baseAsset": "BTCDOM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MASKUSDT": {
+      "baseAsset": "MASK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "IOTXUSDT": {
+      "baseAsset": "IOTX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "C98USDT": {
+      "baseAsset": "C98",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ATAUSDT": {
+      "baseAsset": "ATA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DYDXUSDT": {
+      "baseAsset": "DYDX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000XECUSDT": {
+      "baseAsset": "1000XEC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GALAUSDT": {
+      "baseAsset": "GALA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CELOUSDT": {
+      "baseAsset": "CELO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ARUSDT": {
+      "baseAsset": "AR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ARPAUSDT": {
+      "baseAsset": "ARPA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CTSIUSDT": {
+      "baseAsset": "CTSI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LPTUSDT": {
+      "baseAsset": "LPT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ENSUSDT": {
+      "baseAsset": "ENS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PEOPLEUSDT": {
+      "baseAsset": "PEOPLE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ROSEUSDT": {
+      "baseAsset": "ROSE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DUSKUSDT": {
+      "baseAsset": "DUSK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FLOWUSDT": {
+      "baseAsset": "FLOW",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "IMXUSDT": {
+      "baseAsset": "IMX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "API3USDT": {
+      "baseAsset": "API3",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GMTUSDT": {
+      "baseAsset": "GMT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "APEUSDT": {
+      "baseAsset": "APE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "WOOUSDT": {
+      "baseAsset": "WOO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "JASMYUSDT": {
+      "baseAsset": "JASMY",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "OPUSDT": {
+      "baseAsset": "OP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "XMRUSDT": {
+      "baseAsset": "XMR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "INJUSDT": {
+      "baseAsset": "INJ",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "STGUSDT": {
+      "baseAsset": "STG",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SPELLUSDT": {
+      "baseAsset": "SPELL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000LUNCUSDT": {
+      "baseAsset": "1000LUNC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LUNA2USDT": {
+      "baseAsset": "LUNA2",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LDOUSDT": {
+      "baseAsset": "LDO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "APTUSDT": {
+      "baseAsset": "APT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "QNTUSDT": {
+      "baseAsset": "QNT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FXSUSDT": {
+      "baseAsset": "FXS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HOOKUSDT": {
+      "baseAsset": "HOOK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MAGICUSDT": {
+      "baseAsset": "MAGIC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TUSDT": {
+      "baseAsset": "T",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HIGHUSDT": {
+      "baseAsset": "HIGH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MINAUSDT": {
+      "baseAsset": "MINA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ASTRUSDT": {
+      "baseAsset": "ASTR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PHBUSDT": {
+      "baseAsset": "PHB",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FETUSDT": {
+      "baseAsset": "FET",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GMXUSDT": {
+      "baseAsset": "GMX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CFXUSDT": {
+      "baseAsset": "CFX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "STXUSDT": {
+      "baseAsset": "STX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ACHUSDT": {
+      "baseAsset": "ACH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SSVUSDT": {
+      "baseAsset": "SSV",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CKBUSDT": {
+      "baseAsset": "CKB",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PERPUSDT": {
+      "baseAsset": "PERP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LQTYUSDT": {
+      "baseAsset": "LQTY",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "USDCUSDT": {
+      "baseAsset": "USDC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ARBUSDT": {
+      "baseAsset": "ARB",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "IDUSDT": {
+      "baseAsset": "ID",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "JOEUSDT": {
+      "baseAsset": "JOE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LEVERUSDT": {
+      "baseAsset": "LEVER",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TRUUSDT": {
+      "baseAsset": "TRU",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RDNTUSDT": {
+      "baseAsset": "RDNT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ETHBTC": {
+      "baseAsset": "ETH",
+      "quoteAsset": "BTC",
+      "status": "TRADING"
+    },
+    "HFTUSDT": {
+      "baseAsset": "HFT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "XVSUSDT": {
+      "baseAsset": "XVS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BLURUSDT": {
+      "baseAsset": "BLUR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "EDUUSDT": {
+      "baseAsset": "EDU",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000PEPEUSDT": {
+      "baseAsset": "1000PEPE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000FLOKIUSDT": {
+      "baseAsset": "1000FLOKI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "UMAUSDT": {
+      "baseAsset": "UMA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "COMBOUSDT": {
+      "baseAsset": "COMBO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SUIUSDT": {
+      "baseAsset": "SUI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NMRUSDT": {
+      "baseAsset": "NMR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MAVUSDT": {
+      "baseAsset": "MAV",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "XVGUSDT": {
+      "baseAsset": "XVG",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "WLDUSDT": {
+      "baseAsset": "WLD",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PENDLEUSDT": {
+      "baseAsset": "PENDLE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ARKMUSDT": {
+      "baseAsset": "ARKM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AGLDUSDT": {
+      "baseAsset": "AGLD",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "YGGUSDT": {
+      "baseAsset": "YGG",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DODOXUSDT": {
+      "baseAsset": "DODOX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "OXTUSDT": {
+      "baseAsset": "OXT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SEIUSDT": {
+      "baseAsset": "SEI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CYBERUSDT": {
+      "baseAsset": "CYBER",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HIFIUSDT": {
+      "baseAsset": "HIFI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ARKUSDT": {
+      "baseAsset": "ARK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BICOUSDT": {
+      "baseAsset": "BICO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LOOMUSDT": {
+      "baseAsset": "LOOM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BIGTIMEUSDT": {
+      "baseAsset": "BIGTIME",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BONDUSDT": {
+      "baseAsset": "BOND",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ORBSUSDT": {
+      "baseAsset": "ORBS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "WAXPUSDT": {
+      "baseAsset": "WAXP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BSVUSDT": {
+      "baseAsset": "BSV",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RIFUSDT": {
+      "baseAsset": "RIF",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "POLYXUSDT": {
+      "baseAsset": "POLYX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GASUSDT": {
+      "baseAsset": "GAS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "POWRUSDT": {
+      "baseAsset": "POWR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TIAUSDT": {
+      "baseAsset": "TIA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CAKEUSDT": {
+      "baseAsset": "CAKE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MEMEUSDT": {
+      "baseAsset": "MEME",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TOKENUSDT": {
+      "baseAsset": "TOKEN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ORDIUSDT": {
+      "baseAsset": "ORDI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "STEEMUSDT": {
+      "baseAsset": "STEEM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ILVUSDT": {
+      "baseAsset": "ILV",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NTRNUSDT": {
+      "baseAsset": "NTRN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KASUSDT": {
+      "baseAsset": "KAS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BEAMXUSDT": {
+      "baseAsset": "BEAMX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000BONKUSDT": {
+      "baseAsset": "1000BONK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PYTHUSDT": {
+      "baseAsset": "PYTH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SUPERUSDT": {
+      "baseAsset": "SUPER",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "USTCUSDT": {
+      "baseAsset": "USTC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ONGUSDT": {
+      "baseAsset": "ONG",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ETHWUSDT": {
+      "baseAsset": "ETHW",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "JTOUSDT": {
+      "baseAsset": "JTO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000SATSUSDT": {
+      "baseAsset": "1000SATS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AUCTIONUSDT": {
+      "baseAsset": "AUCTION",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000RATSUSDT": {
+      "baseAsset": "1000RATS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ACEUSDT": {
+      "baseAsset": "ACE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MOVRUSDT": {
+      "baseAsset": "MOVR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TWTUSDT": {
+      "baseAsset": "TWT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NFPUSDT": {
+      "baseAsset": "NFP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BTCUSDC": {
+      "baseAsset": "BTC",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "ETHUSDC": {
+      "baseAsset": "ETH",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "BNBUSDC": {
+      "baseAsset": "BNB",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "XRPUSDC": {
+      "baseAsset": "XRP",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "SOLUSDC": {
+      "baseAsset": "SOL",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "AIUSDT": {
+      "baseAsset": "AI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "XAIUSDT": {
+      "baseAsset": "XAI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DOGEUSDC": {
+      "baseAsset": "DOGE",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "WIFUSDT": {
+      "baseAsset": "WIF",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MANTAUSDT": {
+      "baseAsset": "MANTA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ONDOUSDT": {
+      "baseAsset": "ONDO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LSKUSDT": {
+      "baseAsset": "LSK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ALTUSDT": {
+      "baseAsset": "ALT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "JUPUSDT": {
+      "baseAsset": "JUP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ZETAUSDT": {
+      "baseAsset": "ZETA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RONINUSDT": {
+      "baseAsset": "RONIN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SUIUSDC": {
+      "baseAsset": "SUI",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "DYMUSDT": {
+      "baseAsset": "DYM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "OMUSDT": {
+      "baseAsset": "OM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LINKUSDC": {
+      "baseAsset": "LINK",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "PIXELUSDT": {
+      "baseAsset": "PIXEL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ORDIUSDC": {
+      "baseAsset": "ORDI",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "STRKUSDT": {
+      "baseAsset": "STRK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GLMUSDT": {
+      "baseAsset": "GLM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PORTALUSDT": {
+      "baseAsset": "PORTAL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TONUSDT": {
+      "baseAsset": "TON",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AXLUSDT": {
+      "baseAsset": "AXL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MYROUSDT": {
+      "baseAsset": "MYRO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000PEPEUSDC": {
+      "baseAsset": "1000PEPE",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "METISUSDT": {
+      "baseAsset": "METIS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AEVOUSDT": {
+      "baseAsset": "AEVO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "WLDUSDC": {
+      "baseAsset": "WLD",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "VANRYUSDT": {
+      "baseAsset": "VANRY",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BOMEUSDT": {
+      "baseAsset": "BOME",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AVAXUSDC": {
+      "baseAsset": "AVAX",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "1000SHIBUSDC": {
+      "baseAsset": "1000SHIB",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "ETHFIUSDT": {
+      "baseAsset": "ETHFI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ENAUSDT": {
+      "baseAsset": "ENA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BCHUSDC": {
+      "baseAsset": "BCH",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "WIFUSDC": {
+      "baseAsset": "WIF",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "WUSDT": {
+      "baseAsset": "W",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TNSRUSDT": {
+      "baseAsset": "TNSR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SAGAUSDT": {
+      "baseAsset": "SAGA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NEARUSDC": {
+      "baseAsset": "NEAR",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "LTCUSDC": {
+      "baseAsset": "LTC",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "TAOUSDT": {
+      "baseAsset": "TAO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ARBUSDC": {
+      "baseAsset": "ARB",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "NEOUSDC": {
+      "baseAsset": "NEO",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "FILUSDC": {
+      "baseAsset": "FIL",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "OMNIUSDT": {
+      "baseAsset": "OMNI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BOMEUSDC": {
+      "baseAsset": "BOME",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "TIAUSDC": {
+      "baseAsset": "TIA",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "REZUSDT": {
+      "baseAsset": "REZ",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ETHFIUSDC": {
+      "baseAsset": "ETHFI",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "ENAUSDC": {
+      "baseAsset": "ENA",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "1000BONKUSDC": {
+      "baseAsset": "1000BONK",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "BBUSDT": {
+      "baseAsset": "BB",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NOTUSDT": {
+      "baseAsset": "NOT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TURBOUSDT": {
+      "baseAsset": "TURBO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "IOUSDT": {
+      "baseAsset": "IO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ZKUSDT": {
+      "baseAsset": "ZK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MEWUSDT": {
+      "baseAsset": "MEW",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LISTAUSDT": {
+      "baseAsset": "LISTA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ZROUSDT": {
+      "baseAsset": "ZRO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CRVUSDC": {
+      "baseAsset": "CRV",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "RENDERUSDT": {
+      "baseAsset": "RENDER",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BANANAUSDT": {
+      "baseAsset": "BANANA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RAREUSDT": {
+      "baseAsset": "RARE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GUSDT": {
+      "baseAsset": "G",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SYNUSDT": {
+      "baseAsset": "SYN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SYSUSDT": {
+      "baseAsset": "SYS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VOXELUSDT": {
+      "baseAsset": "VOXEL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BRETTUSDT": {
+      "baseAsset": "BRETT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ALPACAUSDT": {
+      "baseAsset": "ALPACA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "POPCATUSDT": {
+      "baseAsset": "POPCAT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SUNUSDT": {
+      "baseAsset": "SUN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VIDTUSDT": {
+      "baseAsset": "VIDT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NULSUSDT": {
+      "baseAsset": "NULS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DOGSUSDT": {
+      "baseAsset": "DOGS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MBOXUSDT": {
+      "baseAsset": "MBOX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CHESSUSDT": {
+      "baseAsset": "CHESS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FLUXUSDT": {
+      "baseAsset": "FLUX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BSWUSDT": {
+      "baseAsset": "BSW",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "QUICKUSDT": {
+      "baseAsset": "QUICK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NEIROETHUSDT": {
+      "baseAsset": "NEIROETH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RPLUSDT": {
+      "baseAsset": "RPL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "POLUSDT": {
+      "baseAsset": "POL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "UXLINKUSDT": {
+      "baseAsset": "UXLINK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NEIROUSDT": {
+      "baseAsset": "NEIRO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1MBABYDOGEUSDT": {
+      "baseAsset": "1MBABYDOGE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KDAUSDT": {
+      "baseAsset": "KDA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FIDAUSDT": {
+      "baseAsset": "FIDA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FIOUSDT": {
+      "baseAsset": "FIO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CATIUSDT": {
+      "baseAsset": "CATI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GHSTUSDT": {
+      "baseAsset": "GHST",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LOKAUSDT": {
+      "baseAsset": "LOKA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HMSTRUSDT": {
+      "baseAsset": "HMSTR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "REIUSDT": {
+      "baseAsset": "REI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "COSUSDT": {
+      "baseAsset": "COS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "EIGENUSDT": {
+      "baseAsset": "EIGEN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DIAUSDT": {
+      "baseAsset": "DIA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000CATUSDT": {
+      "baseAsset": "1000CAT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SCRUSDT": {
+      "baseAsset": "SCR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GOATUSDT": {
+      "baseAsset": "GOAT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MOODENGUSDT": {
+      "baseAsset": "MOODENG",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SAFEUSDT": {
+      "baseAsset": "SAFE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SANTOSUSDT": {
+      "baseAsset": "SANTOS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TROYUSDT": {
+      "baseAsset": "TROY",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PONKEUSDT": {
+      "baseAsset": "PONKE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CETUSUSDT": {
+      "baseAsset": "CETUS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "COWUSDT": {
+      "baseAsset": "COW",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000000MOGUSDT": {
+      "baseAsset": "1000000MOG",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GRASSUSDT": {
+      "baseAsset": "GRASS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DRIFTUSDT": {
+      "baseAsset": "DRIFT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SWELLUSDT": {
+      "baseAsset": "SWELL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PNUTUSDT": {
+      "baseAsset": "PNUT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ACTUSDT": {
+      "baseAsset": "ACT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HIPPOUSDT": {
+      "baseAsset": "HIPPO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000XUSDT": {
+      "baseAsset": "1000X",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DEGENUSDT": {
+      "baseAsset": "DEGEN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BANUSDT": {
+      "baseAsset": "BAN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AKTUSDT": {
+      "baseAsset": "AKT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SLERFUSDT": {
+      "baseAsset": "SLERF",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SCRTUSDT": {
+      "baseAsset": "SCRT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000WHYUSDT": {
+      "baseAsset": "1000WHY",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000CHEEMSUSDT": {
+      "baseAsset": "1000CHEEMS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "THEUSDT": {
+      "baseAsset": "THE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MORPHOUSDT": {
+      "baseAsset": "MORPHO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CHILLGUYUSDT": {
+      "baseAsset": "CHILLGUY",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KAIAUSDT": {
+      "baseAsset": "KAIA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AEROUSDT": {
+      "baseAsset": "AERO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ACXUSDT": {
+      "baseAsset": "ACX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ORCAUSDT": {
+      "baseAsset": "ORCA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MOVEUSDT": {
+      "baseAsset": "MOVE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "RAYSOLUSDT": {
+      "baseAsset": "RAYSOL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VIRTUALUSDT": {
+      "baseAsset": "VIRTUAL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SPXUSDT": {
+      "baseAsset": "SPX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KOMAUSDT": {
+      "baseAsset": "KOMA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MEUSDT": {
+      "baseAsset": "ME",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ABCCCUSDT": {
+      "baseAsset": "ABCCC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AVAUSDT": {
+      "baseAsset": "AVA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DEGOUSDT": {
+      "baseAsset": "DEGO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VELODROMEUSDT": {
+      "baseAsset": "VELODROME",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MOCAUSDT": {
+      "baseAsset": "MOCA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VANAUSDT": {
+      "baseAsset": "VANA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PENGUUSDT": {
+      "baseAsset": "PENGU",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LUMIAUSDT": {
+      "baseAsset": "LUMIA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "USUALUSDT": {
+      "baseAsset": "USUAL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KMNOUSDT": {
+      "baseAsset": "KMNO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "CGPTUSDT": {
+      "baseAsset": "CGPT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AIXBTUSDT": {
+      "baseAsset": "AIXBT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FARTCOINUSDT": {
+      "baseAsset": "FARTCOIN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HIVEUSDT": {
+      "baseAsset": "HIVE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DEXEUSDT": {
+      "baseAsset": "DEXE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PHAUSDT": {
+      "baseAsset": "PHA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DFUSDT": {
+      "baseAsset": "DF",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GRIFFAINUSDT": {
+      "baseAsset": "GRIFFAIN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AI16ZUSDT": {
+      "baseAsset": "AI16Z",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ZEREBROUSDT": {
+      "baseAsset": "ZEREBRO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BIOUSDT": {
+      "baseAsset": "BIO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "COOKIEUSDT": {
+      "baseAsset": "COOKIE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ALCHUSDT": {
+      "baseAsset": "ALCH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SWARMSUSDT": {
+      "baseAsset": "SWARMS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SONICUSDT": {
+      "baseAsset": "SONIC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DUSDT": {
+      "baseAsset": "D",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PROMUSDT": {
+      "baseAsset": "PROM",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SUSDT": {
+      "baseAsset": "S",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ARCUSDT": {
+      "baseAsset": "ARC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AVAAIUSDT": {
+      "baseAsset": "AVAAI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TRUMPUSDT": {
+      "baseAsset": "TRUMP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MELANIAUSDT": {
+      "baseAsset": "MELANIA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VTHOUSDT": {
+      "baseAsset": "VTHO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ANIMEUSDT": {
+      "baseAsset": "ANIME",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PIPPINUSDT": {
+      "baseAsset": "PIPPIN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VINEUSDT": {
+      "baseAsset": "VINE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VVVUSDT": {
+      "baseAsset": "VVV",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BERAUSDT": {
+      "baseAsset": "BERA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TSTUSDT": {
+      "baseAsset": "TST",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "LAYERUSDT": {
+      "baseAsset": "LAYER",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HEIUSDT": {
+      "baseAsset": "HEI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "B3USDT": {
+      "baseAsset": "B3",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "IPUSDT": {
+      "baseAsset": "IP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "GPSUSDT": {
+      "baseAsset": "GPS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SHELLUSDT": {
+      "baseAsset": "SHELL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KAITOUSDT": {
+      "baseAsset": "KAITO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "KAITOUSDC": {
+      "baseAsset": "KAITO",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "HBARUSDC": {
+      "baseAsset": "HBAR",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "PNUTUSDC": {
+      "baseAsset": "PNUT",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "ADAUSDC": {
+      "baseAsset": "ADA",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "TRUMPUSDC": {
+      "baseAsset": "TRUMP",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "IPUSDC": {
+      "baseAsset": "IP",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "REDUSDT": {
+      "baseAsset": "RED",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "VICUSDT": {
+      "baseAsset": "VIC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BMTUSDT": {
+      "baseAsset": "BMT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MUBARAKUSDT": {
+      "baseAsset": "MUBARAK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BROCCOLI714USDT": {
+      "baseAsset": "BROCCOLI714",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BROCCOLIF3BUSDT": {
+      "baseAsset": "BROCCOLIF3B",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BANANAS31USDT": {
+      "baseAsset": "BANANAS31",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SIRENUSDT": {
+      "baseAsset": "SIREN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BTCUSDT_250926": {
+      "baseAsset": "BTC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BNXUSDT": {
+      "baseAsset": "BNX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ETHUSDT_250926": {
+      "baseAsset": "ETH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BRUSDT": {
+      "baseAsset": "BR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PLUMEUSDT": {
+      "baseAsset": "PLUME",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PAXGUSDT": {
+      "baseAsset": "PAXG",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "WALUSDT": {
+      "baseAsset": "WAL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FUNUSDT": {
+      "baseAsset": "FUN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MLNUSDT": {
+      "baseAsset": "MLN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ATHUSDT": {
+      "baseAsset": "ATH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BABYUSDT": {
+      "baseAsset": "BABY",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FORTHUSDT": {
+      "baseAsset": "FORTH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PROMPTUSDT": {
+      "baseAsset": "PROMPT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "XCNUSDT": {
+      "baseAsset": "XCN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PUMPUSDT": {
+      "baseAsset": "PUMP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "STOUSDT": {
+      "baseAsset": "STO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FHEUSDT": {
+      "baseAsset": "FHE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "INITUSDT": {
+      "baseAsset": "INIT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BANKUSDT": {
+      "baseAsset": "BANK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "EPTUSDT": {
+      "baseAsset": "EPT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DEEPUSDT": {
+      "baseAsset": "DEEP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HYPERUSDT": {
+      "baseAsset": "HYPER",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MEMEFIUSDT": {
+      "baseAsset": "MEMEFI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FISUSDT": {
+      "baseAsset": "FIS",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "JSTUSDT": {
+      "baseAsset": "JST",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SIGNUSDT": {
+      "baseAsset": "SIGN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PUNDIXUSDT": {
+      "baseAsset": "PUNDIX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AIOTUSDT": {
+      "baseAsset": "AIOT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DOLOUSDT": {
+      "baseAsset": "DOLO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HAEDALUSDT": {
+      "baseAsset": "HAEDAL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SXTUSDT": {
+      "baseAsset": "SXT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ALPINEUSDT": {
+      "baseAsset": "ALPINE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ASRUSDT": {
+      "baseAsset": "ASR",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "B2USDT": {
+      "baseAsset": "B2",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MILKUSDT": {
+      "baseAsset": "MILK",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SYRUPUSDT": {
+      "baseAsset": "SYRUP",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "OBOLUSDT": {
+      "baseAsset": "OBOL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "OGUSDT": {
+      "baseAsset": "OG",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ZKJUSDT": {
+      "baseAsset": "ZKJ",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SKYAIUSDT": {
+      "baseAsset": "SKYAI",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NXPCUSDT": {
+      "baseAsset": "NXPC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AGTUSDT": {
+      "baseAsset": "AGT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BUSDT": {
+      "baseAsset": "B",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AUSDT": {
+      "baseAsset": "A",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MERLUSDT": {
+      "baseAsset": "MERL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HYPEUSDT": {
+      "baseAsset": "HYPE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BDXNUSDT": {
+      "baseAsset": "BDXN",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PUFFERUSDT": {
+      "baseAsset": "PUFFER",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "PORT3USDT": {
+      "baseAsset": "PORT3",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "1000000BOBUSDT": {
+      "baseAsset": "1000000BOB",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SKATEUSDT": {
+      "baseAsset": "SKATE",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "TAIKOUSDT": {
+      "baseAsset": "TAIKO",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "SQDUSDT": {
+      "baseAsset": "SQD",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "AAVEUSDC": {
+      "baseAsset": "AAVE",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "UNIUSDC": {
+      "baseAsset": "UNI",
+      "quoteAsset": "USDC",
+      "status": "TRADING"
+    },
+    "MYXUSDT": {
+      "baseAsset": "MYX",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "FUSDT": {
+      "baseAsset": "F",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "NEWTUSDT": {
+      "baseAsset": "NEWT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "DMCUSDT": {
+      "baseAsset": "DMC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ETHUSDT_251226": {
+      "baseAsset": "ETH",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BTCUSDT_251226": {
+      "baseAsset": "BTC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "HUSDT": {
+      "baseAsset": "H",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "OLUSDT": {
+      "baseAsset": "OL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "ICNTUSDT": {
+      "baseAsset": "ICNT",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "BULLAUSDT": {
+      "baseAsset": "BULLA",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "IDOLUSDT": {
+      "baseAsset": "IDOL",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    "MUSDT": {
+      "baseAsset": "M",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    }
+  }
+}

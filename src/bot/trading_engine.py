@@ -9,6 +9,9 @@ from src.exchange.binance_exchange import BinanceExchange
 from src.exchange.uniswap_exchange import UniswapExchange
 from datetime import datetime
 from config.settings import TRADE_AMOUNT, SLIPPAGE_PERCENTAGE, MIN_ETH_BALANCE, PRICE_THRESHOLD, TOKEN_ADDRESS_MAP
+from binance.enums import (FUTURE_ORDER_TYPE_MARKET, FUTURE_ORDER_TYPE_STOP_MARKET,
+                           ORDER_TYPE_MARKET,
+                           SIDE_BUY, SIDE_SELL)
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +108,7 @@ class TradingEngine:
                            exchange_type: str = "None", sell_coin: str = "None",
                            order_type: str = "MARKET", stop_loss: Optional[float] = None,
                            take_profits: Optional[List[float]] = None,
-                           dca_range: Optional[List[float]] = None) -> Tuple[bool, Optional[str]]:
+                           dca_range: Optional[List[float]] = None) -> Tuple[bool, Union[Dict, str]]:
         """
         Process trading signal and execute trade if conditions are met.
 
@@ -121,7 +124,7 @@ class TradingEngine:
             dca_range: Optional list of [high, low] prices for DCA
 
         Returns:
-            A tuple of (bool, Optional[str]) indicating success and a reason for failure
+            A tuple of (bool, Union[Dict, str]) indicating success and a reason for failure
         """
         # Use default exchange type if not specified
         if not exchange_type:
@@ -157,13 +160,32 @@ class TradingEngine:
                                 position_type: str, order_type: str = "MARKET",
                                 stop_loss: Optional[float] = None,
                                 take_profits: Optional[List[float]] = None,
-                                dca_range: Optional[List[float]] = None) -> Tuple[bool, Optional[str]]:
+                                dca_range: Optional[List[float]] = None) -> Tuple[bool, Union[Dict, str]]:
         """Process a trading signal using the centralized exchange (Binance)."""
         # Check cooldown
         if not self._is_cooled_down(f"cex_{coin_symbol}"):
             reason = f"Trade cooldown active for {coin_symbol} on CEX"
             logger.info(reason)
             return False, reason
+
+        # Determine if it's a futures or spot trade
+        is_futures = position_type.upper() in ['LONG', 'SHORT']
+
+        # Pre-validate symbol using whitelist (for futures only)
+        if is_futures:
+            trading_pair = f"{coin_symbol.lower()}_usdt"
+            formatted_pair = trading_pair.replace('_', '').upper()
+
+            # Import and check whitelist
+            try:
+                from config.binance_futures_whitelist import is_symbol_supported
+                if not is_symbol_supported(formatted_pair):
+                    reason = f"Trading pair {formatted_pair} not available in futures whitelist"
+                    logger.error(reason)
+                    return False, reason
+                logger.info(f"✅ Symbol {formatted_pair} validated against whitelist")
+            except ImportError:
+                logger.warning("Futures whitelist not available - skipping symbol validation")
 
         logger.info(f"Processing CEX signal: {coin_symbol} @ ${signal_price}")
         logger.info(f"Order Type: {order_type}")
@@ -187,9 +209,6 @@ class TradingEngine:
             reason = f"Price difference too high: {price_diff:.2f}% (threshold: {config.PRICE_THRESHOLD}%)"
             logger.warning(reason)
             return False, reason
-
-        # Determine if it's a futures or spot trade
-        is_futures = position_type.upper() in ['LONG', 'SHORT']
 
         # Check account balance
         if is_futures:
@@ -223,9 +242,14 @@ class TradingEngine:
         trading_pair = f"{coin_symbol.lower()}_usdt"
 
         # Check if pair exists on Binance
-        pair_info = await self.binance_exchange.get_pair_info(trading_pair)
+        if is_futures:
+            pair_info = await self.binance_exchange.get_futures_pair_info(trading_pair)
+        else:
+            pair_info = await self.binance_exchange.get_pair_info(trading_pair)
+
         if not pair_info:
-            reason = f"Trading pair {trading_pair} not available on Binance"
+            market_type = "Futures" if is_futures else "Spot"
+            reason = f"Trading pair {trading_pair} not available on Binance {market_type}"
             logger.error(reason)
             return False, reason
 
@@ -234,30 +258,71 @@ class TradingEngine:
 
         logger.info(f"Executing CEX trade: {coin_amount:.8f} {coin_symbol} @ ${buy_price}")
 
+        # Determine side
+        entry_side = SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL
+
         if is_futures:
+            # 1. Create the initial entry order
             order_result = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
-                order_type='buy' if position_type.upper() == 'LONG' else 'sell',
+                side=entry_side,
+                order_type_market=ORDER_TYPE_MARKET,
                 amount=coin_amount,
-                price=buy_price,
                 leverage=20 # Default leverage, can be made configurable
             )
-        else:
+
+            # 2. If entry is successful and there is a stop loss, create the SL order
+            if order_result and 'orderId' in order_result and stop_loss:
+                # --- BEGIN SL VALIDATION ---
+                is_long = position_type.upper() == 'LONG'
+                sl_is_valid = (is_long and stop_loss < current_price) or \
+                              (not is_long and stop_loss > current_price)
+
+                if not sl_is_valid:
+                    price_comparison = "below" if is_long else "above"
+                    logger.critical(
+                        f"INVALID STOP-LOSS: For a {position_type} position, the stop price (${stop_loss}) "
+                        f"must be {price_comparison} the current market price (${current_price}). "
+                        f"Skipping SL order creation. THE POSITION IS UNPROTECTED."
+                    )
+                else:
+                    # --- END SL VALIDATION ---
+                    sl_side = SIDE_SELL if is_long else SIDE_BUY
+                    sl_order_result = await self.binance_exchange.create_futures_order(
+                        pair=trading_pair,
+                        side=sl_side,
+                        order_type_market=FUTURE_ORDER_TYPE_STOP_MARKET,
+                        stop_price=stop_loss,
+                        amount=coin_amount, # Close the full amount
+                        leverage=20
+                    )
+                    if sl_order_result and 'orderId' in sl_order_result:
+                        logger.info(f"Successfully created stop-loss order: {sl_order_result}")
+                        order_result['stop_loss_order_details'] = sl_order_result
+                    else:
+                        logger.error(f"Failed to create stop-loss order: {sl_order_result}. Main trade remains open.")
+
+        else: # SPOT
             order_result = await self.binance_exchange.create_order(
                 pair=trading_pair,
-                order_type='buy',
+                side=entry_side,
+                order_type_market=ORDER_TYPE_MARKET,
                 amount=coin_amount,
-                price=buy_price
-        )
+                price=buy_price # Note: price is ignored for market orders but kept for consistency
+            )
+            # You could add Spot SL logic here if needed, following the futures pattern.
+            # It would use ORDER_TYPE_STOP_LOSS_LIMIT.
 
-        if order_result:
+        # Check for 'orderId' to confirm success
+        if order_result and 'orderId' in order_result:
             self.trade_cooldowns[f"cex_{coin_symbol}"] = time.time()
-            logger.info(f"CEX trade successful for {coin_symbol}")
-            return True, None
+            logger.info(f"CEX trade successful for {coin_symbol}: {order_result}")
+            # Return the full order result so the caller can store it
+            return True, order_result
         else:
-            reason = f"CEX trade failed for {coin_symbol}"
+            reason = f"CEX trade failed for {coin_symbol}. Response: {order_result}"
             logger.error(reason)
-            return False, reason
+            return False, order_result
 
     async def _process_dex_signal(self, sell_coin: str, buy_coin: str, signal_price: float) -> Tuple[bool, Optional[str]]:
         """Process a trading signal using the decentralized exchange (Uniswap)."""
@@ -536,93 +601,162 @@ class TradingEngine:
             logger.error(f"Error processing trade update: {e}", exc_info=True)
             return False, f"Trade update failed: {str(e)}"
 
-    async def close_position_at_market(self, active_trade: Dict, reason: str = "manual_close") -> Tuple[bool, str]:
+    async def close_position_at_market(self, active_trade: Dict, reason: str = "manual_close", close_percentage: float = 100.0) -> Tuple[bool, Dict]:
         """
-        Close an active position at current market price.
+        Close an active position at current market price. Handles both CEX futures and spot.
 
         Args:
             active_trade: The trade record containing position info
             reason: Reason for closing (manual_close, take_profit, stop_loss)
+            close_percentage: The percentage of the position to close (e.g., 50.0 for 50%)
 
         Returns:
-            Tuple of (success, message_or_execution_details)
+            Tuple of (success, execution_details_or_error_dict)
         """
         try:
-            coin_symbol = active_trade.get("coin_symbol")
-            position_size = active_trade.get("position_size", 0)
-            exchange_order_id = active_trade.get("exchange_order_id")
+            # --- BEGIN ROBUST SIZE & SYMBOL LOOKUP ---
+            parsed_signal = active_trade.get("parsed_signal") or {}
+            coin_symbol = parsed_signal.get("coin_symbol")
+            position_type = parsed_signal.get("position_type", "SPOT").upper() # Default to SPOT, ensure uppercase
+            position_size = float(active_trade.get("position_size") or 0.0)
+
+            if position_size <= 0:
+                logger.warning(f"Position size for trade {active_trade.get('id')} is missing. Falling back to initial response.")
+                initial_response = active_trade.get("binance_response")
+                if isinstance(initial_response, dict):
+                    position_size = float(initial_response.get('origQty') or 0.0)
+                    if position_size > 0:
+                        logger.info(f"Recovered position size ({position_size}) from initial Binance response.")
 
             if not coin_symbol or position_size <= 0:
-                return False, "Invalid trade data for closing position"
+            # --- END ROBUST SIZE & SYMBOL LOOKUP ---
+                return False, {"error": f"Invalid trade data for closing position. Symbol: {coin_symbol}, Size: {position_size}"}
 
-            logger.info(f"Closing position for {coin_symbol}: {position_size} coins")
+            # Calculate amount to close based on percentage
+            amount_to_close = position_size * (close_percentage / 100.0)
+
+            logger.info(f"Closing {close_percentage}% of position for {coin_symbol}: {amount_to_close} coins")
 
             # Create trading pair
             trading_pair = f"{coin_symbol.lower()}_usdt"
+            close_order = None
+            is_futures = position_type in ['LONG', 'SHORT']
 
-            # Execute sell order at market price
-            sell_order = await self.binance_exchange.create_order(
-                pair=trading_pair,
-                order_type='sell',
-                amount=position_size
-            )
+            if is_futures:
+                # Determine the correct side to close a futures position
+                # To close a LONG, you SELL. To close a SHORT, you BUY.
+                close_side = SIDE_SELL if position_type == 'LONG' else SIDE_BUY
+                logger.info(f"Executing FUTURES close order for {position_type} position. Side: {close_side}")
+                close_order = await self.binance_exchange.create_futures_order(
+                    pair=trading_pair,
+                    side=close_side,
+                    order_type_market=FUTURE_ORDER_TYPE_MARKET,
+                    amount=amount_to_close,
+                    reduce_only=True # Set reduceOnly to true to ensure it only closes a position
+                )
+            else:
+                # Fallback to SPOT order logic
+                logger.info(f"Executing SPOT close order.")
+                # For spot, we are always selling back to USDT.
+                close_order = await self.binance_exchange.create_order(
+                    pair=trading_pair,
+                    side='sell',
+                    order_type_market='MARKET',
+                    amount=amount_to_close
+                )
 
-            if sell_order:
+
+            if close_order and 'orderId' in close_order:
                 # Extract execution details from Binance response
-                fill_price = float(sell_order.get('fills', [{}])[0].get('price', 0)) if sell_order.get('fills') else 0
-                executed_qty = float(sell_order.get('executedQty', 0))
-                order_id = sell_order.get('orderId', '')
+                fill_price = float(close_order.get('avgPrice', 0)) if is_futures else (float(close_order.get('fills', [{}])[0].get('price', 0)) if close_order.get('fills') else 0)
+                executed_qty = float(close_order.get('executedQty', 0))
+                order_id = close_order.get('orderId', '')
 
                 execution_details = {
                     "fill_price": fill_price,
                     "executed_qty": executed_qty,
                     "order_id": str(order_id),
-                    "close_reason": reason
+                    "close_reason": reason,
+                    "binance_response": close_order # Include the full response
                 }
 
                 logger.info(f"Position closed successfully: {coin_symbol} @ ${fill_price}")
                 return True, execution_details
             else:
-                return False, f"Failed to close position for {coin_symbol}"
+                logger.error(f"Failed to close position for {coin_symbol}. Response: {close_order}")
+                return False, close_order
 
         except Exception as e:
             logger.error(f"Error closing position: {e}", exc_info=True)
-            return False, f"Position close failed: {str(e)}"
+            return False, {"error": f"Position close failed: {str(e)}"}
 
-    async def update_stop_loss(self, active_trade: Dict, new_sl_price: float) -> Tuple[bool, str]:
+    async def update_stop_loss(self, active_trade: Dict, new_sl_price: float) -> Tuple[bool, Dict]:
         """
-        Update stop loss for an active position.
-        Note: This is a simplified implementation. In practice, you'd need to:
-        1. Cancel existing stop loss orders
-        2. Create new OCO (One-Cancels-Other) order with new stop loss
-
-        Args:
-            active_trade: The trade record
-            new_sl_price: New stop loss price
-
-        Returns:
-            Tuple of (success, message)
+        Update stop loss for an active position. This function will now:
+        1. Cancel an existing stop loss order if one exists.
+        2. Create a new stop loss order.
         """
         try:
-            coin_symbol = active_trade.get("coin_symbol")
-            position_size = active_trade.get("position_size", 0)
+            # --- BEGIN ROBUST SIZE & SYMBOL LOOKUP ---
+            parsed_signal = active_trade.get("parsed_signal") or {}
+            coin_symbol = parsed_signal.get("coin_symbol")
+            position_type = parsed_signal.get("position_type", "SPOT")
+            position_size = float(active_trade.get("position_size") or 0.0)
+            old_sl_order_id = active_trade.get("stop_loss_order_id")
+
+            if position_size <= 0:
+                logger.warning(f"Position size for trade {active_trade.get('id')} is missing. Falling back to initial response.")
+                initial_response = active_trade.get("binance_response")
+                if isinstance(initial_response, dict):
+                    position_size = float(initial_response.get('origQty') or 0.0)
+                    if position_size > 0:
+                        logger.info(f"Recovered position size ({position_size}) from initial Binance response.")
 
             if not coin_symbol or position_size <= 0:
-                return False, "Invalid trade data for updating stop loss"
+            # --- END ROBUST SIZE & SYMBOL LOOKUP ---
+                return False, {"error": f"Invalid trade data for updating stop loss. Symbol: {coin_symbol}, Size: {position_size}"}
 
-            logger.info(f"Updating stop loss for {coin_symbol} to ${new_sl_price}")
+            logger.info(f"Updating stop loss for {coin_symbol} to new price: ${new_sl_price}")
+            trading_pair = f"{coin_symbol.lower()}_usdt"
 
-            # In a full implementation, you would:
-            # 1. Query existing orders to find current stop loss
-            # 2. Cancel the existing stop loss order
-            # 3. Create a new stop loss order at new_sl_price
+            # 1. Cancel the existing stop loss order IF it exists
+            if old_sl_order_id:
+                logger.info(f"Attempting to cancel old stop loss order: {old_sl_order_id}")
+                cancel_success = await self.binance_exchange.cancel_futures_order(trading_pair, old_sl_order_id)
 
-            # For now, we'll just log the action and return success
-            # This would need to be implemented based on your specific strategy
-            logger.info(f"Stop loss updated for {coin_symbol}: ${new_sl_price} (implementation pending)")
+                if not cancel_success:
+                    err_msg = f"Failed to cancel existing stop loss order {old_sl_order_id} for {coin_symbol}. The position may still be protected by the old SL."
+                    logger.error(err_msg)
+                    # Returning True but with an error message in the response allows logging without halting logic.
+                    return False, {"error": err_msg, "critical_alert": "OLD STOP LOSS MAY BE ACTIVE"}
+                logger.info(f"Successfully cancelled old stop loss order {old_sl_order_id}.")
+            else:
+                logger.info("No existing stop-loss order ID found. Proceeding to create a new one.")
 
-            return True, f"Stop loss updated to ${new_sl_price}"
+
+            # 2. Create a new stop loss order at the new price
+            new_sl_side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
+            logger.info(f"Creating new stop loss order for {coin_symbol} at price ${new_sl_price}")
+
+            new_sl_order_result = await self.binance_exchange.create_futures_order(
+                pair=trading_pair,
+                side=new_sl_side,
+                order_type_market=FUTURE_ORDER_TYPE_STOP_MARKET,
+                stop_price=new_sl_price,
+                amount=position_size,
+                reduce_only=True
+            )
+
+            if new_sl_order_result and 'orderId' in new_sl_order_result:
+                logger.info(f"Successfully created new stop loss order: {new_sl_order_result}")
+                return True, new_sl_order_result
+            else:
+                err_msg = f"Cancelled old SL (if any) but FAILED to create new one for {coin_symbol}. Response: {new_sl_order_result}"
+                logger.error(err_msg)
+                # CRITICAL: At this point, the position is unprotected.
+                # A robust implementation should attempt to close the position at market.
+                return False, {"error": err_msg, "critical_alert": "POSITION UNPROTECTED"}
 
         except Exception as e:
             logger.error(f"Error updating stop loss: {e}", exc_info=True)
-            return False, f"Stop loss update failed: {str(e)}"
+            return False, {"error": f"Stop loss update failed: {str(e)}"}
