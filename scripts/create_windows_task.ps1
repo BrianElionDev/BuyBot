@@ -26,8 +26,8 @@ $TaskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopI
 # If the task fails, retry every 5 minutes, up to 3 times.
 $TaskSettings.RestartCount = 3
 $TaskSettings.RestartInterval = (New-TimeSpan -Minutes 5)
-# If a new instance is started, stop the old one
-$TaskSettings.MultipleInstances = "StopExisting"
+# Corrected: Use a valid value for MultipleInstances. 'IgnoreNew' will prevent new instances if one is already running.
+$TaskSettings.MultipleInstances = "IgnoreNew"
 
 # --- Register the Task ---
 Write-Host "Registering scheduled task: $TaskName"
