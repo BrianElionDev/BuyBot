@@ -226,14 +226,30 @@ class TradingEngine:
         market_type = "Futures" if is_futures else "Spot"
         logger.info(f"Available USDT balance on Binance {market_type}: ${usdt_balance}")
 
-        # Calculate trade amount
-        trade_amount = min(
-            usdt_balance * (config.RISK_PERCENTAGE / 100),
-            config.MAX_TRADE_AMOUNT
-        )
+        # --- MODIFIED TRADE AMOUNT CALCULATION ---
+        # The user wants to trade with amounts no less than $500.
+        ORDER_FLOOR_USD = 500.0
 
+        # First, calculate the amount based on risk percentage
+        risk_based_amount = usdt_balance * (config.RISK_PERCENTAGE / 100)
+
+        # The desired amount is the greater of the risk-based amount or the $500 floor
+        desired_amount = max(ORDER_FLOOR_USD, risk_based_amount)
+
+        # The final trade amount is the lesser of the desired amount or the configured max trade amount
+        trade_amount = min(desired_amount, config.MAX_TRADE_AMOUNT)
+
+        # Check for sufficient balance for the calculated trade amount
+        if trade_amount > usdt_balance:
+            reason = (f"Insufficient balance for the desired trade amount. "
+                      f"Required: ${trade_amount:.2f}, Available: ${usdt_balance:.2f}")
+            logger.warning(reason)
+            return False, reason
+
+        # Final check against the exchange's minimum trade amount (e.g., $10).
         if trade_amount < config.MIN_TRADE_AMOUNT:
-            reason = f"Trade amount ${trade_amount:.2f} below minimum ${config.MIN_TRADE_AMOUNT}"
+            reason = (f"Desired trade amount ${trade_amount:.2f} is below the exchange's minimum "
+                      f"of ${config.MIN_TRADE_AMOUNT}")
             logger.warning(reason)
             return False, reason
 
