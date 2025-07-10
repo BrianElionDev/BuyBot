@@ -138,9 +138,18 @@ class DiscordBot:
             if not parsed_data:
                 raise ValueError("AI parsing failed to return valid data.")
 
-            # 2. Store the AI's parsed response in the database
-            await update_existing_trade(trade_id=trade_row["id"], updates={"parsed_signal": parsed_data})
-            logger.info(f"Successfully stored parsed signal for trade ID: {trade_row['id']}")
+            # 2. Store the AI's parsed response in the database and set signal_type
+            updates = {"parsed_signal": parsed_data}
+            position_type = parsed_data.get('position_type')
+
+            if position_type:
+                updates["signal_type"] = position_type
+                logger.info(f"Extracted signal_type '{position_type}' from parsed signal for trade ID: {trade_row['id']}")
+            else:
+                logger.warning(f"Could not find 'position_type' in parsed_signal for trade ID: {trade_row['id']}")
+
+            await update_existing_trade(trade_id=trade_row["id"], updates=updates)
+            logger.info(f"Successfully stored parsed signal and signal_type for trade ID: {trade_row['id']}")
 
             # --- Start of new validation ---
             # Validate that the parser returned a coin symbol
