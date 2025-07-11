@@ -64,11 +64,12 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
     else:
         # This is a NEW TRADE
         system_prompt = """
-        You are an expert financial analyst. Your task is to parse unstructured trading signals
-        from text and convert them into a structured JSON format. You must identify the coin symbol,
+        You are an expert financial analyst. Your task is to parse trading signals from text
+        and convert them into a structured JSON format. You must identify the coin symbol,
         position type, entry prices, stop loss, and take profit levels.
 
-        - 'coin_symbol': The ticker (e.g., BTC, ETH, HYPE). Extract it from the text.
+        - 'coin_symbol': The ticker (e.g., BTC, ETH, HYPE). This is the most important field.
+          It is almost always the first word of the signal. Extract it with high accuracy. Do not abbreviate or change it.
         - 'position_type': Should be 'LONG' or 'SHORT'. Infer this from words like "long", "longed", "short", "shorted". If not specified, default to 'LONG'.
         - 'entry_prices': A list of floats. Consolidate all entry points, including price ranges (e.g., "2567/2546") and DCA levels, into this list.
         - 'stop_loss': A float or a string. If it's a simple price, make it a float. If it's a condition like 'BE', '4h close below 212', or '2x 5m < 104900', keep it as a string.

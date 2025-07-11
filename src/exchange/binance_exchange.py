@@ -397,7 +397,9 @@ class BinanceExchange:
         amount: float,
         price: Optional[float] = None,
         stop_price: Optional[float] = None,
-        leverage: int = 1
+        leverage: int = 1,
+        reduce_only: bool = False,
+        client_order_id: Optional[str] = None
     ) -> Dict:
         """
         Create a new order on Binance Futures.
@@ -442,6 +444,12 @@ class BinanceExchange:
                 "quantity": quantity,
             }
 
+            if client_order_id:
+                params["newClientOrderId"] = client_order_id
+
+            if reduce_only:
+                params["reduceOnly"] = "true"
+
             if stop_price:
                 params["stopPrice"] = stop_price
                 # For STOP_MARKET orders, you shouldn't send a price
@@ -483,6 +491,20 @@ class BinanceExchange:
         except BinanceAPIException as e:
             logger.error(f"Failed to cancel futures order: {e}")
             return False
+
+    async def get_all_open_futures_orders(self) -> list:
+        """
+        Retrieves all open futures orders.
+
+        Returns:
+            A list of open order dictionaries, or an empty list if an error occurs.
+        """
+        try:
+            open_orders = self.client.futures_get_open_orders()
+            return open_orders
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get all open futures orders: {e}")
+            return []
 
     async def close(self):
         """Close the exchange connection."""

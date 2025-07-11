@@ -132,8 +132,8 @@ class DiscordBot:
                 return {"status": "error", "message": f"No existing trade found for timestamp: {signal.timestamp}"}
 
             # 1. Parse the signal content using the AI parser
-            logger.info(f"Parsing signal content with AI: '{signal.content}'")
-            parsed_data = await self.signal_parser.parse_new_trade_signal(signal.content)
+            logger.info(f"Parsing structured signal with AI: '{signal.structured}'")
+            parsed_data = await self.signal_parser.parse_new_trade_signal(signal.structured)
 
             if not parsed_data:
                 raise ValueError("AI parsing failed to return valid data.")
@@ -178,7 +178,8 @@ class DiscordBot:
                 'order_type': parsed_data.get('order_type', 'LIMIT'),
                 'stop_loss': parsed_data.get('stop_loss'),
                 'take_profits': parsed_data.get('take_profits'),
-                'exchange_type': 'cex'
+                'exchange_type': 'cex',
+                'client_order_id': trade_row.get('discord_id') # Use discord_id for reconciliation
                 # 'dca_range' could be added here if the AI provides it
             }
 
@@ -308,6 +309,29 @@ class DiscordBot:
             # After executing action, update the database
             if action_successful:
                 logger.info(f"Successfully executed '{action_type}' for trade {trade_row['id']}. Binance Response: {binance_response_log}")
+
+                # --- PNL and Exit Price Calculation ---
+                if binance_response_log and 'fill_price' in binance_response_log and 'executed_qty' in binance_response_log:
+                    exit_price = float(binance_response_log['fill_price'])
+                    qty_closed = float(binance_response_log['executed_qty'])
+
+                    if exit_price > 0 and qty_closed > 0:
+                        # Safely get entry price and position type from the trade row
+                        entry_price = float((trade_row.get('parsed_signal') or {}).get('entry_prices', [0.0])[0])
+                        position_type = trade_row.get('signal_type', 'UNKNOWN')
+
+                        # Calculate PnL for this specific action
+                        newly_realized_pnl = self._calculate_pnl(position_type, entry_price, exit_price, qty_closed)
+
+                        # Get existing PnL and add the new PnL
+                        current_pnl = float(trade_row.get('pnl_usd', 0.0) or 0.0)
+                        total_pnl = current_pnl + newly_realized_pnl
+
+                        trade_updates["pnl_usd"] = total_pnl
+                        trade_updates["exit_price"] = exit_price # This will store the latest exit price
+
+                        logger.info(f"PnL for this action: {newly_realized_pnl:.2f}. Total realized PnL for trade: {total_pnl:.2f}")
+
                 # Update the trade with new status or SL order ID
                 if trade_updates:
                     await update_existing_trade(trade_id=trade_row["id"], updates=trade_updates)
@@ -349,14 +373,18 @@ class DiscordBot:
                 await update_existing_alert(alert_id, {"binance_response": {"error": error_msg}})
             return {"status": "error", "message": error_msg}
 
-    def _calculate_pnl(self, entry_price: float, exit_price: float, position_size: float) -> float:
-        """Calculate PnL in USD for a position"""
-        if entry_price <= 0 or position_size <= 0:
+    def _calculate_pnl(self, position_type: str, entry_price: float, exit_price: float, position_size: float) -> float:
+        """Calculate PnL in USD for a position, considering LONG or SHORT."""
+        if entry_price <= 0 or exit_price <= 0 or position_size <= 0:
             return 0.0
 
-        # For long positions: (exit_price - entry_price) * position_size
-        # This assumes position_size is in base currency units
-        pnl = (exit_price - entry_price) * position_size
+        if position_type.upper() == 'LONG':
+            pnl = (exit_price - entry_price) * position_size
+        elif position_type.upper() == 'SHORT':
+            pnl = (entry_price - exit_price) * position_size
+        else:
+            pnl = 0.0
+
         return round(pnl, 2)
 
     async def close(self):

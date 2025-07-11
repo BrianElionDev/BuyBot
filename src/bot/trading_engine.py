@@ -108,7 +108,8 @@ class TradingEngine:
                            exchange_type: str = "None", sell_coin: str = "None",
                            order_type: str = "MARKET", stop_loss: Optional[float] = None,
                            take_profits: Optional[List[float]] = None,
-                           dca_range: Optional[List[float]] = None) -> Tuple[bool, Union[Dict, str]]:
+                           dca_range: Optional[List[float]] = None,
+                           client_order_id: Optional[str] = None) -> Tuple[bool, Union[Dict, str]]:
         """
         Process trading signal and execute trade if conditions are met.
 
@@ -122,6 +123,7 @@ class TradingEngine:
             stop_loss: Optional stop loss price
             take_profits: Optional list of take profit prices
             dca_range: Optional list of [high, low] prices for DCA
+            client_order_id: Optional custom order ID to send to the exchange.
 
         Returns:
             A tuple of (bool, Union[Dict, str]) indicating success and a reason for failure
@@ -154,13 +156,14 @@ class TradingEngine:
                 return False, reason
             return await self._process_dex_signal(sell_coin, coin_symbol, signal_price)
         else:  # cex
-            return await self._process_cex_signal(coin_symbol, signal_price, position_type, order_type, stop_loss, take_profits, dca_range)
+            return await self._process_cex_signal(coin_symbol, signal_price, position_type, order_type, stop_loss, take_profits, dca_range, client_order_id)
 
     async def _process_cex_signal(self, coin_symbol: str, signal_price: float,
                                 position_type: str, order_type: str = "MARKET",
                                 stop_loss: Optional[float] = None,
                                 take_profits: Optional[List[float]] = None,
-                                dca_range: Optional[List[float]] = None) -> Tuple[bool, Union[Dict, str]]:
+                                dca_range: Optional[List[float]] = None,
+                                client_order_id: Optional[str] = None) -> Tuple[bool, Union[Dict, str]]:
         """Process a trading signal using the centralized exchange (Binance)."""
         # Check cooldown
         if not self._is_cooled_down(f"cex_{coin_symbol}"):
@@ -284,7 +287,8 @@ class TradingEngine:
                 side=entry_side,
                 order_type_market=ORDER_TYPE_MARKET,
                 amount=coin_amount,
-                leverage=20 # Default leverage, can be made configurable
+                leverage=20, # Default leverage, can be made configurable
+                client_order_id=client_order_id # Pass the ID here
             )
 
             # 2. If entry is successful and there is a stop loss, create the SL order
@@ -324,7 +328,8 @@ class TradingEngine:
                 side=entry_side,
                 order_type_market=ORDER_TYPE_MARKET,
                 amount=coin_amount,
-                price=buy_price # Note: price is ignored for market orders but kept for consistency
+                price=buy_price, # Note: price is ignored for market orders but kept for consistency
+                client_order_id=client_order_id # Pass the ID here
             )
             # You could add Spot SL logic here if needed, following the futures pattern.
             # It would use ORDER_TYPE_STOP_LOSS_LIMIT.
