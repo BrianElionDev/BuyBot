@@ -30,6 +30,20 @@ class DiscordBot:
         self.signal_parser = DiscordSignalParser()
         logger.info("DiscordBot initialized with AI Signal Parser.")
 
+    def _clean_text_for_llm(self, text: str) -> str:
+        """
+        Sanitizes text to remove invisible unicode characters that can confuse LLMs,
+        especially zero-width characters from Discord.
+        """
+        if not text:
+            return ""
+        # This regex targets multiple ranges of invisible or problematic Unicode characters:
+        # U+200B-U+200D: Zero-width spaces and joiners
+        # U+FEFF: Byte Order Mark (can appear as a zero-width no-break space)
+        # U+2060-U+206F: General-purpose invisible characters (e.g., word joiner)
+        # U+00AD: Soft hyphen
+        return re.sub(r'[\u200B-\u200D\uFEFF\u2060-\u206F\u00AD]', '', text).strip()
+
     def parse_alert_content(self, content, original_trade_data):
         """
         Parse alert content and determine what action should be taken.
@@ -131,9 +145,11 @@ class DiscordBot:
                 logger.error(error_msg)
                 return {"status": "error", "message": f"No existing trade found for timestamp: {signal.timestamp}"}
 
-            # 1. Parse the signal content using the AI parser
-            logger.info(f"Parsing structured signal with AI: '{signal.structured}'")
-            parsed_data = await self.signal_parser.parse_new_trade_signal(signal.structured)
+            # 1. Sanitize the structured signal and then parse it with the AI
+            logger.info(f"Original structured signal: '{signal.structured}'")
+            sanitized_signal = self._clean_text_for_llm(signal.structured)
+            logger.info(f"Sanitized signal for AI parser: '{sanitized_signal}'")
+            parsed_data = await self.signal_parser.parse_new_trade_signal(sanitized_signal)
 
             if not parsed_data:
                 raise ValueError("AI parsing failed to return valid data.")

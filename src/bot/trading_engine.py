@@ -293,34 +293,49 @@ class TradingEngine:
 
             # 2. If entry is successful and there is a stop loss, create the SL order
             if order_result and 'orderId' in order_result and stop_loss:
-                # --- BEGIN SL VALIDATION ---
-                is_long = position_type.upper() == 'LONG'
-                sl_is_valid = (is_long and stop_loss < current_price) or \
-                              (not is_long and stop_loss > current_price)
 
-                if not sl_is_valid:
-                    price_comparison = "below" if is_long else "above"
-                    logger.critical(
-                        f"INVALID STOP-LOSS: For a {position_type} position, the stop price (${stop_loss}) "
-                        f"must be {price_comparison} the current market price (${current_price}). "
-                        f"Skipping SL order creation. THE POSITION IS UNPROTECTED."
-                    )
+                # --- BEGIN SL VALIDATION & HANDLING ---
+                sl_price_to_use = 0.0
+                # Handle 'BE' for stop_loss, converting it to the entry price
+                if isinstance(stop_loss, str) and stop_loss.upper() == 'BE':
+                    sl_price_to_use = signal_price
+                    logger.info(f"Stop loss is 'BE'. Using entry price for validation: ${sl_price_to_use}")
                 else:
-                    # --- END SL VALIDATION ---
-                    sl_side = SIDE_SELL if is_long else SIDE_BUY
-                    sl_order_result = await self.binance_exchange.create_futures_order(
-                        pair=trading_pair,
-                        side=sl_side,
-                        order_type_market=FUTURE_ORDER_TYPE_STOP_MARKET,
-                        stop_price=stop_loss,
-                        amount=coin_amount, # Close the full amount
-                        leverage=20
-                    )
-                    if sl_order_result and 'orderId' in sl_order_result:
-                        logger.info(f"Successfully created stop-loss order: {sl_order_result}")
-                        order_result['stop_loss_order_details'] = sl_order_result
+                    try:
+                        sl_price_to_use = float(stop_loss)
+                    except (ValueError, TypeError):
+                        logger.error(f"Invalid stop loss value '{stop_loss}'. Cannot create SL order.")
+                        sl_price_to_use = 0.0 # Will cause validation to fail
+
+                if sl_price_to_use > 0:
+                    is_long = position_type.upper() == 'LONG'
+                    sl_is_valid = (is_long and sl_price_to_use < current_price) or \
+                                  (not is_long and sl_price_to_use > current_price)
+
+                    if not sl_is_valid:
+                        price_comparison = "below" if is_long else "above"
+                        logger.critical(
+                            f"INVALID STOP-LOSS: For a {position_type} position, the stop price (${sl_price_to_use}) "
+                            f"must be {price_comparison} the current market price (${current_price}). "
+                            f"Skipping SL order creation. THE POSITION IS UNPROTECTED."
+                        )
                     else:
-                        logger.error(f"Failed to create stop-loss order: {sl_order_result}. Main trade remains open.")
+                        sl_side = SIDE_SELL if is_long else SIDE_BUY
+                        sl_order_result = await self.binance_exchange.create_futures_order(
+                            pair=trading_pair,
+                            side=sl_side,
+                            order_type_market=FUTURE_ORDER_TYPE_STOP_MARKET,
+                            stop_price=sl_price_to_use,
+                            amount=coin_amount, # Close the full amount
+                            leverage=20
+                        )
+                        if sl_order_result and 'orderId' in sl_order_result:
+                            logger.info(f"Successfully created stop-loss order: {sl_order_result}")
+                            order_result['stop_loss_order_details'] = sl_order_result
+                        else:
+                            logger.error(f"Failed to create stop-loss order: {sl_order_result}. Main trade remains open.")
+                else:
+                    logger.warning(f"Could not determine a valid numerical stop loss price from '{stop_loss}'. Skipping SL order creation.")
 
         else: # SPOT
             order_result = await self.binance_exchange.create_order(

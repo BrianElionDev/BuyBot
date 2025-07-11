@@ -21,7 +21,6 @@ def initialize_clients():
     url: str = os.environ.get("SUPABASE_URL")
     key: str = os.environ.get("SUPABASE_KEY")
     if not url or not key:
-        logging.error("Supabase URL or Key not found in .env file.")
         raise ValueError("Supabase credentials not found.")
     supabase: Client = create_client(url, key)
 
@@ -32,7 +31,7 @@ def initialize_clients():
 
 async def retry_failed_trades():
     """
-    Finds and retries trades that failed due to cooldowns or balance check issues.
+    Finds and retries trades that failed due to cooldowns.
     """
     logging.info("--- Starting Failed Trade Retry Script ---")
 
@@ -42,19 +41,17 @@ async def retry_failed_trades():
         logging.error(f"Failed to initialize clients: {e}")
         return
 
-    # 1. Define the error patterns to search for
-    cooldown_pattern = "Trade cooldown active%"
-    balance_error_pattern = "Failed to get account balances from Binance Futures%"
+    # 1. Define the error pattern to search for, matching the user's successful SQL query.
+    # The '%' is a wildcard that matches any sequence of characters (e.g., the coin symbol).
+    cooldown_pattern = "Trade cooldown active for%"
 
-    filter_conditions = f"binance_response.like.{cooldown_pattern},binance_response.like.{balance_error_pattern}"
-
-    # 2. Fetch all trades matching the failure reasons
+    # 2. Fetch all trades matching the failure reason
     try:
-        logging.info(f"Searching for trades with failure reasons matching: '{cooldown_pattern}' OR '{balance_error_pattern}'")
-        response = supabase.from_("trades").select("*").or_(filter_conditions).execute()
+        logging.info(f"Searching for trades where binance_response LIKE '{cooldown_pattern}'")
+        response = supabase.from_("trades").select("*").like("binance_response", cooldown_pattern).execute()
 
         if not response.data:
-            logging.info("No failed trades found matching the criteria.")
+            logging.info("✅ No trades found that failed due to a cooldown.")
             return
 
         failed_trades = response.data
@@ -100,3 +97,6 @@ async def retry_failed_trades():
 
 if __name__ == "__main__":
     asyncio.run(retry_failed_trades())
+
+
+
