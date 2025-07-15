@@ -1,155 +1,148 @@
 import os
-import time
-import requests
+import sys
+import asyncio
 import json
+import logging
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from supabase import Client, create_client
+from typing import Dict, Any
 
-# Load environment variables from .env file
+# Add the project root to the Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from discord_bot.discord_bot import DiscordBot
+
+# --- Setup ---
 load_dotenv()
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Get Supabase credentials from environment variables
-supabase_url = os.environ.get("SUPABASE_URL")
-supabase_key = os.environ.get("SUPABASE_KEY")
+# --- Supabase & Bot Initialization ---
+supabase: Client
+bot: DiscordBot
 
-if not supabase_url or not supabase_key:
-    print("Error: SUPABASE_URL and SUPABASE_KEY must be set in the .env file.")
-    exit(1)
-
-# Supabase client initialization
-try:
-    supabase: Client = create_client(supabase_url, supabase_key)
-    print("Successfully connected to Supabase.")
-except Exception as e:
-    print(f"Error connecting to Supabase: {e}")
-    exit(1)
-
-def parse_alert_content(content, original_trade_data):
+def _create_update_payload(content: str) -> dict:
     """
-    Parse alert content and determine what action should be taken.
-    Returns a structured command for execution.
+    Parses the raw alert content and creates a payload dictionary
+    for the TradingEngine's process_trade_update method.
     """
     content_lower = content.lower()
 
-    # Safely extract coin symbol for context, though not part of the command
-    coin_symbol = 'UNKNOWN'
-    if original_trade_data and isinstance(original_trade_data.get('parsed_signal'), dict):
-        coin_symbol = original_trade_data.get('parsed_signal', {}).get('coin_symbol', 'UNKNOWN')
+    # --- Close Position Logic ---
+    # Treat any SL hit, TP, or explicit "closed" signal as a trigger to fully close the position.
+    if any(keyword in content_lower for keyword in ["stopped out", "stop loss", "closed", "tp1", "tp2"]):
+        return {'close_position': True, 'reason': 'alert_triggered_close'}
 
-    # Determine the command to be executed
-    if "stopped out" in content_lower or "stop loss" in content_lower or "stopped be" in content_lower:
-        return {
-            "action_type": "CLOSE_POSITION",
-            "reason": f"Stop loss hit for {coin_symbol}"
-        }
+    # --- Update Stop Loss to Break-Even Logic ---
+    if "stops moved to be" in content_lower or "sl to be" in content_lower:
+        return {'update_sl': 'BE'}
 
-    elif "closed" in content_lower and ("profit" in content_lower or "be" in content_lower):
-        return {
-            "action_type": "CLOSE_POSITION",
-            "reason": "Position closed manually"
-        }
+    # Return an empty dictionary for unrecognized or unsupported alert types
+    return {}
 
-    elif "tp1" in content_lower:
-        return {
-            "action_type": "TAKE_PROFIT",
-            "value": 1,
-            "reason": f"TP1 hit for {coin_symbol}"
-        }
-
-    elif "tp2" in content_lower:
-        return {
-            "action_type": "TAKE_PROFIT",
-            "value": 2,
-            "reason": f"TP2 hit for {coin_symbol}"
-        }
-
-    elif "stops moved to be" in content_lower or "sl to be" in content_lower:
-        return {
-            "action_type": "UPDATE_SL",
-            "value": "breakeven",
-            "reason": f"Stop loss moved to break even for {coin_symbol}"
-        }
-
-    elif "limit order cancelled" in content_lower:
-        return {
-            "action_type": "CANCEL_ORDER",
-            "reason": f"Limit order cancelled for {coin_symbol}"
-        }
-
-    else:
-        return {
-            "action_type": "UNKNOWN",
-            "reason": f"Unrecognized alert type for {coin_symbol}"
-        }
-
-def process_alerts():
+async def process_alerts():
     """
-    Process alerts from the alerts table and update parsed_alert column
-    with structured logging information.
+    Fetches unprocessed alerts, creates an action payload, sends it to the
+    trading engine for execution, and logs the response.
     """
+    global supabase, bot
+    logging.info("--- Starting Follow-Up Alert Processing ---")
+
     try:
-        # Fetch all alerts that haven't been processed yet (where parsed_alert is null)
-        response = supabase.table("alerts").select("*").execute()
+        # Fetch all alerts that haven't been processed yet
+        response = supabase.table("alerts").select("*").gte("timestamp", "2025-07-09T00:00:00.000Z").is_("parsed_alert", None).execute()
 
         if not hasattr(response, 'data') or not response.data:
-            print("No unprocessed alerts found.")
+            logging.info("No unprocessed alerts found.")
             return
 
         alerts = response.data
-        print(f"Found {len(alerts)} unprocessed alerts.")
+        logging.info(f"Found {len(alerts)} unprocessed alerts.")
 
         for alert in alerts:
-            print(f"\nProcessing alert ID {alert['id']}: {alert['content']}")
+            logging.info(f"\nProcessing alert ID {alert['id']}: {alert['content']}")
+            parsed_alert_update = None
+            binance_response_update = None
 
             try:
-                # Get the original trade data
-                # Assuming 'trade' column in alerts links to 'discord_id' in trades
-                response = supabase.table("trades").select("*").eq("discord_id", alert["trade"]).limit(1).execute()
+                # 1. Find the corresponding active trade in the 'trades' table
+                trade_response = supabase.table("trades").select("*").eq("discord_id", alert["trade"]).limit(1).execute()
 
-                if not response.data:
-                    print(f"Warning: No original trade found for discord_id {alert['trade']}")
-                    parsed_alert_data = {
-                        "error": "Original trade not found",
-                        "original_content": alert["content"],
-                    }
+                if not trade_response.data:
+                    parsed_alert_update = {'success': False, 'reason': 'trade_not_found'}
+                    binance_response_update = f"Original trade with discord_id {alert['trade']} not found."
+                    logging.warning(binance_response_update)
                 else:
-                    original_trade = response.data[0]
+                    active_trade = trade_response.data[0]
 
-                    # Parse the alert content to get the executable command
-                    command_to_execute = parse_alert_content(alert["content"], original_trade)
+                    # 2. Only process alerts for trades that are still 'OPEN'
+                    if active_trade.get('status') != 'OPEN':
+                        parsed_alert_update = {'success': False, 'reason': 'trade_not_open'}
+                        binance_response_update = f"Trade {active_trade['id']} is not OPEN (status: {active_trade.get('status')}). Skipping alert."
+                        logging.info(binance_response_update)
+                    else:
+                        # 3. Create the action payload from the alert content
+                        payload = _create_update_payload(alert['content'])
 
-                    # This is what will be stored in the parsed_alert column
-                    parsed_alert_data = command_to_execute
+                        if not payload:
+                            parsed_alert_update = {'success': False, 'reason': 'unsupported_alert'}
+                            binance_response_update = "Unknown or unsupported alert type."
+                            logging.warning(f"Unsupported alert for trade {active_trade['id']}: {alert['content']}")
+                        else:
+                            # 4. Execute the action using the Trading Engine
+                            logging.info(f"Executing action for trade {active_trade['id']} with payload: {payload}")
+                            success, response_from_engine = await bot.trading_engine.process_trade_update(payload, active_trade)
 
-                # Update the alerts table with the parsed command
-                update_response = supabase.table("alerts").update({
-                    "parsed_alert": parsed_alert_data
-                }).eq("id", alert["id"]).execute()
+                            parsed_alert_update = {'success': success, 'action_payload': payload}
+                            binance_response_update = str(response_from_engine)
 
-                if "error" in parsed_alert_data:
-                    print(f"⚠ Updated alert ID {alert['id']} - Error: {parsed_alert_data['error']}")
-                else:
-                    print(f"✓ Updated alert ID {alert['id']} - Command: {parsed_alert_data}")
+                            log_level = logging.INFO if success else logging.ERROR
+                            logging.log(log_level, f"Engine execution result for trade {active_trade['id']}: {binance_response_update}")
 
             except Exception as e:
-                print(f"Error processing alert ID {alert['id']}: {e}")
-                # Create an error entry
-                try:
-                    error_data = {
-                        "error": str(e),
-                        "original_content": alert.get("content", "N/A"),
-                    }
-                    supabase.table("alerts").update({
-                        "parsed_alert": error_data
-                    }).eq("id", alert["id"]).execute()
-                except Exception as db_error:
-                    print(f"Could not even save the error to the database: {db_error}")
+                logging.error(f"An unexpected error occurred while processing alert ID {alert['id']}: {e}", exc_info=True)
+                parsed_alert_update = {'success': False, 'reason': 'script_error'}
+                binance_response_update = f"Script error: {str(e)}"
 
-            # Small delay between processing
-            time.sleep(1) # Reduced for faster processing if needed
+            # 5. Log the results to the database
+            if parsed_alert_update:
+                update_data: Dict[str, Any] = {"parsed_alert": parsed_alert_update}
+                if binance_response_update:
+                    update_data["binance_response"] = binance_response_update
+
+                supabase.table("alerts").update(update_data).eq("id", alert["id"]).execute()
+                logging.info(f"Successfully logged result for alert ID {alert['id']}.")
+
+            logging.info("--- Waiting 10 seconds before next alert ---")
+            await asyncio.sleep(10)
 
     except Exception as e:
-        print(f"An error occurred in the main processing loop: {e}")
+        logging.error(f"An error occurred in the main processing loop: {e}", exc_info=True)
+
+async def main():
+    """Initializes connections and runs the main processing loop."""
+    global supabase, bot
+
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+
+    if not supabase_url or not supabase_key:
+        logging.critical("SUPABASE_URL and SUPABASE_KEY must be set.")
+        return
+
+    try:
+        supabase = create_client(supabase_url, supabase_key)
+        logging.info("Successfully connected to Supabase.")
+        bot = DiscordBot()
+        await process_alerts()
+    except Exception as e:
+        logging.critical(f"Failed to initialize resources: {e}", exc_info=True)
+    finally:
+        if 'bot' in globals() and bot:
+            await bot.close()
+            logging.info("Bot resources have been closed.")
+
 
 if __name__ == "__main__":
-    process_alerts()
+    asyncio.run(main())

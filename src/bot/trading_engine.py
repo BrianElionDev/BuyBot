@@ -85,8 +85,14 @@ class TradingEngine:
             try:
                 # Test with a simple balance check
                 balances = await self.binance_exchange.get_spot_balance()
+                if balances is None:
+                    logger.error("❌ Failed to test new credentials: Could not get balance.")
+                    return False
+
                 logger.info("✅ Credentials reloaded successfully")
-                logger.info(f"   Using API Key: {updated_config.BINANCE_API_KEY[:10]}...{updated_config.BINANCE_API_KEY[-5:] if updated_config.BINANCE_API_KEY else 'None'}")
+                api_key = updated_config.BINANCE_API_KEY
+                assert api_key is not None, "BINANCE_API_KEY is not set"
+                logger.info(f"   Using API Key: {api_key[:10]}...{api_key[-5:]}")
                 logger.info(f"   Testnet Mode: {updated_config.BINANCE_TESTNET}")
                 return True
 
@@ -106,7 +112,7 @@ class TradingEngine:
     async def process_signal(self, coin_symbol: str, signal_price: float,
                            position_type: str = "SPOT",
                            exchange_type: str = "None", sell_coin: str = "None",
-                           order_type: str = "MARKET", stop_loss: Optional[float] = None,
+                           order_type: str = "MARKET", stop_loss: Optional[Union[float, str]] = None,
                            take_profits: Optional[List[float]] = None,
                            dca_range: Optional[List[float]] = None,
                            client_order_id: Optional[str] = None) -> Tuple[bool, Union[Dict, str]]:
@@ -160,7 +166,7 @@ class TradingEngine:
 
     async def _process_cex_signal(self, coin_symbol: str, signal_price: float,
                                 position_type: str, order_type: str = "MARKET",
-                                stop_loss: Optional[float] = None,
+                                stop_loss: Optional[Union[float, str]] = None,
                                 take_profits: Optional[List[float]] = None,
                                 dca_range: Optional[List[float]] = None,
                                 client_order_id: Optional[str] = None) -> Tuple[bool, Union[Dict, str]]:
@@ -174,21 +180,22 @@ class TradingEngine:
         # Determine if it's a futures or spot trade
         is_futures = position_type.upper() in ['LONG', 'SHORT']
 
-        # Pre-validate symbol using whitelist (for futures only)
-        if is_futures:
-            trading_pair = f"{coin_symbol.lower()}_usdt"
-            formatted_pair = trading_pair.replace('_', '').upper()
-
-            # Import and check whitelist
-            try:
-                from config.binance_futures_whitelist import is_symbol_supported
-                if not is_symbol_supported(formatted_pair):
-                    reason = f"Trading pair {formatted_pair} not available in futures whitelist"
-                    logger.error(reason)
-                    return False, reason
-                logger.info(f"✅ Symbol {formatted_pair} validated against whitelist")
-            except ImportError:
-                logger.warning("Futures whitelist not available - skipping symbol validation")
+        # The validation below using get_futures_pair_info is sufficient.
+        # This old whitelist check is redundant and uses a static file.
+        # if is_futures:
+        #     trading_pair = f"{coin_symbol.lower()}_usdt"
+        #     formatted_pair = trading_pair.replace('_', '').upper()
+        #
+        #     # Import and check whitelist
+        #     try:
+        #         from config.binance_futures_whitelist import is_symbol_supported
+        #         if not is_symbol_supported(formatted_pair):
+        #             reason = f"Trading pair {formatted_pair} not available in futures whitelist"
+        #             logger.error(reason)
+        #             return False, reason
+        #         logger.info(f"✅ Symbol {formatted_pair} validated against whitelist")
+        #     except ImportError:
+        #         logger.warning("Futures whitelist not available - skipping symbol validation")
 
         logger.info(f"Processing CEX signal: {coin_symbol} @ ${signal_price}")
         logger.info(f"Order Type: {order_type}")
@@ -275,7 +282,7 @@ class TradingEngine:
         # Execute trade with slippage allowance
         buy_price = current_price * (1 + (config.SLIPPAGE_PERCENTAGE / 100))
 
-        logger.info(f"Executing CEX trade: {coin_amount:.8f} {coin_symbol} @ ${buy_price}")
+        logger.info(f"Executing CEX trade: {coin_amount:.8f} {coin_symbol} @ ${buy_price:.8f}")
 
         # Determine side
         entry_side = SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL
@@ -341,10 +348,9 @@ class TradingEngine:
             order_result = await self.binance_exchange.create_order(
                 pair=trading_pair,
                 side=entry_side,
-                order_type_market=ORDER_TYPE_MARKET,
                 amount=coin_amount,
-                price=buy_price, # Note: price is ignored for market orders but kept for consistency
-                client_order_id=client_order_id # Pass the ID here
+                price=buy_price,
+                client_order_id=client_order_id
             )
             # You could add Spot SL logic here if needed, following the futures pattern.
             # It would use ORDER_TYPE_STOP_LOSS_LIMIT.
@@ -360,7 +366,7 @@ class TradingEngine:
             logger.error(reason)
             return False, order_result
 
-    async def _process_dex_signal(self, sell_coin: str, buy_coin: str, signal_price: float) -> Tuple[bool, Optional[str]]:
+    async def _process_dex_signal(self, sell_coin: str, buy_coin: str, signal_price: float) -> Tuple[bool, str]:
         """Process a trading signal using the decentralized exchange (Uniswap)."""
         if not self.uniswap_exchange:
             reason = "Uniswap exchange is not available"
@@ -607,18 +613,11 @@ class TradingEngine:
     def _create_response_message(self, **kwargs) -> str:
         # This is a placeholder for a more sophisticated message creation logic
         # For now, it just returns a simple string representation of the keyword arguments
-        return ", ".join([f"{key.replace('_', ' ').title()}: {value}" for key, value in kwargs.items()])
+        return str(kwargs)
 
-    async def process_trade_update(self, update_data: Dict, active_trade: Dict) -> Tuple[bool, str]:
+    async def process_trade_update(self, update_data: Dict, active_trade: Dict) -> Tuple[bool, Union[str, Dict]]:
         """
-        Handle trade updates like stop loss changes, take profits, position closes.
-
-        Args:
-            update_data: Parsed update signal with action_type and value
-            active_trade: The original trade record from database
-
-        Returns:
-            Tuple of (success, message)
+        Processes updates for an existing trade, such as closing a position or updating SL.
         """
         action_type = update_data.get("action_type")
         value = update_data.get("value")
@@ -627,11 +626,18 @@ class TradingEngine:
             if action_type == "CLOSE_POSITION":
                 return await self.close_position_at_market(active_trade)
             elif action_type == "UPDATE_SL":
-                return await self.update_stop_loss(active_trade, value)
+                # --- Update SL ---
+                if new_sl_price_str := update_data.get("update_sl"):
+                    try:
+                        new_sl_price = float(new_sl_price_str)
+                        return await self.update_stop_loss(active_trade, new_sl_price)
+                    except (ValueError, TypeError):
+                        return False, f"Invalid format for new stop loss: '{new_sl_price_str}'"
+
             elif action_type == "TAKE_PROFIT":
                 return await self.close_position_at_market(active_trade, reason="take_profit")
             else:
-                return False, f"Unknown update action: {action_type}"
+                return False, "No valid update action found in the payload."
 
         except Exception as e:
             logger.error(f"Error processing trade update: {e}", exc_info=True)
@@ -639,7 +645,7 @@ class TradingEngine:
 
     async def close_position_at_market(self, active_trade: Dict, reason: str = "manual_close", close_percentage: float = 100.0) -> Tuple[bool, Dict]:
         """
-        Close an active position at current market price. Handles both CEX futures and spot.
+        Closes a percentage of an open futures position at the current market price.
 
         Args:
             active_trade: The trade record containing position info
