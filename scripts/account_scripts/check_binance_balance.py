@@ -5,8 +5,9 @@ import logging
 from dotenv import load_dotenv
 
 # Add the project root to Python path
+# This script is two levels deep (scripts/account_scripts), so we go up two directories from the script's location.
 script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
+project_root = os.path.dirname(os.path.dirname(script_dir))
 sys.path.insert(0, project_root)
 
 from src.exchange.binance_exchange import BinanceExchange

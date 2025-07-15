@@ -21,6 +21,7 @@ def initialize_clients():
     url: str = os.environ.get("SUPABASE_URL")
     key: str = os.environ.get("SUPABASE_KEY")
     if not url or not key:
+        logging.error("Supabase URL or Key not found in .env file.")
         raise ValueError("Supabase credentials not found.")
     supabase: Client = create_client(url, key)
 
@@ -41,13 +42,14 @@ async def retry_failed_trades():
         logging.error(f"Failed to initialize clients: {e}")
         return
 
-    # 1. Define the error pattern to search for, matching the user's successful SQL query.
-    # The '%' is a wildcard that matches any sequence of characters (e.g., the coin symbol).
-    cooldown_pattern = "Trade cooldown active for%"
+    # 1. Define the error pattern to search for.
+    # The '%' is a wildcard that matches any sequence of characters.
+    # This ensures we find all cooldown errors, regardless of the coin symbol.
+    cooldown_pattern = "Trade cooldown active%"
 
     # 2. Fetch all trades matching the failure reason
     try:
-        logging.info(f"Searching for trades where binance_response LIKE '{cooldown_pattern}'")
+        logging.info(f"Searching for trades where binance_response starts with: 'Trade cooldown active'")
         response = supabase.from_("trades").select("*").like("binance_response", cooldown_pattern).execute()
 
         if not response.data:
@@ -97,6 +99,3 @@ async def retry_failed_trades():
 
 if __name__ == "__main__":
     asyncio.run(retry_failed_trades())
-
-
-

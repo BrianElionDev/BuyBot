@@ -7,7 +7,7 @@ from supabase import create_client, Client
 
 # Add the project root to Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
+project_root = os.path.dirname(os.path.dirname(script_dir))
 sys.path.insert(0, project_root)
 
 from src.exchange.binance_exchange import BinanceExchange

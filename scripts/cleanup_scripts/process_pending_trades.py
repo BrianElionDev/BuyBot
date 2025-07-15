@@ -4,8 +4,10 @@ import os
 import sys
 from typing import List
 
-# Add project root to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the project root to the Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -16,11 +18,11 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Supabase Client ---
-url: str = os.environ.get("SUPABASE_URL")
-key: str = os.environ.get("SUPABASE_KEY")
+url = os.environ.get("SUPABASE_URL")
+key = os.environ.get("SUPABASE_KEY")
 if not url or not key:
     logging.error("Supabase URL or Key not found. Please set SUPABASE_URL and SUPABASE_KEY in your .env file.")
-    exit(1)
+    sys.exit(1)
 
 supabase: Client = create_client(url, key)
 bot = DiscordBot()
@@ -34,8 +36,8 @@ async def process_pending_trades_for_july_9_and_10():
 
     try:
         # 1. Fetch all trades with 'pending' status for July 9th and 10th
-        start_date = "2024-07-09T00:00:00.000Z"
-        end_date = "2024-07-10T23:59:59.999Z"
+        start_date = "2025-07-11T00:00:00.000Z"
+        end_date = "2025-07-14T23:59:59.999Z"
 
         response = (
             supabase.from_("trades")
