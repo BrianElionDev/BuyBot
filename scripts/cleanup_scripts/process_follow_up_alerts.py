@@ -3,6 +3,7 @@ import sys
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import Client, create_client
 from typing import Dict, Any
@@ -22,36 +23,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 supabase: Client
 bot: DiscordBot
 
-def _create_update_payload(content: str) -> dict:
-    """
-    Parses the raw alert content and creates a payload dictionary
-    for the TradingEngine's process_trade_update method.
-    """
-    content_lower = content.lower()
-
-    # --- Close Position Logic ---
-    # Treat any SL hit, TP, or explicit "closed" signal as a trigger to fully close the position.
-    if any(keyword in content_lower for keyword in ["stopped out", "stop loss", "closed", "tp1", "tp2"]):
-        return {'close_position': True, 'reason': 'alert_triggered_close'}
-
-    # --- Update Stop Loss to Break-Even Logic ---
-    if "stops moved to be" in content_lower or "sl to be" in content_lower:
-        return {'update_sl': 'BE'}
-
-    # Return an empty dictionary for unrecognized or unsupported alert types
-    return {}
-
 async def process_alerts():
     """
-    Fetches unprocessed alerts, creates an action payload, sends it to the
-    trading engine for execution, and logs the response.
+    Fetches unprocessed alerts, sends them to the DiscordBot for processing,
+    and logs the outcome.
     """
     global supabase, bot
     logging.info("--- Starting Follow-Up Alert Processing ---")
 
     try:
         # Fetch all alerts that haven't been processed yet
-        response = supabase.table("alerts").select("*").gte("timestamp", "2025-07-09T00:00:00.000Z").is_("parsed_alert", None).execute()
+        response = supabase.table("alerts").select("*").gte("timestamp", "2025-07-14T00:00:00.000Z").execute()
 
         if not hasattr(response, 'data') or not response.data:
             logging.info("No unprocessed alerts found.")
@@ -62,57 +44,91 @@ async def process_alerts():
 
         for alert in alerts:
             logging.info(f"\nProcessing alert ID {alert['id']}: {alert['content']}")
-            parsed_alert_update = None
-            binance_response_update = None
 
             try:
-                # 1. Find the corresponding active trade in the 'trades' table
-                trade_response = supabase.table("trades").select("*").eq("discord_id", alert["trade"]).limit(1).execute()
+                alert_id = alert.get("id")
+                if not alert_id:
+                    logging.error(f"Alert is missing an 'id'. Raw alert data: {alert}")
+                    continue
 
-                if not trade_response.data:
-                    parsed_alert_update = {'success': False, 'reason': 'trade_not_found'}
-                    binance_response_update = f"Original trade with discord_id {alert['trade']} not found."
-                    logging.warning(binance_response_update)
-                else:
-                    active_trade = trade_response.data[0]
-
-                    # 2. Only process alerts for trades that are still 'OPEN'
-                    if active_trade.get('status') != 'OPEN':
-                        parsed_alert_update = {'success': False, 'reason': 'trade_not_open'}
-                        binance_response_update = f"Trade {active_trade['id']} is not OPEN (status: {active_trade.get('status')}). Skipping alert."
-                        logging.info(binance_response_update)
+                # Parse alert content for action and details
+                content = alert.get("content", "").lower()
+                details = {}
+                action = None
+                # Example parsing logic (customize as needed for your alert format)
+                if "tp1" in content or "take profit 1" in content:
+                    action = "take_profit_1"
+                    # Extract TP1 price and/or close % if present
+                    # (You may want to use regex or a parser for more robust extraction)
+                    if "close" in content and "%" in content:
+                        try:
+                            pct = int(content.split("close")[-1].split("%")[-2].split()[-1])
+                            details["close_percentage"] = pct
+                        except Exception:
+                            details["close_percentage"] = 50
                     else:
-                        # 3. Create the action payload from the alert content
-                        payload = _create_update_payload(alert['content'])
+                        details["close_percentage"] = 50
+                    # Optionally extract TP price
+                elif "tp2" in content or "take profit 2" in content:
+                    action = "take_profit_2"
+                    details["close_percentage"] = 25
+                elif "tp3" in content or "take profit 3" in content:
+                    action = "take_profit_3"
+                    details["close_percentage"] = 25
+                elif "move stop" in content or "sl to be" in content or "stop to be" in content:
+                    action = "stop_loss_update"
+                    details["stop_price"] = "BE"
+                elif "stopped out" in content or "stop loss hit" in content:
+                    action = "stop_loss_hit"
+                elif "close" in content:
+                    action = "position_closed"
+                    # Try to extract close %
+                    if "%" in content:
+                        try:
+                            pct = int(content.split("close")[-1].split("%")[-2].split()[-1])
+                            details["close_percentage"] = pct
+                        except Exception:
+                            details["close_percentage"] = 100
+                    else:
+                        details["close_percentage"] = 100
+                else:
+                    action = None
 
-                        if not payload:
-                            parsed_alert_update = {'success': False, 'reason': 'unsupported_alert'}
-                            binance_response_update = "Unknown or unsupported alert type."
-                            logging.warning(f"Unsupported alert for trade {active_trade['id']}: {alert['content']}")
-                        else:
-                            # 4. Execute the action using the Trading Engine
-                            logging.info(f"Executing action for trade {active_trade['id']} with payload: {payload}")
-                            success, response_from_engine = await bot.trading_engine.process_trade_update(payload, active_trade)
+                # Reconstruct the signal payload from the alert row
+                signal_payload = {
+                    "timestamp": alert.get("timestamp"),
+                    "content": alert.get("content"),
+                    "trade": alert.get("trade"),
+                    "discord_id": alert.get("discord_id"),
+                    "trader": alert.get("trader"),
+                    "structured": alert.get("structured"),
+                }
 
-                            parsed_alert_update = {'success': success, 'action_payload': payload}
-                            binance_response_update = str(response_from_engine)
+                # Log what is being attempted
+                logging.info(f"Attempting action: {action} with details: {details}")
 
-                            log_level = logging.INFO if success else logging.ERROR
-                            logging.log(log_level, f"Engine execution result for trade {active_trade['id']}: {binance_response_update}")
+                # Pass action and details to process_update_signal
+                if action:
+                    signal_payload["action"] = action
+                    signal_payload["details"] = details
+                result = await bot.process_update_signal(signal_payload, alert_id=alert_id)
+
+                if result.get("status") == "success":
+                    logging.info(f"✅ Successfully processed alert ID {alert_id}. Action: {action}. Message: {result.get('message')}")
+                else:
+                    logging.error(f"❌ Failed to process alert ID {alert_id}. Action: {action}. Reason: {result.get('message')}")
 
             except Exception as e:
-                logging.error(f"An unexpected error occurred while processing alert ID {alert['id']}: {e}", exc_info=True)
-                parsed_alert_update = {'success': False, 'reason': 'script_error'}
-                binance_response_update = f"Script error: {str(e)}"
-
-            # 5. Log the results to the database
-            if parsed_alert_update:
-                update_data: Dict[str, Any] = {"parsed_alert": parsed_alert_update}
-                if binance_response_update:
-                    update_data["binance_response"] = binance_response_update
-
-                supabase.table("alerts").update(update_data).eq("id", alert["id"]).execute()
-                logging.info(f"Successfully logged result for alert ID {alert['id']}.")
+                logging.error(f"An unexpected error occurred while processing alert ID {alert.get('id')}: {e}", exc_info=True)
+                if alert_id := alert.get("id"):
+                    try:
+                        error_info = {"success": False, "reason": f"script_error: {str(e)}"}
+                        supabase.table("alerts").update({
+                            "parsed_alert": error_info,
+                            "binance_response": {"error": f"Script error: {str(e)}"}
+                        }).eq("id", alert_id).execute()
+                    except Exception as db_e:
+                        logging.error(f"Could not even log the error to the database for alert {alert_id}: {db_e}")
 
             logging.info("--- Waiting 10 seconds before next alert ---")
             await asyncio.sleep(10)
