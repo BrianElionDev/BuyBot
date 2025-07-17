@@ -36,15 +36,15 @@ async def process_pending_trades_for_july_9_and_10():
 
     try:
         # 1. Fetch all trades with 'pending' status for July 9th and 10th
-        start_date = "2025-07-11T00:00:00.000Z"
-        end_date = "2025-07-14T23:59:59.999Z"
+        start_date = "2025-07-14T00:00:00.000Z"
+        end_date = "2025-07-15T23:59:59.999Z"
 
+        # binance_response is a text field, I want to process if empty
         response = (
             supabase.from_("trades")
             .select("*")
-            .eq("status", "pending")
+            .eq("binance_response", "")
             .gte("timestamp", start_date)
-            .lte("timestamp", end_date)
             .execute()
         )
 

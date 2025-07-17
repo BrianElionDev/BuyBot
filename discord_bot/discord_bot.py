@@ -2,40 +2,57 @@ import asyncio
 import logging
 import re
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 
 from src.bot.trading_engine import TradingEngine
-from .database import (
-    find_trade_by_timestamp,
-    find_trade_by_discord_id,
-    update_existing_trade,
-    save_alert_to_database,
-    update_existing_alert
-)
-from .discord_signal_parser import DiscordSignalParser
+from .discord_signal_parser import DiscordSignalParser, client
 from .models import InitialDiscordSignal, DiscordUpdateSignal
+from .database import DatabaseManager
 from config import settings as config
+from supabase import create_client, Client
+from src.services.price_service import PriceService
+from src.exchange.binance_exchange import BinanceExchange
 
 # Setup logging
 logger = logging.getLogger(__name__)
 
 class DiscordBot:
     def __init__(self):
-        # --- Pre-initialization validation ---
-        api_key = config.BINANCE_API_KEY
-        api_secret = config.BINANCE_API_SECRET
-        if not api_key or not api_secret:
-            logger.critical("CRITICAL: Binance API Key or Secret is not set. The bot cannot start.")
-            raise ValueError("Binance API Key and Secret must be set in the environment.")
+        # Load environment variables
+        load_dotenv()
 
+        # --- Binance API Initialization ---
+        api_key = os.getenv("BINANCE_API_KEY")
+        api_secret = os.getenv("BINANCE_API_SECRET")
+        is_testnet = os.getenv("BINANCE_TESTNET", "False").lower() == 'true'
+        if not api_key or not api_secret:
+            logger.critical("Binance API key/secret not set. Cannot start Trading Engine.")
+            raise ValueError("Binance API key/secret not set.")
+
+        # --- Supabase Initialization ---
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        if not supabase_url or not supabase_key:
+            logger.critical("Supabase URL or Key not set. Cannot connect to the database.")
+            raise ValueError("Supabase URL or Key not set.")
+
+        self.supabase: Client = create_client(supabase_url, supabase_key)
+        self.db_manager = DatabaseManager(self.supabase)
+
+        # --- Component Initialization ---
+        self.price_service = PriceService()
+        self.binance_exchange = BinanceExchange(api_key, api_secret, is_testnet)
         self.trading_engine = TradingEngine(
-            api_key=api_key,
-            api_secret=api_secret,
-            is_testnet=config.BINANCE_TESTNET
+            price_service=self.price_service,
+            binance_exchange=self.binance_exchange,
+            db_manager=self.db_manager
         )
         self.signal_parser = DiscordSignalParser()
-        logger.info("DiscordBot initialized with AI Signal Parser.")
+
+        logger.info(f"DiscordBot initialized with {'AI' if client else 'simple'} Signal Parser.")
 
     def _clean_text_for_llm(self, text: str) -> str:
         """
@@ -145,7 +162,7 @@ class DiscordBot:
             signal = InitialDiscordSignal(**signal_data)
             logger.info(f"Processing initial signal: {signal.structured}")
 
-            trade_row = await find_trade_by_timestamp(signal.timestamp)
+            trade_row = await self.db_manager.find_trade_by_timestamp(signal.timestamp)
             if not trade_row:
                 clean_timestamp = signal.timestamp.replace('T', ' ').rstrip('Z')
                 error_msg = f"No existing trade found for timestamp: '{signal.timestamp}'. Query was performed using cleaned timestamp: '{clean_timestamp}'"
@@ -171,7 +188,7 @@ class DiscordBot:
             else:
                 logger.warning(f"Could not find 'position_type' in parsed_signal for trade ID: {trade_row['id']}")
 
-            await update_existing_trade(trade_id=trade_row["id"], updates=updates)
+            await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
             logger.info(f"Successfully stored parsed signal and signal_type for trade ID: {trade_row['id']}")
 
             # --- Start of new validation ---
@@ -180,7 +197,7 @@ class DiscordBot:
             if not coin_symbol:
                 error_msg = "AI parser did not return a 'coin_symbol'. Cannot proceed with trade."
                 logger.error(f"{error_msg} for trade ID: {trade_row['id']}")
-                await update_existing_trade(trade_id=trade_row["id"], updates={"status": "FAILED", "binance_response": {"error": error_msg}})
+                await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates={"status": "FAILED", "binance_response": {"error": error_msg}})
                 return {"status": "error", "message": error_msg}
 
             # Validate that the parser returned entry prices
@@ -188,7 +205,7 @@ class DiscordBot:
             if not entry_prices or not isinstance(entry_prices, list) or not entry_prices[0]:
                 error_msg = "AI parser did not return valid 'entry_prices'. Cannot proceed with trade."
                 logger.error(f"{error_msg} for trade ID: {trade_row['id']}")
-                await update_existing_trade(trade_id=trade_row["id"], updates={"status": "FAILED", "binance_response": {"error": error_msg}})
+                await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates={"status": "FAILED", "binance_response": {"error": error_msg}})
                 return {"status": "error", "message": error_msg}
             # --- End of new validation ---
 
@@ -197,12 +214,11 @@ class DiscordBot:
                 'coin_symbol': coin_symbol,
                 'signal_price': float(entry_prices[0]),
                 'position_type': parsed_data.get('position_type', 'SPOT'),
-                'sell_coin': 'USDT',
                 'order_type': parsed_data.get('order_type', 'LIMIT'),
                 'stop_loss': parsed_data.get('stop_loss'),
                 'take_profits': parsed_data.get('take_profits'),
-                'exchange_type': 'cex',
-                'client_order_id': trade_row.get('discord_id') # Use discord_id for reconciliation
+                'client_order_id': trade_row.get('discord_id'), # Use discord_id for reconciliation
+                'quantity_multiplier': parsed_data.get('quantity_multiplier') # For memecoin quantity prefixes
                 # 'dca_range' could be added here if the AI provides it
             }
 
@@ -214,19 +230,39 @@ class DiscordBot:
                 # 5. Update database with execution status, order ID, and Binance response
                 updates = {
                     "status": "OPEN",
-                    "binance_response": result_message
+                    "binance_response": result_message,
+                    "entry_price": engine_params['signal_price']
                 }
 
                 # Ensure the result is a dictionary before accessing keys
                 if isinstance(result_message, dict):
                     updates["exchange_order_id"] = str(result_message.get('orderId', ''))
-                    updates["position_size"] = float(result_message.get('origQty', 0.0))
+
+                    # --- Robustly parse position size ---
+                    # For market orders, 'executedQty' is the source of truth.
+                    # For limit orders, 'origQty' is what we want, as 'executedQty' will be 0 until filled.
+                    size = float(result_message.get('executedQty', 0.0))
+                    if size == 0.0:
+                        size = float(result_message.get('origQty', 0.0))
+
+                    # For spot market orders, the size is in the 'fills' array
+                    if size == 0.0 and 'fills' in result_message and result_message['fills']:
+                        size = sum(float(fill.get('qty', 0.0)) for fill in result_message['fills'])
+
+                    updates["position_size"] = size
+
+                    # Also capture the true entry price from the fills if available (for market orders)
+                    if 'fills' in result_message and result_message['fills']:
+                        weighted_avg_price = sum(float(f['price']) * float(f['qty']) for f in result_message['fills']) / sum(float(f['qty']) for f in result_message['fills'])
+                        if weighted_avg_price > 0:
+                            updates["entry_price"] = weighted_avg_price
+                            logger.info(f"Updated entry price to {weighted_avg_price} from fills.")
 
                     # Check if a stop loss order was also created
                     if 'stop_loss_order_details' in result_message and isinstance(result_message['stop_loss_order_details'], dict):
                         updates['stop_loss_order_id'] = str(result_message['stop_loss_order_details'].get('orderId', ''))
 
-                await update_existing_trade(trade_id=trade_row["id"], updates=updates)
+                await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
 
                 logger.info(f"Trade processed successfully for trade ID: {trade_row['id']}. Message: {result_message}")
                 return {
@@ -239,7 +275,7 @@ class DiscordBot:
                     "status": "FAILED",
                     "binance_response": result_message
                 }
-                await update_existing_trade(trade_id=trade_row["id"], updates=updates)
+                await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
 
                 logger.error(f"Trade processing failed for trade ID: {trade_row['id']}. Reason: {result_message}")
                 return {
@@ -250,16 +286,16 @@ class DiscordBot:
         except Exception as e:
             # This part is tricky because we might not have trade_row['id'] if the timestamp search fails
             trade_id = locals().get('trade_row', {}).get('id')
-            if trade_id:
+            if trade_id is not None:
                 # Update database with failed status
                 updates = {"status": "FAILED"}
-                await update_existing_trade(trade_id=trade_id, updates=updates)
+                await self.db_manager.update_existing_trade(trade_id=trade_id, updates=updates)
 
             error_msg = f"Error executing initial trade: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {"status": "error", "message": error_msg}
 
-    async def process_update_signal(self, signal_data: Dict[str, Any], alert_id: int = None) -> Dict[str, str]:
+    async def process_update_signal(self, signal_data: Dict[str, Any], alert_id: Optional[int] = None) -> Dict[str, str]:
         """
         Process follow-up signal (stop loss hit, position closed, etc.)
         Updates the existing trade row with new information.
@@ -270,7 +306,7 @@ class DiscordBot:
             logger.info(f"Processing update signal: {signal.content}")
 
             # The 'trade' field in the update signal refers to the discord_id of the original trade
-            trade_row = await find_trade_by_discord_id(signal.trade)
+            trade_row = await self.db_manager.find_trade_by_discord_id(signal.trade)
             if not trade_row:
                 error_msg = f"No original trade found for discord_id: {signal.trade}"
                 logger.error(error_msg)
@@ -309,29 +345,39 @@ class DiscordBot:
                 new_sl_price = 0.0
 
                 # Check for "BE" (Break Even) signal
-                if "be" in signal.content.lower():
-                    # Get original entry price from parsed_signal, guarding against None
-                    parsed_signal = trade_row.get('parsed_signal') or {}
-                    original_entry_price = parsed_signal.get('entry_prices', [0.0])[0]
+                if parsed_action.get("value") == "BE" or "be" in signal.content.lower():
+                    # Use the reliable entry_price from the database record
+                    original_entry_price = trade_row.get('entry_price')
                     if original_entry_price:
                         new_sl_price = float(original_entry_price)
                         logger.info(f"Determined new stop loss price (Break Even) as {new_sl_price} from original entry.")
                     else:
                         logger.error(f"Could not determine entry price for BE stop loss on trade {trade_row['id']}")
                 else:
-                    # Fallback to regex for a numerical price
-                    price_match = re.search(r'(\d+\.?\d*)', signal.content)
-                    if price_match:
-                        new_sl_price = float(price_match.group(1))
+                    # Get the new price from the parsed data if available
+                    new_sl_price = float(parsed_action.get("value", 0.0))
 
                 if new_sl_price > 0:
                     action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
-                    if action_successful:
+                    if action_successful and isinstance(binance_response_log, dict):
                         # The response from a successful SL update contains the new order details
                         trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
                 else:
                     logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}")
 
+            elif action_type == "order_cancelled":
+                logger.info(f"Processing cancellation for trade {trade_row['id']}")
+                action_successful, binance_response_log = await self.trading_engine.cancel_order(trade_row)
+                if action_successful:
+                    trade_updates["status"] = "CANCELLED"
+
+            elif action_type == "order_filled":
+                 # Usually, the initial signal opens the position. This is just an informational update.
+                 # We can update the status to ensure it reflects 'OPEN'.
+                 logger.info(f"Received 'order filled' notification for trade {trade_row['id']}. Status confirmed as OPEN.")
+                 trade_updates["status"] = "OPEN"
+                 action_successful = True # No engine action, but we mark as successful to log correctly.
+                 binance_response_log = {"message": "Order fill notification processed."}
 
             # After executing action, update the database
             if action_successful:
@@ -361,7 +407,7 @@ class DiscordBot:
 
                 # Update the trade with new status or SL order ID
                 if trade_updates:
-                    await update_existing_trade(trade_id=trade_row["id"], updates=trade_updates)
+                    await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=trade_updates)
                     logger.info(f"Updated trade {trade_row['id']} with: {trade_updates}")
             elif binance_response_log: # Action was attempted but failed
                 logger.error(f"Failed to execute '{action_type}' for trade {trade_row['id']}. Reason: {binance_response_log}")
@@ -380,12 +426,12 @@ class DiscordBot:
                 "binance_response": binance_response_log # This will be None if no action was taken, or the dict from Binance
             }
 
-            if alert_id:
+            if alert_id is not None:
                 logger.info(f"Updating existing alert record (ID: {alert_id}) with processed data.")
-                await update_existing_alert(alert_id, alert_updates)
+                await self.db_manager.update_existing_alert(alert_id, alert_updates)
             else:
                 logger.info("Saving new alert record with processed data.")
-                await save_alert_to_database(alert_updates)
+                await self.db_manager.save_alert_to_database(alert_updates)
 
             return {
                 "status": "success",
@@ -396,8 +442,8 @@ class DiscordBot:
             error_msg = f"Error processing update signal: {str(e)}"
             logger.error(error_msg, exc_info=True)
             # Log error to the alert if possible
-            if alert_id:
-                await update_existing_alert(alert_id, {"binance_response": {"error": error_msg}})
+            if alert_id is not None:
+                await self.db_manager.update_existing_alert(alert_id, {"binance_response": {"error": error_msg}})
             return {"status": "error", "message": error_msg}
 
     def _calculate_pnl(self, position_type: str, entry_price: float, exit_price: float, position_size: float) -> float:

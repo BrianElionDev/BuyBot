@@ -2,12 +2,14 @@ import asyncio
 import logging
 import os
 import sys
-from dotenv import load_dotenv
-from supabase import create_client, Client
 
 # Add project root to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
+from dotenv import load_dotenv
+from supabase import create_client, Client
 from discord_bot.discord_bot import DiscordBot
 
 # --- Setup ---
@@ -18,8 +20,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def initialize_clients():
     """Initializes and returns Supabase client and DiscordBot instance."""
     # Supabase
-    url: str = os.environ.get("SUPABASE_URL")
-    key: str = os.environ.get("SUPABASE_KEY")
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
         raise ValueError("Supabase credentials not found.")
     supabase: Client = create_client(url, key)

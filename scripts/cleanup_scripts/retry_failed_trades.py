@@ -18,8 +18,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def initialize_clients():
     """Initializes and returns Supabase client and DiscordBot instance."""
     # Supabase
-    url: str = os.environ.get("SUPABASE_URL")
-    key: str = os.environ.get("SUPABASE_KEY")
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
         logging.error("Supabase URL or Key not found in .env file.")
         raise ValueError("Supabase credentials not found.")

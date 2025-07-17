@@ -10,8 +10,6 @@ def reload_env():
     global BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET
     global TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE
     global TARGET_GROUP_ID, NOTIFICATION_GROUP_ID
-    global INFURA_PROJECT_ID, ETHEREUM_NETWORK, INFURA_URL
-    global WALLET_ADDRESS, WALLET_PRIVATE_KEY
 
     # Reload all environment variables
     BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
@@ -24,62 +22,14 @@ def reload_env():
     TARGET_GROUP_ID = int(os.getenv("TARGET_GROUP_ID", "0"))
     NOTIFICATION_GROUP_ID = int(os.getenv("NOTIFICATION_GROUP_ID", "0"))
 
-    INFURA_PROJECT_ID = os.getenv("INFURA_PROJECT_ID")
-    ETHEREUM_NETWORK = os.getenv("ETHEREUM_NETWORK", "mainnet")
-    INFURA_URL = f"https://{ETHEREUM_NETWORK}.infura.io/v3/{INFURA_PROJECT_ID}" if INFURA_PROJECT_ID else None
-    WALLET_ADDRESS = os.getenv("WALLET_ADDRESS")
-    WALLET_PRIVATE_KEY = os.getenv("WALLET_PRIVATE_KEY")
-
     logging.info("Environment variables reloaded successfully")
-    logging.info(f"Using Binance API Key: {BINANCE_API_KEY[:10]}...{BINANCE_API_KEY[-5:] if BINANCE_API_KEY else 'None'}")
-
-def verify_env_loading():
-    """Verify that environment variables are properly loaded and log the details."""
-    print("="*70)
-    print("           ENVIRONMENT VARIABLE VERIFICATION")
-    print("="*70)
-
-    # Check for .env file existence
-    env_file_path = os.path.join(os.getcwd(), '.env')
-    if os.path.exists(env_file_path):
-        print(f"✅ .env file found at: {env_file_path}")
-        # Show last modified time
-        import time
-        mod_time = os.path.getmtime(env_file_path)
-        print(f"📅 .env file last modified: {time.ctime(mod_time)}")
+    if BINANCE_API_KEY:
+        logging.info(f"Using Binance API Key: {BINANCE_API_KEY[:10]}...{BINANCE_API_KEY[-5:]}")
     else:
-        print(f"❌ .env file NOT found at: {env_file_path}")
+        logging.info("Using Binance API Key: None")
 
-    # Show current working directory
-    print(f"📁 Current working directory: {os.getcwd()}")
-
-    # Show environment variable values (safely)
-    print("\n📊 Loaded Environment Variables:")
-    print(f"   BINANCE_API_KEY: {BINANCE_API_KEY[:15]}...{BINANCE_API_KEY[-10:] if BINANCE_API_KEY and len(BINANCE_API_KEY) > 25 else 'NOT_SET'}")
-    print(f"   BINANCE_API_SECRET: {BINANCE_API_SECRET[:15]}...{BINANCE_API_SECRET[-10:] if BINANCE_API_SECRET and len(BINANCE_API_SECRET) > 25 else 'NOT_SET'}")
-    print(f"   BINANCE_TESTNET: {BINANCE_TESTNET}")
-
-    # Check for any commented-out duplicates in .env file
-    if os.path.exists(env_file_path):
-        with open(env_file_path, 'r') as f:
-            content = f.read()
-            binance_key_lines = [line.strip() for line in content.split('\n') if 'BINANCE_API_KEY' in line]
-            binance_secret_lines = [line.strip() for line in content.split('\n') if 'BINANCE_API_SECRET' in line]
-
-            print(f"\n🔍 Found {len(binance_key_lines)} BINANCE_API_KEY lines in .env file:")
-            for i, line in enumerate(binance_key_lines, 1):
-                status = "ACTIVE" if not line.startswith('#') else "COMMENTED"
-                print(f"   {i}. [{status}] {line[:50]}{'...' if len(line) > 50 else ''}")
-
-            print(f"\n🔍 Found {len(binance_secret_lines)} BINANCE_API_SECRET lines in .env file:")
-            for i, line in enumerate(binance_secret_lines, 1):
-                status = "ACTIVE" if not line.startswith('#') else "COMMENTED"
-                print(f"   {i}. [{status}] {line[:50]}{'...' if len(line) > 50 else ''}")
-
-    print("="*70)
 
 # Force reload on import with override=True to ensure fresh values
-print("🔄 Loading environment variables...")
 load_dotenv(override=True)
 
 # Telegram
@@ -94,27 +44,18 @@ BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
 
-# Infura & Web3
-INFURA_PROJECT_ID = os.getenv("INFURA_PROJECT_ID")
-ETHEREUM_NETWORK = os.getenv("ETHEREUM_NETWORK", "mainnet")
-INFURA_URL = f"https://{ETHEREUM_NETWORK}.infura.io/v3/{INFURA_PROJECT_ID}" if INFURA_PROJECT_ID else None
-WALLET_ADDRESS = os.getenv("WALLET_ADDRESS")
-WALLET_PRIVATE_KEY = os.getenv("WALLET_PRIVATE_KEY")
-
 # Call verification function on import
-verify_env_loading()
-
-# Uniswap Configuration
-UNISWAP_ROUTER_ADDRESS = os.getenv("UNISWAP_ROUTER_ADDRESS", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")  # V2 Router
-WETH_ADDRESS = os.getenv("WETH_ADDRESS", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")  # Mainnet WETH
-USDC_ADDRESS = os.getenv("USDC_ADDRESS", "0xA0b86991c6218b36c1d19D4a2e9Eb0ce3606eb48")  # Mainnet USDC
+# Remove .env verification and printout
+# Remove: verify_env_loading()
+# Remove: print("🔄 Loading environment variables...")
+# Remove: all .env file existence checks, duplicate warnings, and print/log spam
 
 # Token Address Mapping (for DEX operations)
 TOKEN_ADDRESS_MAP = {
     # Base assets
-    "ETH": WETH_ADDRESS,
-    "WETH": WETH_ADDRESS,
-    "USDC": USDC_ADDRESS,
+    "ETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",  # Mainnet WETH
+    "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",  # Mainnet WETH
+    "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0ce3606eb48",  # Mainnet USDC
 
     # Stablecoins
     "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",  # Tether USD
@@ -178,13 +119,19 @@ TX_MAX_RETRIES = int(os.getenv("TX_MAX_RETRIES", "3"))  # Maximum number of retr
 TX_RETRY_DELAY = int(os.getenv("TX_RETRY_DELAY", "5"))  # Base delay between retries (seconds)
 
 # Trading Parameters
-RISK_PERCENTAGE = float(os.getenv("RISK_PERCENTAGE", "2.0"))  # Percentage of balance to risk
-TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "100.00"))  # Default trade amount in USD
-MIN_TRADE_AMOUNT = float(os.getenv("MIN_TRADE_AMOUNT", "10.0"))  # Minimum trade amount
-MAX_TRADE_AMOUNT = float(os.getenv("MAX_TRADE_AMOUNT", "1000.0"))  # Maximum trade amount
-PRICE_THRESHOLD = float(os.getenv("PRICE_THRESHOLD", "5.0"))  # Maximum allowed price difference percentage
-SLIPPAGE_PERCENTAGE = float(os.getenv("SLIPPAGE_PERCENTAGE", "1.0"))  # Allowed slippage percentage
-TRADE_COOLDOWN = int(os.getenv("TRADE_COOLDOWN", "300"))  # Cooldown between trades in seconds
+RISK_PERCENTAGE = float(os.getenv("RISK_PERCENTAGE", "2.0"))
+TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "101.0"))
+TRADE_AMOUNT_PERCENTAGE = float(os.getenv("TRADE_AMOUNT_PERCENTAGE", "0"))
+MIN_TRADE_AMOUNT = float(os.getenv("MIN_TRADE_AMOUNT", "10.0"))
+MAX_TRADE_AMOUNT = float(os.getenv("MAX_TRADE_AMOUNT", "1000.0"))
+PRICE_THRESHOLD = float(os.getenv("PRICE_THRESHOLD", "25.0"))
+MEMECOIN_PRICE_THRESHOLD = float(os.getenv("MEMECOIN_PRICE_THRESHOLD", "100.0"))  # Higher threshold for memecoins
+LOW_LIQUIDITY_PRICE_THRESHOLD = float(os.getenv("LOW_LIQUIDITY_PRICE_THRESHOLD", "50.0"))  # Medium threshold for low liquidity coins
+SLIPPAGE_PERCENTAGE = float(os.getenv("SLIPPAGE_PERCENTAGE", "1.0"))
+TRADE_COOLDOWN = int(os.getenv("TRADE_COOLDOWN", "300"))
+
+# Telegram Bot Configuration
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 
 # Minimum ETH balance to maintain for gas fees
 MIN_ETH_BALANCE = float(os.getenv("MIN_ETH_BALANCE", "0.01"))
