@@ -17,14 +17,6 @@ cytoolz==1.0.1
 dateparser==1.2.1
 deprecation==2.1.0
 distro==1.9.0
-eth-account==0.13.7
-eth-hash==0.7.1
-eth-keyfile==0.8.1
-eth-keys==0.7.0
-eth-rlp==2.2.0
-eth-typing==5.2.1
-eth-utils==5.3.0
-eth_abi==5.2.0
 fastapi==0.115.13
 frozenlist==1.7.0
 gotrue==2.12.2
@@ -74,7 +66,6 @@ referencing==0.36.2
 regex==2024.11.6
 requests==2.32.4
 rfc3986==1.5.0
-rlp==4.1.0
 rpds-py==0.25.1
 rsa==4.9.1
 setuptools==80.9.0
@@ -95,6 +86,5 @@ tzdata==2025.2
 tzlocal==5.3.1
 urllib3==2.5.0
 uvicorn==0.34.3
-web3==7.12.0
 websockets==15.0.1
 yarl==1.20.1

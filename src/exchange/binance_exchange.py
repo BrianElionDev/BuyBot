@@ -1,9 +1,10 @@
+import asyncio
 import logging
-from typing import Dict, Optional
-from binance.client import Client
+from decimal import Decimal, ROUND_DOWN
+from typing import Dict, List, Optional, Tuple
+from binance import AsyncClient
 from binance.exceptions import BinanceAPIException
-from config import settings as config
-from binance.enums import *
+from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET, ORDER_TYPE_LIMIT, FUTURE_ORDER_TYPE_MARKET, FUTURE_ORDER_TYPE_STOP_MARKET
 
 # Import symbol whitelist for validation
 try:
@@ -35,314 +36,260 @@ DEFAULT_PRECISION_RULES = {
 
 logger = logging.getLogger(__name__)
 
+def format_value(value: float, step_size: str) -> str:
+    """
+    Formats a value to be a valid multiple of a given step size.
+    Uses Decimal for precision.
+    """
+    value_dec = Decimal(str(value))
+    step_dec = Decimal(str(step_size))
+
+    # Perform quantization
+    quantized_value = (value_dec // step_dec) * step_dec
+
+    # Format the output string to match the precision of the step_size
+    return f"{quantized_value:.{step_dec.normalize().as_tuple().exponent * -1}f}"
+
 class BinanceExchange:
     def __init__(self, api_key: str, api_secret: str, is_testnet: bool = False):
-        """Initialize Binance exchange client."""
         self.api_key = api_key
         self.api_secret = api_secret
-        # Explicitly set tld to 'com' to ensure connection to the global Binance platform
-        self.client = Client(self.api_key, self.api_secret, testnet=is_testnet, tld='com')
-        self._futures_exchange_info_cache = None
-        logger.info(f"BinanceExchange initialized for testnet: {is_testnet}")
+        self.is_testnet = is_testnet
+        self.client: Optional[AsyncClient] = None
+        self._spot_symbols: List[str] = []
+        self._futures_symbols: List[str] = []
+        logger.info(f"BinanceExchange initialized for testnet: {self.is_testnet}")
+
+    async def _init_client(self):
+        if self.client is None:
+            self.client = await AsyncClient.create(self.api_key, self.api_secret, tld='com', testnet=self.is_testnet)
+
+    async def close_client(self):
+        if self.client:
+            await self.client.close_connection()
+            logger.info("Binance client connection closed.")
+
+    async def get_account_balances(self) -> Dict[str, float]:
+        # REMOVE: USDM balance logic (futures_account)
+        # If you want to keep coin-m, implement coin-m balance fetch here, or just pass for now
+        return {}
+
+    async def create_futures_order(self, pair: str, side: str, order_type_market: str, amount: float,
+                                 price: Optional[float] = None, stop_price: Optional[float] = None,
+                                 client_order_id: Optional[str] = None, reduce_only: bool = False) -> Dict:
+        await self._init_client()
+        assert self.client is not None
+
+        # --- Begin Precision Handling ---
+        try:
+            # Get the precision filters for the symbol
+            filters = await self.get_futures_symbol_filters(pair)
+            if filters:
+                step_size = filters.get('LOT_SIZE', {}).get('stepSize')
+                tick_size = filters.get('PRICE_FILTER', {}).get('tickSize')
+
+                # Format amount according to stepSize
+                if step_size:
+                    formatted_amount = format_value(amount, step_size)
+                    logger.info(f"Original amount: {amount}, Formatted amount: {formatted_amount} (Step: {step_size})")
+                    amount = float(formatted_amount) # Convert back for Binance library, though it will be sent as string
+
+                # Format price according to tickSize
+                if price is not None and tick_size:
+                    formatted_price = format_value(price, tick_size)
+                    logger.info(f"Original price: {price}, Formatted price: {formatted_price} (Tick: {tick_size})")
+                    price = float(formatted_price)
+
+            else:
+                logger.warning(f"Could not retrieve precision filters for {pair}. Using original values.")
+        except Exception as e:
+            logger.error(f"An error occurred during futures precision handling for {pair}: {e}", exc_info=True)
+        # --- End Precision Handling ---
+
+        params = {
+            'symbol': pair,
+            'side': side,
+            'type': order_type_market,
+            'quantity': f"{amount}"
+        }
+        if order_type_market == 'LIMIT' and price is not None:
+            params['price'] = f"{price}"
+            params['timeInForce'] = 'GTC'
+        if stop_price:
+            params['stopPrice'] = f"{stop_price}"
+            params['closePosition'] = 'true'
+        if reduce_only:
+            params['reduceOnly'] = 'true'
+        if client_order_id:
+            params['newClientOrderId'] = client_order_id
+
+        try:
+            response = await self.client.futures_create_order(**params)
+            return response
+        except BinanceAPIException as e:
+            logger.error(f"Binance API Error on order creation: {e}")
+            return {'error': str(e), 'code': e.code}
+        except Exception as e:
+            logger.error(f"Unexpected error on order creation: {e}")
+            return {'error': str(e)}
+
+    async def close_position(self, pair: str, amount: float, position_type: str) -> Tuple[bool, Dict]:
+        """Closes a position by creating a market order in the opposite direction."""
+        side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
+        try:
+            # For simplicity, we assume closing is always a MARKET order.
+            # We explicitly set reduce_only to False to handle cases where the
+            # position doesn't exist on the exchange (state mismatch).
+            response = await self.create_futures_order(
+                pair=pair,
+                side=side,
+                order_type_market=FUTURE_ORDER_TYPE_MARKET,
+                amount=amount,
+                reduce_only=False
+            )
+            return True, response
+        except Exception as e:
+            logger.error(f"Failed to close position for {pair}: {e}")
+            return False, {"error": str(e)}
+
+    async def update_stop_loss(self, pair: str, stop_price: float, amount: float, position_type: str) -> Tuple[bool, Dict]:
+        """Updates the stop loss by canceling old SL orders and creating a new one."""
+        await self._init_client()
+        assert self.client is not None
+        side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
+        try:
+            # 1. Cancel existing stop loss orders for the symbol
+            await self.client.futures_cancel_all_open_orders(symbol=pair)
+
+            # 2. Create a new STOP_MARKET order. This must be reduceOnly.
+            response = await self.client.futures_create_order(
+                symbol=pair,
+                side=side,
+                type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                quantity=amount,
+                stopPrice=stop_price,
+                reduceOnly=True
+            )
+            return True, response
+        except Exception as e:
+            logger.error(f"Failed to update stop loss for {pair}: {e}", exc_info=True)
+            return False, {"error": str(e)}
+
+    def get_futures_trading_pair(self, coin_symbol: str) -> str:
+        """Returns the standardized futures trading pair for a given coin symbol."""
+        return f"{coin_symbol.upper()}USDT"
+
+    async def cancel_futures_order(self, pair: str, order_id: str) -> Tuple[bool, Dict]:
+        """Cancels a specific futures order by its ID."""
+        await self._init_client()
+        assert self.client is not None
+        try:
+            response = await self.client.futures_cancel_order(symbol=pair, orderId=order_id)
+            logger.info(f"Successfully cancelled order {order_id} for {pair}.")
+            return True, response
+        except BinanceAPIException as e:
+            # It's common for an order to be already filled or cancelled, which can raise an error.
+            # We log these as warnings because it's often not a critical failure.
+            logger.warning(f"Could not cancel order {order_id} for {pair} (it may already be filled/cancelled): {e}")
+            return False, {"error": str(e)}
+
+    async def get_all_spot_symbols(self) -> List[str]:
+        """Fetches all valid SPOT symbols from Binance."""
+        await self._init_client()
+        assert self.client is not None
+        if not self._spot_symbols:
+            try:
+                exchange_info = await self.client.get_exchange_info()
+                self._spot_symbols = [s['symbol'] for s in exchange_info['symbols']]
+            except Exception as e:
+                logger.error(f"Failed to fetch spot symbols: {e}")
+                return []
+        return self._spot_symbols
+
+    async def get_all_futures_symbols(self) -> List[str]:
+        """Fetches all valid FUTURES symbols from Binance."""
+        await self._init_client()
+        assert self.client is not None
+        if not self._futures_symbols:
+            try:
+                exchange_info = await self.client.futures_exchange_info()
+                self._futures_symbols = [s['symbol'] for s in exchange_info['symbols'] if s['status'] == 'TRADING']
+            except Exception as e:
+                logger.error(f"Failed to fetch futures symbols: {e}")
+                return []
+        return self._futures_symbols
 
     async def get_spot_balance(self) -> Dict[str, float]:
         """
-        Get account balances for all assets.
-
-        Returns:
-            Dictionary with asset symbols as keys and free balances as values.
+        Retrieves spot account balances for all assets with a balance > 0.
         """
+        await self._init_client()
+        assert self.client is not None
         try:
-            account = self.client.get_account()
-            balances = {}
-
-            for asset in account['balances']:
-                free = float(asset['free'])
-                if free > 0:  # Only include non-zero balances
-                    balances[asset['asset'].lower()] = free
-
-            return balances
-        except BinanceAPIException as e:
-            logger.error(f"Failed to get Binance balances: {e}")
-            return {}
-
-    async def get_futures_balance(self) -> Dict[str, float]:
-        """
-        Get futures account balances. It tries USDⓈ-M futures first,
-        and falls back to COIN-M futures if a specific permissions error occurs.
-        """
-        try:
-            # First, try to get USDⓈ-M futures balance (most common)
-            logger.info("Attempting to fetch USDⓈ-M futures balance...")
-            balances_list = self.client.futures_account_balance()
-            logger.info("Successfully fetched USDⓈ-M futures balance.")
-
-            balances = {}
-            for asset in balances_list:
-                bal = float(asset['availableBalance'])
-                if bal > 0:
-                    balances[asset['asset'].lower()] = bal
-            return balances
-
-        except BinanceAPIException as e:
-            # Check for the specific authentication error
-            if e.code == -2015:
-                logger.warning("Failed to get USDⓈ-M futures balance with APIError -2015. Attempting to fetch COIN-M futures balance as a fallback...")
-                try:
-                    # Fallback to COIN-M futures balance
-                    balances_list = self.client.futures_coin_account_balance()
-                    logger.info("Successfully fetched COIN-M futures balance.")
-
-                    balances = {}
-                    for asset in balances_list:
-                        bal = float(asset['availableBalance'])
-                        if bal > 0:
-                            balances[asset['asset'].lower()] = bal
-                    return balances
-                except BinanceAPIException as e2:
-                    logger.error(f"Fallback to COIN-M futures also failed: {e2}")
-                    return {}
-            else:
-                # Handle other potential API errors
-                logger.error(f"Failed to get Binance futures balances: {e}")
-                return {}
-        except Exception as e:
-            logger.error(f"An unexpected error occurred while fetching futures balances: {e}")
-            return {}
-
-    async def get_pair_info(self, symbol: str) -> Optional[Dict]:
-        """
-        Get trading pair information for SPOT trading.
-
-        Args:
-            symbol: Trading pair symbol (e.g., 'BTCUSDT')
-
-        Returns:
-            Dictionary with pair information or None if not found
-        """
-        try:
-            # Convert symbol format if needed (e.g., btc_usd -> BTCUSDT)
-            formatted_symbol = symbol.replace('_', '').upper()
-
-            # Get exchange info for the symbol
-            exchange_info = self.client.get_exchange_info()
-            for s in exchange_info['symbols']:
-                if s['symbol'] == formatted_symbol:
-                    return {
-                        'symbol': s['symbol'],
-                        'baseAsset': s['baseAsset'],
-                        'quoteAsset': s['quoteAsset'],
-                        'status': s['status'],
-                        'filters': s['filters']
-                    }
-            return None
-        except BinanceAPIException as e:
-            logger.error(f"Failed to get spot pair info for {symbol}: {e}")
-            return None
-
-    async def get_futures_pair_info(self, symbol: str) -> Optional[Dict]:
-        """
-        Get trading pair information for FUTURES trading.
-
-        Args:
-            symbol: Trading pair symbol (e.g., 'BTCUSDT')
-
-        Returns:
-            Dictionary with pair information or None if not found
-        """
-        try:
-            # Convert symbol format if needed (e.g., btc_usd -> BTCUSDT)
-            formatted_symbol = symbol.replace('_', '').upper()
-
-            # Get futures exchange info for the symbol
-            exchange_info = self.client.futures_exchange_info()
-            for s in exchange_info['symbols']:
-                if s['symbol'] == formatted_symbol:
-                    return {
-                        'symbol': s['symbol'],
-                        'baseAsset': s['baseAsset'],
-                        'quoteAsset': s['quoteAsset'],
-                        'status': s['status'],
-                        'filters': s['filters']
-                    }
-            return None
-        except BinanceAPIException as e:
-            logger.error(f"Failed to get futures pair info for {symbol}: {e}")
-            return None
-
-    async def is_futures_symbol_supported(self, symbol: str) -> bool:
-        """
-        Check if a symbol is supported for futures trading.
-
-        Args:
-            symbol: Trading pair symbol (e.g., 'BTCUSDT' or 'btc_usdt')
-
-        Returns:
-            True if symbol is supported for futures trading, False otherwise
-        """
-        pair_info = await self.get_futures_pair_info(symbol)
-        return pair_info is not None and pair_info.get('status') == 'TRADING'
-
-    def _get_futures_quantity_precision(self, symbol: str) -> int:
-        """
-        Get quantity precision for a futures symbol by fetching exchange info.
-        """
-        try:
-            # Fetch and cache exchange info on first call
-            if self._futures_exchange_info_cache is None:
-                logger.info("Fetching futures exchange info for precision rules...")
-                self._futures_exchange_info_cache = self.client.futures_exchange_info()
-
-            formatted_symbol = symbol.replace('_', '').upper()
-
-            for s in self._futures_exchange_info_cache['symbols']:
-                if s['symbol'] == formatted_symbol:
-                    return s['quantityPrecision']
-
-            logger.warning(f"Could not find dynamic futures quantity precision for {symbol}. Using default of 2.")
-            return 2
-        except Exception as e:
-            logger.error(f"Error fetching futures quantity precision for {symbol}: {e}. Using default of 2.")
-            return 2
-
-    def _get_futures_price_precision(self, symbol: str) -> int:
-        """
-        Get price precision for a futures symbol by fetching exchange info.
-        """
-        try:
-            # Fetch and cache exchange info on first call
-            if self._futures_exchange_info_cache is None:
-                logger.info("Fetching futures exchange info for precision rules...")
-                self._futures_exchange_info_cache = self.client.futures_exchange_info()
-
-            formatted_symbol = symbol.replace('_', '').upper()
-
-            for s in self._futures_exchange_info_cache['symbols']:
-                if s['symbol'] == formatted_symbol:
-                    return s['pricePrecision']
-
-            logger.warning(f"Could not find dynamic futures price precision for {symbol}. Using default of 2.")
-            return 2
-        except Exception as e:
-            logger.error(f"Error fetching futures price precision for {symbol}: {e}. Using default of 2.")
-            return 2
-
-    def _round_futures_quantity(self, symbol: str, quantity: float) -> float:
-        """
-        Round quantity to correct precision for futures trading.
-
-        Args:
-            symbol: Trading pair symbol
-            quantity: Quantity to round
-
-        Returns:
-            Properly rounded quantity
-        """
-        precision = self._get_futures_quantity_precision(symbol)
-        return round(quantity, precision)
-
-    def _round_futures_price(self, symbol: str, price: float) -> float:
-        """
-        Round price to correct precision for futures trading.
-
-        Args:
-            symbol: Trading pair symbol
-            price: Price to round
-
-        Returns:
-            Properly rounded price
-        """
-        precision = self._get_futures_price_precision(symbol)
-        return round(price, precision)
-
-    def _validate_futures_symbol(self, symbol: str) -> bool:
-        """
-        Validate if a symbol is available for futures trading using whitelist.
-
-        Args:
-            symbol: Trading pair symbol (e.g., 'BTCUSDT' or 'btc_usdt')
-
-        Returns:
-            True if symbol is in whitelist, False otherwise
-        """
-        if not WHITELIST_AVAILABLE:
-            return True  # Allow all symbols if whitelist is not available
-
-        formatted_symbol = symbol.replace('_', '').upper()
-        return is_symbol_supported(formatted_symbol)
-
-    async def create_order(
-        self,
-        pair: str,
-        side: str,
-        order_type_market: str,
-        amount: float,
-        price: Optional[float] = None,
-        stop_price: Optional[float] = None
-    ) -> Dict:
-        """
-        Create a new order on Binance Spot.
-
-        Args:
-            pair: Trading pair symbol (e.g., 'btc_usdt')
-            side: SIDE_BUY or SIDE_SELL
-            order_type_market: e.g., ORDER_TYPE_MARKET, ORDER_TYPE_LIMIT
-            amount: Amount of the asset to trade
-            price: Price for the order (required for limit orders)
-            stop_price: Price for stop orders
-
-        Returns:
-            Dictionary with order details, or error information.
-        """
-        try:
-            formatted_pair = pair.replace('_', '').upper()
-
-            # Get symbol info for precision
-            symbol_info = await self.get_pair_info(pair)
-            if not symbol_info:
-                err_msg = f"Could not get symbol info for {pair}"
-                logger.error(err_msg)
-                return {'code': -1, 'message': err_msg}
-
-            # Find quantity precision from filters
-            quantity_precision = 8  # Default precision
-            for f in symbol_info['filters']:
-                if f['filterType'] == 'LOT_SIZE':
-                    step_size_str = f['stepSize'].rstrip('0')
-                    if '.' in step_size_str:
-                        quantity_precision = len(step_size_str.split('.')[1])
-                    else:
-                        quantity_precision = 0 # Whole numbers
-                    break
-
-            # Round amount to correct precision
-            rounded_amount = round(amount, quantity_precision)
-
-            params = {
-                "symbol": formatted_pair,
-                "side": side,
-                "type": order_type_market,
-                "quantity": rounded_amount,
+            account_info = await self.client.get_account()
+            balances = {
+                asset['asset']: float(asset['free'])
+                for asset in account_info['balances']
+                if float(asset['free']) > 0
             }
-
-            if order_type_market == ORDER_TYPE_LIMIT:
-                if not price:
-                    raise ValueError("Price is required for LIMIT orders")
-                params["price"] = price
-                params["timeInForce"] = TIME_IN_FORCE_GTC
-
-            if stop_price:
-                 params["stopPrice"] = stop_price
-
-            order = self.client.create_order(**params)
-            logger.info(f"Successfully created spot order: {order}")
-            return order
+            return balances
         except BinanceAPIException as e:
-            logger.error(f"Failed to create spot order for {pair}: {e}")
-            return {'code': e.code, 'message': e.message}
+            logger.error(f"Failed to get spot balance from Binance: {e}")
+            return {}
+
+    async def create_order(self, pair: str, side: str, order_type_market: str, amount: float,
+                         price: Optional[float] = None, client_order_id: Optional[str] = None) -> Dict:
+        await self._init_client()
+        assert self.client is not None
+
+        # --- Begin Spot Precision Handling ---
+        try:
+            filters = await self.get_spot_symbol_filters(pair)
+            if filters:
+                step_size = filters.get('LOT_SIZE', {}).get('stepSize')
+                tick_size = filters.get('PRICE_FILTER', {}).get('tickSize')
+
+                # Format amount
+                if step_size:
+                    formatted_amount = format_value(amount, step_size)
+                    logger.info(f"Spot original amount: {amount}, Formatted amount: {formatted_amount} (Step: {step_size})")
+                    amount = float(formatted_amount)
+
+                # Format price
+                if price is not None and tick_size:
+                    formatted_price = format_value(price, tick_size)
+                    logger.info(f"Spot original price: {price}, Formatted price: {formatted_price} (Tick: {tick_size})")
+                    price = float(formatted_price)
+            else:
+                logger.warning(f"Could not retrieve spot precision filters for {pair}. Using original values.")
         except Exception as e:
-            logger.error(f"An unexpected error occurred during spot order creation: {e}")
-            return {'code': -1, 'message': str(e)}
+            logger.error(f"An error occurred during spot precision handling for {pair}: {e}", exc_info=True)
+        # --- End Spot Precision Handling ---
+
+        params = {
+            'symbol': pair,
+            'side': side,
+            'type': order_type_market,
+        }
+        if order_type_market == ORDER_TYPE_MARKET:
+            params['quantity'] = f"{amount}"
+        elif order_type_market == ORDER_TYPE_LIMIT and price:
+            params['quantity'] = f"{amount}"
+            params['price'] = f"{price}"
+            params['timeInForce'] = 'GTC'
+
+        if client_order_id:
+            params['newClientOrderId'] = client_order_id
+
+        try:
+            response = await self.client.create_order(**params)
+            return response
+        except BinanceAPIException as e:
+            logger.error(f"Failed to create order on Binance Spot: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+            return {}
 
     async def get_order_status(self, pair: str, order_id: str) -> Optional[Dict]:
         """
@@ -355,9 +302,11 @@ class BinanceExchange:
         Returns:
             Order status dictionary or None if failed
         """
+        await self._init_client()
+        assert self.client is not None
         try:
             formatted_pair = pair.replace('_', '').upper()
-            order = self.client.get_order(
+            order = await self.client.get_order(
                 symbol=formatted_pair,
                 orderId=order_id
             )
@@ -377,9 +326,11 @@ class BinanceExchange:
         Returns:
             True if successful, False otherwise
         """
+        await self._init_client()
+        assert self.client is not None
         try:
             formatted_pair = pair.replace('_', '').upper()
-            result = self.client.cancel_order(
+            result = await self.client.cancel_order(
                 symbol=formatted_pair,
                 orderId=order_id
             )
@@ -389,124 +340,88 @@ class BinanceExchange:
             logger.error(f"Failed to cancel order: {e}")
             return False
 
-    async def create_futures_order(
-        self,
-        pair: str,
-        side: str,
-        order_type_market: str,
-        amount: float,
-        price: Optional[float] = None,
-        stop_price: Optional[float] = None,
-        leverage: int = 1,
-        reduce_only: bool = False,
-        client_order_id: Optional[str] = None
-    ) -> Dict:
-        """
-        Create a new order on Binance Futures.
-
-        Args:
-            pair: Trading pair symbol (e.g., 'btc_usdt')
-            side: SIDE_BUY or SIDE_SELL
-            order_type_market: e.g., ORDER_TYPE_MARKET, STOP_MARKET
-            amount: Amount of the asset to trade
-            price: Price for the order (required for limit orders)
-            stop_price: Price for stop orders
-            leverage: Desired leverage
-
-        Returns:
-            Dictionary with order details, or error information.
-        """
-        try:
-            formatted_pair = pair.replace('_', '').upper()
-
-            # Pre-validate symbol (optional but recommended)
-            if not self._validate_futures_symbol(formatted_pair):
-                # If validation fails, we can still try to place the order
-                # Binance will reject it if truly invalid
-                logger.warning(f"Symbol {formatted_pair} not in whitelist, proceeding with order attempt...")
-
-            # Set leverage
-            try:
-                self.client.futures_change_leverage(symbol=formatted_pair, leverage=leverage)
-            except BinanceAPIException as e:
-                # Leverage change can fail if position already exists; log as warning
-                logger.warning(f"Could not set leverage for {formatted_pair} to {leverage}: {e}")
-
-            # Round quantity and price based on precision rules
-            quantity = self._round_futures_quantity(formatted_pair, amount)
-            # For market orders, price is not needed, but if a limit order were used:
-            # order_price = self._round_futures_price(formatted_pair, price) if price else None
-
-            params = {
-                "symbol": formatted_pair,
-                "side": side,
-                "type": order_type_market,
-                "quantity": quantity,
-            }
-
-            if client_order_id:
-                params["newClientOrderId"] = client_order_id
-
-            if reduce_only:
-                params["reduceOnly"] = "true"
-
-            if stop_price:
-                params["stopPrice"] = stop_price
-                # For STOP_MARKET orders, you shouldn't send a price
-                # For STOP (limit) orders, you would send a price
-                # We are focusing on STOP_MARKET for simplicity
-                params["closePosition"] = True # To ensure it closes the position
-
-            # Create order
-            order = self.client.futures_create_order(**params)
-
-            logger.info(f"Successfully created futures order: {order}")
-            return order
-        except BinanceAPIException as e:
-            logger.error(f"Failed to create futures order for {pair}: {e}")
-            return {'code': e.code, 'message': e.message}
-        except Exception as e:
-            logger.error(f"An unexpected error occurred during futures order creation: {e}")
-            return {'code': -1, 'message': str(e)}
-
-    async def cancel_futures_order(self, pair: str, order_id: str) -> bool:
-        """
-        Cancel an existing futures order.
-
-        Args:
-            pair: Trading pair (e.g., 'BTCUSDT' or 'btc_usdt')
-            order_id: Order ID
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            formatted_pair = pair.replace('_', '').upper()
-            result = self.client.futures_cancel_order(
-                symbol=formatted_pair,
-                orderId=order_id
-            )
-            logger.info(f"Futures order cancelled successfully: {result}")
-            return True
-        except BinanceAPIException as e:
-            logger.error(f"Failed to cancel futures order: {e}")
-            return False
-
-    async def get_all_open_futures_orders(self) -> list:
+    async def get_all_open_futures_orders(self) -> List:
         """
         Retrieves all open futures orders.
-
-        Returns:
-            A list of open order dictionaries, or an empty list if an error occurs.
         """
+        await self._init_client()
+        assert self.client is not None
         try:
-            open_orders = self.client.futures_get_open_orders()
-            return open_orders
+            orders = await self.client.futures_get_open_orders()
+            return orders if isinstance(orders, list) else [orders]
         except BinanceAPIException as e:
-            logger.error(f"Failed to get all open futures orders: {e}")
+            logger.error(f"Failed to get open futures orders: {e}")
             return []
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching open futures orders: {e}")
+            return []
+
+    async def get_futures_position_information(self) -> List:
+        """
+        Retrieves information about futures positions.
+        """
+        await self._init_client()
+        assert self.client is not None
+        try:
+            positions = await self.client.futures_position_information()
+            return positions if isinstance(positions, list) else [positions]
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get futures position information: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching position information: {e}")
+            return []
+
+    async def get_spot_symbol_filters(self, symbol: str) -> Optional[Dict]:
+        """
+        Retrieves all filters for a given spot symbol.
+        """
+        await self._init_client()
+        assert self.client is not None
+        try:
+            exchange_info = await self.client.get_exchange_info()
+            for s in exchange_info['symbols']:
+                if s['symbol'] == symbol:
+                    # Return a dictionary of filters keyed by filterType
+                    return {f['filterType']: f for f in s['filters']}
+            return None
+        except Exception as e:
+            logger.error(f"Could not retrieve spot filters for {symbol}: {e}")
+            return None
+
+    async def get_futures_symbol_filters(self, symbol: str) -> Optional[Dict]:
+        """
+        Retrieves all filters for a given futures symbol.
+        """
+        await self._init_client()
+        assert self.client is not None
+        try:
+            exchange_info = await self.client.futures_exchange_info()
+            for s in exchange_info['symbols']:
+                if s['symbol'] == symbol:
+                    # Return a dictionary of filters keyed by filterType
+                    return {f['filterType']: f for f in s['filters']}
+            return None
+        except Exception as e:
+            logger.error(f"Could not retrieve precision filters for {symbol}: {e}")
+            return None
+
+    async def is_futures_symbol_supported(self, symbol: str) -> bool:
+        """
+        Check if a symbol is supported for futures trading.
+        """
+        await self._init_client()
+        assert self.client is not None
+        try:
+            exchange_info = await self.client.futures_exchange_info()
+            for s in exchange_info['symbols']:
+                if s['symbol'] == symbol and s['status'] == 'TRADING':
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Error checking futures symbol support for {symbol}: {e}")
+            return False
 
     async def close(self):
         """Close the exchange connection."""
-        # Binance client doesn't require explicit closing
-        pass
+        await self.close_client()

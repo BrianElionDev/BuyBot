@@ -18,8 +18,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def initialize_clients():
     """Initializes and returns Supabase and Binance clients."""
     # Supabase
-    url: str = os.environ.get("SUPABASE_URL")
-    key: str = os.environ.get("SUPABASE_KEY")
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
         logging.error("Supabase URL or Key not found in .env file.")
         raise ValueError("Supabase credentials not found.")
@@ -75,11 +75,12 @@ async def reconcile_pending_trades():
             start_index = page * PAGE_SIZE
             end_index = start_index + PAGE_SIZE - 1
             logging.info(f"Fetching pending trades batch {page + 1} (rows {start_index} to {end_index})...")
-
+            # where parsed_signal or binance_response is null
             response = (
                 supabase.from_("trades")
                 .select("*")
-                .eq("status", "pending")
+                .is_("parsed_signal", None)
+                .is_("binance_response", None)
                 .gte("timestamp", start_date)
                 .lte("timestamp", end_date)
                 .range(start_index, end_index)

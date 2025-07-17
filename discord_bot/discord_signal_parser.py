@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Dict, List, Optional, Tuple
 import json
 import os
@@ -9,6 +10,46 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+
+def extract_quantity_from_signal(signal_content: str) -> tuple:
+    """
+    Extract quantity and coin symbol from signals like "1000TOSHI|Entry:|0.7172|SL:|0.692"
+    Returns: (quantity, coin_symbol, cleaned_signal)
+    """
+    if not signal_content:
+        return None, None, signal_content
+
+    # Common memecoin patterns with known symbols
+    memecoin_patterns = [
+        (r'^(\d+)(PEPE)', 'PEPE'),
+        (r'^(\d+)(TOSHI)', 'TOSHI'),
+        (r'^(\d+)(TURBO)', 'TURBO'),
+        (r'^(\d+)(FARTCOIN)', 'FARTCOIN'),
+        (r'^(\d+)(HYPE)', 'HYPE'),
+        (r'^(\d+)(DOGE)', 'DOGE'),
+        (r'^(\d+)(SHIB)', 'SHIB'),
+        (r'^(\d+)(BONK)', 'BONK'),
+        (r'^(\d+)(WIF)', 'WIF'),
+        (r'^(\d+)(FLOKI)', 'FLOKI'),
+        # Generic pattern for other coins (less greedy)
+        (r'^(\d+)([A-Z]{2,10})', None),  # 2-10 uppercase letters
+    ]
+
+    for pattern, expected_symbol in memecoin_patterns:
+        match = re.match(pattern, signal_content)
+        if match:
+            quantity = int(match.group(1))
+            coin_symbol = match.group(2)
+
+            # Use expected symbol if provided, otherwise use matched symbol
+            final_symbol = expected_symbol if expected_symbol else coin_symbol
+
+            # Remove the quantity prefix from the signal
+            cleaned_signal = signal_content.replace(f"{quantity}{coin_symbol}", final_symbol, 1)
+            logger.info(f"Detected quantity prefix: {quantity}{coin_symbol} -> {final_symbol}")
+            return quantity, final_symbol, cleaned_signal
+
+    return None, None, signal_content
 
 # --- OpenAI setup ---
 # It's good practice to handle the case where the key might be missing.
@@ -33,7 +74,12 @@ async def _get_coin_symbol_from_signal(signal_content: str) -> Optional[str]:
             ],
             temperature=0,
         )
-        symbol = response.choices[0].message.content.strip().upper()
+        content = response.choices[0].message.content
+        if not content:
+            logger.error("Could not extract symbol from signal: OpenAI response content is empty.")
+            return None
+
+        symbol = content.strip().upper()
         logger.info(f"Extracted symbol '{symbol}' from signal.")
         return symbol
     except Exception as e:
@@ -50,13 +96,17 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
         system_prompt = f"""
         You are an expert financial analyst. Your task is to parse an update for an existing trade.
         The existing trade is for {active_trade.get('coin_symbol')} with entry price around {active_trade.get('entry_prices')}.
-        Analyze the new signal and determine the action to take.
+        Analyze the new signal and determine the action to take based on the following rules.
 
-        - If the signal mentions moving stops to 'BE' or 'breakeven', the action is 'UPDATE_SL'. The value should be the original entry price.
-        - If the signal mentions a new stop loss price, the action is 'UPDATE_SL' and the value is the new price.
-        - If the signal mentions a take profit level being hit (e.g., 'TP1 hit'), the action is 'TAKE_PROFIT'.
-        - If the signal is to close or exit the trade, the action is 'CLOSE_POSITION'.
-        - Respond with a JSON object like: {{"action_type": "UPDATE_SL", "value": 123.45}} or {{"action_type": "TAKE_PROFIT", "value": 1}}.
+        - If the signal mentions moving stops to 'BE' or 'breakeven', respond with: {{"action_type": "UPDATE_SL", "value": "BE"}}
+        - If the signal mentions a new stop loss price (e.g., 'stops moved to 123', 'new SL 123'), respond with: {{"action_type": "UPDATE_SL", "value": 123}}
+        - If it provides a new entry price (e.g., 'market entered at 456', 'new entry 456'), respond with: {{"action_type": "UPDATE_ENTRY", "value": 456}}
+        - If it mentions a take profit level being hit (e.g., 'TP1 hit'), respond with: {{"action_type": "TAKE_PROFIT", "value": 1}}
+        - If the signal says 'limit order filled', you MUST respond with: {{"action_type": "ORDER_FILLED"}}
+        - If it says to close or exit the trade (e.g., 'closed in loss'), respond with: {{"action_type": "CLOSE_POSITION"}}
+        - If it says an order was cancelled (e.g., 'limit order cancelled'), respond with: {{"action_type": "ORDER_CANCELLED"}}
+
+        If the action has a value, include it. If not, just provide the action_type.
         Return ONLY the JSON object.
         """
         user_prompt = f"Parse this trade update signal: `{signal_content}`"
@@ -93,7 +143,11 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
             ],
             temperature=0.2,
         )
-        parsed_data = json.loads(response.choices[0].message.content)
+        content = response.choices[0].message.content
+        if not content:
+            logger.error("OpenAI response content is empty.")
+            return None
+        parsed_data = json.loads(content)
 
         # Basic validation
         if not all(key in parsed_data for key in expected_keys):
@@ -115,7 +169,18 @@ class DiscordSignalParser:
         return await _get_coin_symbol_from_signal(signal_content)
 
     async def parse_new_trade_signal(self, signal_content: str) -> Optional[Dict]:
-        return await _parse_with_openai(signal_content)
+        # Preprocess to handle quantity prefixes like "1000TOSHI"
+        quantity, coin_symbol, cleaned_signal = extract_quantity_from_signal(signal_content)
+
+        # Parse the cleaned signal
+        parsed_data = await _parse_with_openai(cleaned_signal)
+
+        if parsed_data and quantity and coin_symbol:
+            # Add quantity information to the parsed data
+            parsed_data['quantity_multiplier'] = quantity
+            logger.info(f"Added quantity multiplier {quantity} for {coin_symbol}")
+
+        return parsed_data
 
     async def parse_trade_update_signal(self, signal_content: str, active_trade: Dict) -> Optional[Dict]:
         return await _parse_with_openai(signal_content, active_trade=active_trade)
