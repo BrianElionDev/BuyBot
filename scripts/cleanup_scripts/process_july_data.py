@@ -28,7 +28,7 @@ bot = DiscordBot()
 async def process_july_trades() -> List[str]:
     """
     Fetches and re-processes all trades from July 2024 to apply the latest logic.
-    """
+    """Activity
     logging.info("--- Starting Historical Trade Processing for July 2024 ---")
 
     try:
