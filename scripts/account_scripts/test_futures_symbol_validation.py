@@ -3,7 +3,7 @@
 Test script to verify the futures symbol validation fix.
 This tests that the bot now correctly validates futures symbols instead of spot symbols.
 """
-
+# python3 scripts/account_scripts/test_futures_symbol_validation.py
 import os
 import sys
 import asyncio

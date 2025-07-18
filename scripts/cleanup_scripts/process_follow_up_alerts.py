@@ -33,7 +33,7 @@ async def process_alerts():
 
     try:
         # Fetch all alerts that haven't been processed yet
-        response = supabase.table("alerts").select("*").is_("binance_response", None).gte("timestamp", "2025-07-14T00:00:00.000Z").execute()
+        response = supabase.table("alerts").select("*").is_("binance_response", None).gte("timestamp", "2025-07-17T13:27:05.834Z").execute()
 
         if not hasattr(response, 'data') or not response.data:
             logging.info("No unprocessed alerts found.")
