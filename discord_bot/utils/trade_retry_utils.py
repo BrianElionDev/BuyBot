@@ -176,3 +176,134 @@ async def process_single_trade(bot: DiscordBot, supabase: Client, discord_id: st
                     logging.error(f"Error while processing alert ID {alert_id}: {e}", exc_info=True)
     except Exception as e:
         logging.error(f"Failed to fetch or process alerts: {e}")
+
+async def sync_trade_statuses_with_binance(bot: DiscordBot, supabase: Client):
+    """
+    Check all OPEN trades in the database and sync their status with Binance.
+    This handles cases where trades were closed on Binance but remain OPEN in DB.
+    """
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=24)
+    cutoff_iso = cutoff.isoformat()
+
+    logging.info("--- Syncing trade statuses with Binance ---")
+
+    try:
+        # Get all OPEN trades from the last 24 hours
+        response = supabase.from_("trades").select("*").eq("status", "OPEN").gte("timestamp", cutoff_iso).execute()
+        open_trades = response.data or []
+        logging.info(f"Found {len(open_trades)} OPEN trades to check.")
+    except Exception as e:
+        logging.error(f"Error fetching OPEN trades: {e}")
+        return
+
+    for trade in open_trades:
+        trade_id = trade.get('id')
+        discord_id = trade.get('discord_id')
+        symbol = trade.get('coin_symbol')
+        exchange_order_id = trade.get('exchange_order_id')
+
+        if not symbol or not exchange_order_id or not trade_id:
+            logging.warning(f"Trade missing required fields, skipping")
+            continue
+
+        logging.info(f"Checking trade {trade_id} ({symbol}) with order ID {exchange_order_id}")
+
+        try:
+            # Check if the order still exists on Binance
+            order_status = await check_order_status_on_binance(bot, symbol, exchange_order_id)
+
+            if order_status == "FILLED":
+                # Order was filled, update database
+                await update_trade_as_filled(supabase, int(trade_id), order_status)
+                logging.info(f"Trade {trade_id} marked as FILLED")
+            elif order_status == "CANCELED":
+                # Order was canceled, update database
+                await update_trade_as_canceled(supabase, int(trade_id), order_status)
+                logging.info(f"Trade {trade_id} marked as CANCELED")
+            elif order_status == "EXPIRED":
+                # Order expired, update database
+                await update_trade_as_expired(supabase, int(trade_id), order_status)
+                logging.info(f"Trade {trade_id} marked as EXPIRED")
+            elif order_status == "NOT_FOUND":
+                # Order doesn't exist, likely filled and closed
+                await update_trade_as_closed(supabase, int(trade_id), "Order not found on exchange")
+                logging.info(f"Trade {trade_id} marked as CLOSED (order not found)")
+            else:
+                logging.info(f"Trade {trade_id} still OPEN on Binance")
+
+        except Exception as e:
+            logging.error(f"Error checking trade {trade_id}: {e}")
+
+        await asyncio.sleep(1)  # Rate limiting
+
+async def check_order_status_on_binance(bot: DiscordBot, symbol: str, order_id: str) -> str:
+    """
+    Check the status of an order on Binance.
+    Returns: FILLED, CANCELED, EXPIRED, NOT_FOUND, or current status
+    """
+    try:
+        # Use the get_order_status method from BinanceExchange
+        order_info = await bot.binance_exchange.get_order_status(symbol, order_id)
+
+        if order_info is None:
+            return "NOT_FOUND"
+
+        # Extract status from the order info
+        status = order_info.get('status', 'UNKNOWN')
+        return str(status)
+
+    except Exception as e:
+        if "does not exist" in str(e).lower() or "not found" in str(e).lower():
+            return "NOT_FOUND"
+        else:
+            logging.error(f"Error checking order status: {e}")
+            return "ERROR"
+
+async def update_trade_as_filled(supabase: Client, trade_id: int, status: str):
+    """Update trade as filled with current timestamp"""
+    now = datetime.now(timezone.utc).isoformat()
+    updates = {
+        "status": "FILLED",
+        "binance_response": f"Order filled on {now}",
+        "updated_at": now
+    }
+    await update_trade_status(supabase, trade_id, updates)
+
+async def update_trade_as_canceled(supabase: Client, trade_id: int, status: str):
+    """Update trade as canceled"""
+    now = datetime.now(timezone.utc).isoformat()
+    updates = {
+        "status": "CANCELED",
+        "binance_response": f"Order canceled on {now}",
+        "updated_at": now
+    }
+    await update_trade_status(supabase, trade_id, updates)
+
+async def update_trade_as_expired(supabase: Client, trade_id: int, status: str):
+    """Update trade as expired"""
+    now = datetime.now(timezone.utc).isoformat()
+    updates = {
+        "status": "EXPIRED",
+        "binance_response": f"Order expired on {now}",
+        "updated_at": now
+    }
+    await update_trade_status(supabase, trade_id, updates)
+
+async def update_trade_as_closed(supabase: Client, trade_id: int, reason: str):
+    """Update trade as closed with reason"""
+    now = datetime.now(timezone.utc).isoformat()
+    updates = {
+        "status": "CLOSED",
+        "binance_response": f"Trade closed: {reason} on {now}",
+        "updated_at": now
+    }
+    await update_trade_status(supabase, trade_id, updates)
+
+async def update_trade_status(supabase: Client, trade_id: int, updates: dict):
+    """Helper function to update trade status"""
+    try:
+        supabase.from_("trades").update(updates).eq("id", trade_id).execute()
+    except Exception as e:
+        logging.error(f"Error updating trade {trade_id}: {e}")

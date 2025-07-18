@@ -9,6 +9,7 @@ from discord_bot.utils.trade_retry_utils import (
     process_cooldown_trades,
     process_empty_binance_response_trades,
     process_margin_insufficient_trades,
+    sync_trade_statuses_with_binance,
 )
 
 # Configure logging for the Discord service
@@ -48,13 +49,15 @@ async def trade_retry_scheduler():
     while True:
         logger.info("[Scheduler] Starting scheduled trade retry tasks...")
         await process_pending_trades(bot, supabase)
-        await asyncio.sleep(30 * 60)  # 30 minutes
+        await asyncio.sleep(24 * 60)  # 24 minutes
         await process_cooldown_trades(bot, supabase)
-        await asyncio.sleep(30 * 60)  # 30 minutes
+        await asyncio.sleep(24 * 60)  # 24 minutes
         await process_empty_binance_response_trades(bot, supabase)
-        await asyncio.sleep(30 * 60)  # 30 minutes
+        await asyncio.sleep(24 * 60)  # 24 minutes
         await process_margin_insufficient_trades(bot, supabase)
-        await asyncio.sleep(30 * 60)  # 30 minutes (total 2hr cycle)
+        await asyncio.sleep(24 * 60)  # 24 minutes
+        await sync_trade_statuses_with_binance(bot, supabase)
+        await asyncio.sleep(24 * 60)  # 24 minutes (total 2hr cycle)
 
 app = create_app()
 
