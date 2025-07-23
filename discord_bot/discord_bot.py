@@ -226,6 +226,19 @@ class DiscordBot:
             logger.info(f"Processing trade with TradingEngine using parameters: {engine_params}")
             success, result_message = await self.trading_engine.process_signal(**engine_params)
 
+            # --- UNFILLED LOGIC ---
+            def is_unfilled(order_result):
+                if not isinstance(order_result, dict):
+                    return False
+                # Futures/Spot: executedQty == 0 and (avgPrice == 0 or not present)
+                executed_qty = float(order_result.get('executedQty', 0.0))
+                avg_price = float(order_result.get('avgPrice', 0.0)) if 'avgPrice' in order_result else None
+                fills = order_result.get('fills', [])
+                # If all are zero/empty, it's unfilled
+                if executed_qty == 0 and (avg_price is None or avg_price == 0) and (not fills or sum(float(f.get('qty', 0.0)) for f in fills) == 0):
+                    return True
+                return False
+
             if success:
                 # 5. Update database with execution status, order ID, and Binance response
                 updates = {
@@ -262,6 +275,11 @@ class DiscordBot:
                     if 'stop_loss_order_details' in result_message and isinstance(result_message['stop_loss_order_details'], dict):
                         updates['stop_loss_order_id'] = str(result_message['stop_loss_order_details'].get('orderId', ''))
 
+                    # --- UNFILLED status check ---
+                    if 'orderId' in result_message and is_unfilled(result_message):
+                        updates["status"] = "UNFILLED"
+                        logger.info(f"Trade marked as UNFILLED for trade ID: {trade_row['id']}")
+
                 await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
 
                 logger.info(f"Trade processed successfully for trade ID: {trade_row['id']}. Message: {result_message}")
@@ -275,6 +293,10 @@ class DiscordBot:
                     "status": "FAILED",
                     "binance_response": result_message
                 }
+                # --- UNFILLED status check for failed trades ---
+                if isinstance(result_message, dict) and 'orderId' in result_message and is_unfilled(result_message):
+                    updates["status"] = "UNFILLED"
+                    logger.info(f"Trade marked as UNFILLED (failure branch) for trade ID: {trade_row['id']}")
                 await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
 
                 logger.error(f"Trade processing failed for trade ID: {trade_row['id']}. Reason: {result_message}")

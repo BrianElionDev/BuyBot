@@ -383,29 +383,24 @@ async def update_trade_status(supabase: Client, trade_id: int, updates: dict):
 
 def calculate_pnl(entry_price: float, exit_price: float, position_size: float, position_type: str, fees: float = 0.001) -> float:
     """
-    Calculate PnL for a trade.
-
+    Calculate PnL for a trade as an actual value (USD), not a percentage.
     Args:
         entry_price: Price when position was opened
         exit_price: Price when position was closed
         position_size: Size of the position
         position_type: 'LONG' or 'SHORT'
         fees: Trading fees as decimal (default 0.1%)
-
     Returns:
-        PnL as a percentage
+        PnL as a value (USD)
     """
     if position_type.upper() == 'LONG':
-        # For long positions: (exit_price - entry_price) / entry_price
-        pnl_percentage = (exit_price - entry_price) / entry_price
+        pnl = (exit_price - entry_price) * position_size
     else:
-        # For short positions: (entry_price - exit_price) / entry_price
-        pnl_percentage = (entry_price - exit_price) / entry_price
-
-    # Apply fees (entry + exit fees)
-    pnl_percentage -= (fees * 2)
-
-    return pnl_percentage * 100  # Convert to percentage
+        pnl = (entry_price - exit_price) * position_size
+    # Optionally subtract fees as a value
+    fee_value = (entry_price + exit_price) * position_size * fees
+    pnl -= fee_value
+    return round(pnl, 2)
 
 async def update_trade_with_exit_data(supabase: Client, trade_id: int, exit_price: float, exit_reason: str):
     """
@@ -438,20 +433,20 @@ async def update_trade_with_exit_data(supabase: Client, trade_id: int, exit_pric
         entry_price = float(entry_prices[0])  # Use first entry price
 
         # Calculate PnL
-        pnl_percentage = calculate_pnl(entry_price, exit_price, position_size, position_type)
+        pnl_value = calculate_pnl(entry_price, exit_price, position_size, position_type)
 
         # Update database
         now = datetime.now(timezone.utc).isoformat()
         updates = {
             "exit_price": exit_price,
-            "pnl": pnl_percentage,
+            "pnl": pnl_value,
             "status": "CLOSED",
-            "binance_response": f"Position closed: {exit_reason} at {exit_price} (PnL: {pnl_percentage:.2f}%)",
+            "binance_response": f"Position closed: {exit_reason} at {exit_price} (PnL: {pnl_value:.2f})",
             "updated_at": now
         }
 
         await update_trade_status(supabase, trade_id, updates)
-        logging.info(f"Trade {trade_id} updated with exit price {exit_price}, PnL: {pnl_percentage:.2f}%")
+        logging.info(f"Trade {trade_id} updated with exit price {exit_price}, PnL: {pnl_value:.2f}")
 
     except Exception as e:
         logging.error(f"Error updating trade {trade_id} with exit data: {e}")

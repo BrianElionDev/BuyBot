@@ -9,7 +9,7 @@ import logging
 import os
 import sys
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 # Add project root to the Python path
@@ -20,7 +20,6 @@ if project_root not in sys.path:
 from dotenv import load_dotenv
 from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
-    calculate_pnl,
     update_trade_status
 )
 
@@ -84,96 +83,78 @@ def extract_order_info_from_binance_response(binance_response: str) -> tuple[Opt
         return None, None
 
 async def backfill_pnl_and_exit_prices():
-    """Backfill PnL and exit prices for existing trades."""
-    logging.info("--- Starting PnL and Exit Price Backfill ---")
+    """Backfill PnL and exit prices for existing trades using actual Binance userTrades."""
+    logging.info("--- Starting PnL and Exit Price Backfill (using Binance userTrades) ---")
 
     bot, supabase = initialize_clients()
     if not bot or not supabase:
         logging.error("Failed to initialize clients.")
         return
 
+    binance_client = bot.binance_exchange.client
+    if not binance_client:
+        await bot.binance_exchange._init_client()
+        binance_client = bot.binance_exchange.client
+    if not binance_client:
+        logging.error("Binance client is not initialized.")
+        return
+
     try:
-        # Find trades that are closed but missing PnL or exit_price
-        response = supabase.from_("trades").select("*").eq("status", "CLOSED").execute()
-        closed_trades = response.data or []
-
-        logging.info(f"Found {len(closed_trades)} closed trades to check.")
-
-        for trade in closed_trades:
-            trade_id = trade.get('id')
-            pnl = trade.get('pnl')
-            exit_price = trade.get('exit_price')
-            symbol = trade.get('coin_symbol')
-            binance_response = trade.get('binance_response', '')
-
-            # Skip if already has both PnL and exit_price
-            if pnl is not None and exit_price is not None:
-                continue
-
-            # Skip if missing required fields
-            if not trade_id:
-                logging.warning(f"Trade missing trade_id")
-                continue
-
-            # Try to get symbol from binance_response if not in coin_symbol
-            if not symbol and binance_response:
-                _, extracted_symbol = extract_order_info_from_binance_response(binance_response)
-                if extracted_symbol:
-                    symbol = extracted_symbol
-
-            if not symbol:
-                logging.warning(f"Trade {trade_id} missing symbol, skipping")
-                continue
-
-            logging.info(f"Processing trade {trade_id} ({symbol}) - PnL: {pnl}, Exit Price: {exit_price}")
-
-            try:
-                # Get current price for the symbol
-                current_price = await bot.price_service.get_price(str(symbol))
-                if not current_price:
-                    logging.warning(f"Could not get current price for {symbol}, skipping trade {trade_id}")
+        page_size = 500
+        offset = 0
+        total_processed = 0
+        while True:
+            response = supabase.from_("trades").select("*").eq("status", "CLOSED").range(offset, offset + page_size - 1).execute()
+            closed_trades = response.data or []
+            if not closed_trades:
+                break
+            logging.info(f"Fetched {len(closed_trades)} closed trades (offset {offset})")
+            for trade in closed_trades:
+                trade_id = trade.get('id')
+                if trade_id is None:
                     continue
-
-                # Extract trade data
-                parsed_signal = trade.get('parsed_signal', {})
-                entry_prices = parsed_signal.get('entry_prices', [])
-                position_type = parsed_signal.get('position_type', 'LONG')
-                position_size = trade.get('position_size', 0)
-
-                if not entry_prices or not position_size:
-                    logging.warning(f"Trade {trade_id} missing entry price or position size")
+                pnl = trade.get('pnl_usd') or trade.get('pnl')
+                exit_price = trade.get('exit_price')
+                binance_response = trade.get('binance_response', '')
+                if (pnl not in [None, 0, 0.0]) and (exit_price not in [None, 0, 0.0]):
                     continue
-
-                entry_price = float(entry_prices[0])
-
-                # Calculate PnL if missing
-                if pnl is None:
-                    pnl_percentage = calculate_pnl(entry_price, current_price, position_size, position_type)
-                else:
-                    pnl_percentage = pnl
-
-                # Update database
-                now = datetime.now(timezone.utc).isoformat()
-                updates = {}
-
-                if exit_price is None:
-                    updates["exit_price"] = current_price
-
-                if pnl is None:
-                    updates["pnl"] = pnl_percentage
-
-                if updates:
-                    updates["updated_at"] = now
-                    await update_trade_status(supabase, int(trade_id), updates)
-                    logging.info(f"Trade {trade_id} updated - Exit Price: {current_price}, PnL: {pnl_percentage:.2f}%")
-
-            except Exception as e:
-                logging.error(f"Error processing trade {trade_id}: {e}")
-
-            await asyncio.sleep(0.5)  # Rate limiting
-
-        logging.info("--- PnL and Exit Price Backfill Complete ---")
-
+                order_id, symbol = extract_order_info_from_binance_response(binance_response)
+                if not order_id or not symbol:
+                    logging.warning(f"Trade {trade_id} missing orderId or symbol, skipping")
+                    continue
+                logging.info(f"Processing trade {trade_id} ({symbol}) - orderId: {order_id}")
+                try:
+                    # Fetch all user trades for this symbol
+                    user_trades = await binance_client.futures_account_trades(symbol=symbol, limit=1000)
+                    # Filter for trades matching this orderId
+                    matching_trades = [t for t in user_trades if str(t.get('orderId')) == str(order_id)]
+                    if not matching_trades:
+                        logging.warning(f"No userTrades found for trade {trade_id} orderId {order_id}")
+                        continue
+                    # Sum realizedPnl, get last price as exit_price
+                    # realizedPnl from Binance is already the actual value (USD), not a percentage
+                    total_realized_pnl = sum(float(t.get('realizedPnl', 0.0)) for t in matching_trades)
+                    last_trade = matching_trades[-1]
+                    exit_price_val = float(last_trade.get('price', 0.0))
+                    # Update DB
+                    updates = {}
+                    if exit_price in [None, 0, 0.0] and exit_price_val > 0:
+                        updates["exit_price"] = exit_price_val
+                    # Always update pnl_usd with the actual value
+                    if pnl in [None, 0, 0.0]:
+                        updates["pnl_usd"] = total_realized_pnl
+                    if updates:
+                        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+                        await update_trade_status(supabase, int(trade_id), updates)
+                        logging.info(f"Trade {trade_id} updated - Exit Price: {exit_price_val}, PnL (USD): {total_realized_pnl}")
+                except Exception as e:
+                    logging.error(f"Error processing trade {trade_id}: {e}")
+                await asyncio.sleep(0.5)
+                total_processed += 1
+            if len(closed_trades) < page_size:
+                break
+            offset += page_size
+        logging.info(f"--- PnL and Exit Price Backfill Complete. Total processed: {total_processed} ---")
     except Exception as e:
         logging.error(f"Error during backfill: {e}", exc_info=True)
     finally:
@@ -182,7 +163,6 @@ async def backfill_pnl_and_exit_prices():
             logging.info("Binance client connection closed.")
 
 async def main():
-    """Main function."""
     await backfill_pnl_and_exit_prices()
 
 if __name__ == "__main__":
