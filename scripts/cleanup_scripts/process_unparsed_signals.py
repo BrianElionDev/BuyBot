@@ -50,7 +50,7 @@ def send_signal_to_bot(trade: dict):
         logging.warning(f"Skipping trade ID {trade.get('id')} due to missing data.")
         return
 
-    logging.info(f"Sending signal for trade ID: {trade.get('id')}, content: '{payload['content'][:50]}...'")
+    logging.info(f"Sending signal for trade ID: {trade.get('id')}")
 
     try:
         with httpx.Client() as client:
