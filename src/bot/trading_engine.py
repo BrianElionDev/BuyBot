@@ -379,7 +379,7 @@ class TradingEngine:
                     side=close_side,
                     order_type_market=FUTURE_ORDER_TYPE_MARKET,
                     amount=amount_to_close,
-                    reduce_only=False
+                    reduce_only=True  # <-- always use reduce_only for market closes
                 )
             else:
                 close_order = await self.binance_exchange.create_order(

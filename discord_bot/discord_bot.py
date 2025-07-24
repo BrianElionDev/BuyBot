@@ -188,8 +188,33 @@ class DiscordBot:
             else:
                 logger.warning(f"Could not find 'position_type' in parsed_signal for trade ID: {trade_row['id']}")
 
+            # --- Parse entry_price from structured field (text) ---
+            entry_price_structured = None
+            entry_match = re.search(r"Entry:?\|([\d\.\-]+)", signal.structured)
+            if entry_match:
+                try:
+                    entry_price_structured = float(entry_match.group(1).split('-')[0])
+                    if entry_price_structured is not None:
+                        updates["entry_price"] = float(entry_price_structured)
+                except Exception:
+                    pass
+
+            # --- Fetch binance_entry_price from Binance ---
+            binance_entry_price = None
+            coin_symbol_for_binance = parsed_data.get('coin_symbol')
+            if coin_symbol_for_binance and isinstance(coin_symbol_for_binance, str):
+                try:
+                    from src.services.price_service import PriceService
+                    price_service = PriceService()
+                    binance_entry_price = await price_service.get_coin_price(coin_symbol_for_binance)
+                    if binance_entry_price is not None:
+                        updates["binance_entry_price"] = float(binance_entry_price)
+                        logger.info(f"Fetched binance_entry_price for {coin_symbol_for_binance}: {binance_entry_price}")
+                except Exception as e:
+                    logger.warning(f"Could not fetch binance_entry_price: {e}")
+
             await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
-            logger.info(f"Successfully stored parsed signal and signal_type for trade ID: {trade_row['id']}")
+            logger.info(f"Successfully stored parsed signal, signal_type, entry_price, and binance_entry_price for trade ID: {trade_row['id']}")
 
             # --- Start of new validation ---
             # Validate that the parser returned a coin symbol
@@ -348,6 +373,18 @@ class DiscordBot:
                 action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason=action_type)
                 if action_successful:
                     trade_updates["status"] = "CLOSED"
+                    # --- Fetch binance_exit_price from Binance ---
+                    coin_symbol_exit = (trade_row.get('parsed_signal') or {}).get('coin_symbol')
+                    if coin_symbol_exit and isinstance(coin_symbol_exit, str):
+                        try:
+                            from src.services.price_service import PriceService
+                            price_service = PriceService()
+                            binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
+                            if binance_exit_price is not None:
+                                trade_updates["binance_exit_price"] = float(binance_exit_price)
+                                logger.info(f"Fetched binance_exit_price for {coin_symbol_exit}: {binance_exit_price}")
+                        except Exception as e:
+                            logger.warning(f"Could not fetch binance_exit_price: {e}")
 
             elif action_type == "take_profit_1":
                 logger.info(f"Processing TP1 for trade {trade_row['id']}. Closing 50% of position.")
