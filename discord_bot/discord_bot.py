@@ -515,19 +515,23 @@ class DiscordBot:
                 "binance_response": binance_response_log # This will be None if no action was taken, or the dict from Binance
             }
 
+            # Always fetch the alert row by trade (discord_id) before updating
+            alert_row = None
+            try:
+                alert_response = self.db_manager.supabase.from_("alerts").select("*").eq("trade", signal.trade).eq("content", signal.content).limit(1).execute()
+                if alert_response.data and len(alert_response.data) > 0:
+                    alert_row = alert_response.data[0]
+            except Exception as e:
+                logger.error(f"Error fetching alert row for update: {e}")
+
             if alert_id is not None:
                 logger.info(f"Updating existing alert record (ID: {alert_id}) with processed data.")
                 await self.db_manager.update_existing_alert(alert_id, alert_updates)
+            elif alert_row and alert_row.get('id'):
+                logger.info(f"Updating alert by found alert id {alert_row['id']} with processed data.")
+                await self.db_manager.update_existing_alert(alert_row['id'], alert_updates)
             else:
-                logger.info("Updating alert by discord_id/trade with processed data.")
-                trade_val = getattr(signal, 'trade', None)
-                if not isinstance(trade_val, str):
-                    trade_val = None
-                await self.db_manager.update_alert_by_discord_id_or_trade(
-                    discord_id=signal.discord_id,
-                    trade=trade_val,
-                    updates=alert_updates
-                )
+                logger.error("No matching alert found to update. Not creating a new row.")
 
             return {
                 "status": "success",
