@@ -6,9 +6,11 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 # Add project root to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from discord_bot.discord_bot import DiscordBot
+
+from src.exchange.binance_exchange import BinanceExchange
 
 # --- Setup ---
 load_dotenv()
@@ -21,11 +23,9 @@ def initialize_clients():
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
-        logging.error("Supabase URL or Key not found in .env file.")
         raise ValueError("Supabase credentials not found.")
     supabase: Client = create_client(url, key)
 
-    # DiscordBot (which contains the TradingEngine)
     bot = DiscordBot()
 
     return supabase, bot
@@ -50,7 +50,7 @@ async def retry_failed_trades():
     # 2. Fetch all trades matching the failure reason
     try:
         logging.info(f"Searching for trades where binance_response starts with: 'Trade cooldown active'")
-        response = supabase.from_("trades").select("*").like("binance_response", cooldown_pattern).execute()
+        response = supabase.from_("trades").select("*").like("binance_response", cooldown_pattern).gte("timestamp", "2025-07-16T00:00:00.000Z").execute()
 
         if not response.data:
             logging.info("✅ No trades found that failed due to a cooldown.")
