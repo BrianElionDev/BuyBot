@@ -16,10 +16,10 @@ key: Optional[str] = os.environ.get("SUPABASE_KEY")
 
 if not url or not key:
     logger.warning("Supabase URL or Key not found in environment variables. Database functionality will be disabled.")
-    supabase: Optional[Client] = None
+    supabase = None
 else:
     try:
-        supabase: Client = create_client(url, key)
+        supabase = create_client(url, key)
         logger.info("Successfully connected to Supabase.")
     except Exception as e:
         logger.error(f"Failed to connect to Supabase: {e}", exc_info=True)
@@ -177,7 +177,7 @@ class DatabaseManager:
             logger.error(f"Error finding trade by id {trade_id}: {e}", exc_info=True)
             return None
 
-    async def update_existing_trade(self, signal_id: str = None, trade_id: int = None, updates: Dict = None) -> bool:
+    async def update_existing_trade(self, signal_id: str = "", trade_id: int = 0, updates: Dict = {}) -> bool:
         """
         Update an existing trade row with new information.
         Can find by signal_id or trade_id.
@@ -270,6 +270,36 @@ class DatabaseManager:
             return True
         except Exception as e:
             logger.error(f"Error updating alert ID {alert_id}: {e}", exc_info=True)
+            return False
+
+    async def update_alert_by_discord_id_or_trade(self, discord_id: Optional[str] = None, trade: Optional[str] = None, updates: Dict = {}) -> bool:
+        """
+        Updates an existing alert record in the database by discord_id or trade.
+        """
+        if not self.supabase:
+            logger.error("Supabase client not available.")
+            return False
+        if not updates:
+            logger.error("No updates provided for alert.")
+            return False
+        if not discord_id and not trade:
+            logger.error("Must provide either discord_id or trade to update alert.")
+            return False
+        try:
+            query = self.supabase.from_("alerts").update(updates)
+            if discord_id:
+                query = query.eq("discord_id", discord_id)
+            if trade:
+                query = query.eq("trade", trade)
+            response = query.execute()
+            if response.data:
+                logger.info(f"Successfully updated alert by discord_id/trade with: {updates}")
+                return True
+            else:
+                logger.error("Failed to update alert: no matching record found")
+                return False
+        except Exception as e:
+            logger.error(f"Error updating alert by discord_id/trade: {e}", exc_info=True)
             return False
 
     async def update_trade_status(self, trade_group_id: str, is_active: bool):
