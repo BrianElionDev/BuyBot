@@ -422,6 +422,20 @@ class BinanceExchange:
             logger.error(f"Error checking futures symbol support for {symbol}: {e}")
             return False
 
+    async def get_order_book(self, symbol: str, limit: int = 5) -> Optional[Dict]:
+        """
+        Fetch order book depth for a symbol (futures).
+        """
+        await self._init_client()
+        assert self.client is not None
+        try:
+            formatted_pair = symbol.replace('_', '').upper()
+            order_book = await self.client.futures_order_book(symbol=formatted_pair, limit=limit)
+            return order_book
+        except Exception as e:
+            logger.error(f"Could not fetch order book for {symbol}: {e}")
+            return None
+
     async def close(self):
         """Close the exchange connection."""
         await self.close_client()

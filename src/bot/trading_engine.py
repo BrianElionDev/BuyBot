@@ -61,22 +61,22 @@ class TradingEngine:
         is_futures = position_type.upper() in ['LONG', 'SHORT']
         trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
 
-        if is_futures:
-            is_supported = await self.binance_exchange.is_futures_symbol_supported(trading_pair)
-            if not is_supported:
-                logger.warning(f"Futures symbol {trading_pair} not supported. Checking SPOT market.")
-                spot_pair = f"{coin_symbol.upper()}USDT"
-                is_spot_supported = await self.binance_exchange.is_futures_symbol_supported(spot_pair) # Placeholder, needs spot check
-                if is_spot_supported:
-                    logger.info(f"Symbol found on SPOT market. Switching trade to SPOT buy.")
-                    position_type = 'SPOT'
-                    is_futures = False
-                    trading_pair = spot_pair
-                else:
-                    reason = f"Symbol {coin_symbol} not supported on Futures or Spot."
-                    logger.error(reason)
-                    return False, reason
-        # --- End Validation ---
+        # Validate symbol is active and tradable
+        is_supported = await self.binance_exchange.is_futures_symbol_supported(trading_pair)
+        if not is_supported:
+            logger.error(f"Symbol {trading_pair} not supported or not trading on Binance Futures.")
+            return False, f"Symbol {trading_pair} not supported or not trading."
+
+        # --- Get symbol filters for minQty/minNotional ---
+        filters = await self.binance_exchange.get_futures_symbol_filters(trading_pair)
+        min_qty = float(filters.get('LOT_SIZE', {}).get('minQty', 0)) if filters else 0
+        min_notional = float(filters.get('MIN_NOTIONAL', {}).get('notional', 0)) if filters and 'MIN_NOTIONAL' in filters else 0
+
+        # --- Get order book for liquidity check (add method if needed) ---
+        order_book = None
+        if hasattr(self.binance_exchange, 'get_order_book'):
+            order_book = await self.binance_exchange.get_order_book(trading_pair)
+        # If not implemented, skip this check
 
         logger.info(f"Processing trade for {trading_pair} ({'Futures' if is_futures else 'Spot'})")
         logger.info(f"Position Type: {position_type}")
@@ -93,6 +93,75 @@ class TradingEngine:
             reason = f"Failed to get price for {coin_symbol}"
             logger.error(reason)
             return False, reason
+
+        # --- Price proximity check for LIMIT orders ---
+        if order_type.upper() == "LIMIT":
+            # Fetch current market price
+            market_price = await self.price_service.get_coin_price(coin_symbol)
+            if market_price is not None:
+                price_diff = abs(signal_price - market_price) / market_price
+                if price_diff > 0.2:
+                    logger.warning(f"LIMIT order price {signal_price} is too far from market price {market_price} (>20%). Skipping order.")
+                    return False, {"error": f"Limit price {signal_price} too far from market price {market_price}, order skipped."}
+
+        # --- Liquidity check for MARKET orders ---
+        if order_type == 'MARKET' and order_book:
+            if not order_book.get('bids') or not order_book.get('asks'):
+                logger.warning(f"No liquidity for {trading_pair}. Skipping market order.")
+                return False, "No liquidity in order book"
+
+        # --- Calculate Trade Amount ---
+        trade_amount = config.TRADE_AMOUNT / current_price
+        if quantity_multiplier and quantity_multiplier > 1:
+            trade_amount *= quantity_multiplier
+
+        # --- Min qty/notional check ---
+        if trade_amount < min_qty or trade_amount * current_price < min_notional:
+            logger.warning(f"Order size {trade_amount} or notional {trade_amount * current_price} too small for {trading_pair}. Skipping.")
+            return False, "Order size too small"
+
+        # --- Place order ---
+        order_result = {}
+        if is_futures:
+            entry_side = SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL
+            # Place LIMIT or MARKET order
+            order_result = await self.binance_exchange.create_futures_order(
+                pair=trading_pair,
+                side=entry_side,
+                order_type_market=order_type,
+                amount=trade_amount,
+                price=signal_price if order_type == 'LIMIT' else None,
+                client_order_id=client_order_id
+            )
+            # --- Auto-cancel LIMIT order after timeout if not filled ---
+            if order_type == 'LIMIT' and order_result and 'orderId' in order_result:
+                order_id = order_result['orderId']
+                await asyncio.sleep(10)  # Wait 10 seconds
+                status = await self.binance_exchange.get_order_status(trading_pair, order_id)
+                if status and status.get('status') == 'NEW':
+                    logger.warning(f"LIMIT order {order_id} for {trading_pair} not filled after 10s. Cancelling.")
+                    await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
+                    # Optionally retry as MARKET
+                    logger.info(f"Retrying as MARKET order for {trading_pair}.")
+                    order_result = await self.binance_exchange.create_futures_order(
+                        pair=trading_pair,
+                        side=entry_side,
+                        order_type_market='MARKET',
+                        amount=trade_amount,
+                        client_order_id=client_order_id
+                    )
+        else:
+            # Spot logic (similar checks can be added)
+            order_result = await self.binance_exchange.create_order(
+                pair=trading_pair,
+                side=SIDE_BUY,
+                order_type_market=ORDER_TYPE_MARKET,
+                amount=trade_amount
+            )
+
+        # --- Log unfilled orders ---
+        if order_result and 'orderId' in order_result and float(order_result.get('executedQty', 0)) == 0:
+            logger.warning(f"Order {order_result['orderId']} for {trading_pair} was not filled. Details: {order_result}")
 
         # Check price difference threshold
         threshold = price_threshold_override if price_threshold_override is not None else config.PRICE_THRESHOLD
