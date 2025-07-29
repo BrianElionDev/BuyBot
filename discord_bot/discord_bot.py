@@ -243,7 +243,7 @@ class DiscordBot:
                 'order_type': parsed_data.get('order_type', 'LIMIT'),
                 'stop_loss': parsed_data.get('stop_loss'),
                 'take_profits': parsed_data.get('take_profits'),
-                'client_order_id': trade_row.get('discord_id'), # Use discord_id for reconciliation
+                'client_order_id': trade_row.get('discord_id'),
                 'quantity_multiplier': parsed_data.get('quantity_multiplier') # For memecoin quantity prefixes
                 # 'dca_range' could be added here if the AI provides it
             }
@@ -260,6 +260,9 @@ class DiscordBot:
             def is_unfilled(order_result):
                 if not isinstance(order_result, dict):
                     return False
+                # Check for API errors first
+                if 'error' in order_result:
+                    return True
                 # Futures/Spot: executedQty == 0 and (avgPrice == 0 or not present)
                 executed_qty = float(order_result.get('executedQty', 0.0))
                 avg_price = float(order_result.get('avgPrice', 0.0)) if 'avgPrice' in order_result else None
@@ -270,6 +273,20 @@ class DiscordBot:
                 return False
 
             if success:
+                # Check if order was actually placed successfully
+                if isinstance(result_message, dict) and 'error' in result_message:
+                    # Order failed due to validation or API error
+                    error_msg = result_message.get('error', 'Unknown error')
+                    logger.error(f"Order failed for trade {trade_row['id']}: {error_msg}")
+                    await self.db_manager.update_existing_trade(
+                        trade_id=trade_row["id"],
+                        updates={
+                            "status": "FAILED",
+                            "binance_response": result_message
+                        }
+                    )
+                    return {"status": "error", "message": f"Order failed: {error_msg}"}
+
                 # 5. Update database with execution status, order ID, and Binance response
                 updates = {
                     "status": "OPEN",

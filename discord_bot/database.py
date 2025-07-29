@@ -315,3 +315,45 @@ class DatabaseManager:
             logger.info(f"Set is_active={is_active} for trade group {trade_group_id}")
         except Exception as e:
             logger.error(f"Error updating trade status for {trade_group_id}: {e}", exc_info=True)
+
+def create_trades_table(supabase):
+    """Create trades table if it doesn't exist"""
+    try:
+        # Check if table exists
+        result = supabase.table("trades").select("id").limit(1).execute()
+        logger.info("Trades table already exists")
+    except Exception:
+        # the table already exists, so we don't need to create it
+        logger.info("Trades table already exists")
+        return
+
+def insert_trade(supabase, trade_data: dict) -> Optional[dict]:
+    """Insert a new trade record"""
+    try:
+        result = supabase.table("trades").insert(trade_data).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        logger.error(f"Failed to insert trade: {e}")
+        return None
+
+def update_trade_pnl(supabase, trade_id: int, pnl_data: dict) -> bool:
+    """Update trade record with P&L data"""
+    try:
+        pnl_data['updated_at'] = datetime.utcnow().isoformat()
+        supabase.table("trades").update(pnl_data).eq("id", trade_id).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to update trade P&L: {e}")
+        return False
+
+def get_trades_needing_pnl_sync(supabase) -> list:
+    """Get trades that need P&L data sync"""
+    try:
+        # Get trades without P&L data or with old sync timestamp
+        result = supabase.table("trades").select("*").or_(
+            "entry_price.is.null,last_pnl_sync.is.null"
+        ).execute()
+        return result.data or []
+    except Exception as e:
+        logger.error(f"Failed to get trades needing P&L sync: {e}")
+        return []

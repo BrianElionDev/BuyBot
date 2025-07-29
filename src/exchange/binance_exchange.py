@@ -80,19 +80,29 @@ class BinanceExchange:
         await self._init_client()
         assert self.client is not None
 
-        # --- Begin Precision Handling ---
+        # --- Enhanced Precision Handling ---
         try:
             # Get the precision filters for the symbol
             filters = await self.get_futures_symbol_filters(pair)
             if filters:
-                step_size = filters.get('LOT_SIZE', {}).get('stepSize')
-                tick_size = filters.get('PRICE_FILTER', {}).get('tickSize')
+                lot_size_filter = filters.get('LOT_SIZE', {})
+                price_filter = filters.get('PRICE_FILTER', {})
+                step_size = lot_size_filter.get('stepSize')
+                tick_size = price_filter.get('tickSize')
+                min_qty = float(lot_size_filter.get('minQty', 0))
+                max_qty = float(lot_size_filter.get('maxQty', float('inf')))
+
+                # Validate quantity bounds
+                if amount < min_qty:
+                    return {'error': f'Quantity {amount} below minimum {min_qty} for {pair}', 'code': -4005}
+                if amount > max_qty:
+                    return {'error': f'Quantity {amount} above maximum {max_qty} for {pair}', 'code': -4005}
 
                 # Format amount according to stepSize
                 if step_size:
                     formatted_amount = format_value(amount, step_size)
                     logger.info(f"Original amount: {amount}, Formatted amount: {formatted_amount} (Step: {step_size})")
-                    amount = float(formatted_amount) # Convert back for Binance library, though it will be sent as string
+                    amount = float(formatted_amount)
 
                 # Format price according to tickSize
                 if price is not None and tick_size:
@@ -104,7 +114,8 @@ class BinanceExchange:
                 logger.warning(f"Could not retrieve precision filters for {pair}. Using original values.")
         except Exception as e:
             logger.error(f"An error occurred during futures precision handling for {pair}: {e}", exc_info=True)
-        # --- End Precision Handling ---
+            return {'error': f'Precision handling error: {str(e)}', 'code': -4000}
+        # --- End Enhanced Precision Handling ---
 
         params = {
             'symbol': pair,
@@ -421,6 +432,103 @@ class BinanceExchange:
         except Exception as e:
             logger.error(f"Error checking futures symbol support for {symbol}: {e}")
             return False
+
+    async def get_order_book(self, symbol: str, limit: int = 5) -> Optional[Dict]:
+        """Get order book for a symbol"""
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            order_book = await self.client.futures_order_book(symbol=symbol, limit=limit)
+            return order_book
+        except Exception as e:
+            logger.error(f"Failed to get order book for {symbol}: {e}")
+            return None
+
+    async def get_user_trades(self, symbol: str = "", limit: int = 1000, from_id: int = 0,
+                            start_time: int = 0, end_time: int = 0) -> List[Dict]:
+        """
+        Get user trades from Binance Futures API
+        Args:
+            symbol: Trading pair symbol (optional, gets all if None)
+            limit: Number of trades to fetch (max 1000)
+            from_id: Trade ID to start from
+            start_time: Start time in milliseconds
+            end_time: End time in milliseconds
+        Returns:
+            List of trade dictionaries with entry/exit prices and P&L
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            params: Dict[str, int] = {'limit': limit}
+            if symbol:
+                params['symbol'] = symbol  # type: ignore
+            if from_id != 0:
+                params['fromId'] = from_id
+            if start_time != 0:
+                params['startTime'] = start_time
+            if end_time != 0:
+                params['endTime'] = end_time
+
+            trades = await self.client.futures_account_trades(**params)
+            if isinstance(trades, dict):
+                trades = [trades]
+            elif not isinstance(trades, list):
+                trades = []
+            logger.info(f"Fetched {len(trades)} user trades for {symbol or 'all symbols'}")
+            return trades
+        except Exception as e:
+            logger.error(f"Failed to get user trades: {e}")
+            return []
+
+    async def get_position_risk(self, symbol: str = "") -> List[Dict]:
+        """
+        Get position risk information from Binance Futures API
+        Args:
+            symbol: Trading pair symbol (optional, gets all if None)
+        Returns:
+            List of position dictionaries with entry prices and unrealized P&L
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            if symbol:
+                positions = await self.client.futures_position_information(symbol=symbol)
+                # Convert single position to list for consistency
+                if isinstance(positions, dict):
+                    positions = [positions]
+                else:
+                    positions = positions if isinstance(positions, list) else []
+            else:
+                positions = await self.client.futures_position_information()
+                positions = positions if isinstance(positions, list) else []
+
+            # Filter out positions with zero quantity
+            active_positions = [pos for pos in positions if float(pos.get('positionAmt', 0)) != 0]
+            logger.info(f"Fetched {len(active_positions)} active positions")
+            return active_positions
+        except Exception as e:
+            logger.error(f"Failed to get position risk: {e}")
+            return []
+
+    async def get_exchange_info(self) -> Optional[Dict]:
+        """
+        Get exchange information including symbol status
+        Returns:
+            Exchange info dictionary with symbol details
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            info = await self.client.futures_exchange_info()
+            return info
+        except Exception as e:
+            logger.error(f"Failed to get exchange info: {e}")
+            return None
 
     async def close(self):
         """Close the exchange connection."""
