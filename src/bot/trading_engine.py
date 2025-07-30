@@ -324,6 +324,34 @@ class TradingEngine:
                 logger.warning(reason)
                 return False, reason
 
+        # --- Calculate Trade Amount ---
+        trade_amount = 0.0
+        try:
+            # REMOVE: USDT/USDM balance logic
+            trade_amount = config.TRADE_AMOUNT / current_price
+            logger.info(f"Using fixed trade amount: {trade_amount} {coin_symbol} (${config.TRADE_AMOUNT:.2f})")
+
+            # Apply quantity multiplier if specified (for memecoins)
+            if quantity_multiplier and quantity_multiplier > 1:
+                trade_amount *= quantity_multiplier
+                logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
+
+        except Exception as e:
+            reason = f"Failed to calculate trade amount: {e}"
+            logger.error(reason, exc_info=True)
+            return False, reason
+
+        if trade_amount <= 0:
+            return False, "Calculated trade amount is zero or negative."
+        # --- End Calculate Trade Amount ---
+
+        #----Calculate trade quantity ----
+        quantities = await self.binance_exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
+        minQuantity = float(quantities['min_quantity'])
+        maxQuantity = float(quantities['max_quantity'])
+        print(f"Min Quantity: {minQuantity}, Max Quantity: {maxQuantity}")
+        trade_amount = max(minQuantity, min(maxQuantity, trade_amount))
+
         order_result = {}
         if is_futures:
             entry_side = SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL
