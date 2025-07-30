@@ -2,10 +2,11 @@ import asyncio
 import logging
 import re
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, List, Tuple
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+import uuid
 
 from src.bot.trading_engine import TradingEngine
 from .discord_signal_parser import DiscordSignalParser, client
@@ -188,8 +189,33 @@ class DiscordBot:
             else:
                 logger.warning(f"Could not find 'position_type' in parsed_signal for trade ID: {trade_row['id']}")
 
+            # --- Parse entry_price from structured field (text) ---
+            entry_price_structured = None
+            entry_match = re.search(r"Entry:?\|([\d\.\-]+)", signal.structured)
+            if entry_match:
+                try:
+                    entry_price_structured = float(entry_match.group(1).split('-')[0])
+                    if entry_price_structured is not None:
+                        updates["entry_price"] = {"value": float(entry_price_structured)}
+                except Exception:
+                    pass
+
+            # --- Fetch binance_entry_price from Binance ---
+            binance_entry_price = None
+            coin_symbol_for_binance = parsed_data.get('coin_symbol')
+            if coin_symbol_for_binance and isinstance(coin_symbol_for_binance, str):
+                try:
+                    from src.services.price_service import PriceService
+                    price_service = PriceService()
+                    binance_entry_price = await price_service.get_coin_price(coin_symbol_for_binance)
+                    if binance_entry_price is not None:
+                        updates["binance_entry_price"] = {"value": float(binance_entry_price)}
+                        logger.info(f"Fetched binance_entry_price for {coin_symbol_for_binance}: {binance_entry_price}")
+                except Exception as e:
+                    logger.warning(f"Could not fetch binance_entry_price: {e}")
+
             await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
-            logger.info(f"Successfully stored parsed signal and signal_type for trade ID: {trade_row['id']}")
+            logger.info(f"Successfully stored parsed signal, signal_type, entry_price, and binance_entry_price for trade ID: {trade_row['id']}")
 
             # --- Start of new validation ---
             # Validate that the parser returned a coin symbol
@@ -217,10 +243,14 @@ class DiscordBot:
                 'order_type': parsed_data.get('order_type', 'LIMIT'),
                 'stop_loss': parsed_data.get('stop_loss'),
                 'take_profits': parsed_data.get('take_profits'),
-                'client_order_id': trade_row.get('discord_id'), # Use discord_id for reconciliation
-                'quantity_multiplier': 1 #parsed_data.get('quantity_multiplier') For memecoin quantity prefixes
+                'client_order_id': trade_row.get('discord_id'),
+                'quantity_multiplier': parsed_data.get('quantity_multiplier') # For memecoin quantity prefixes
                 # 'dca_range' could be added here if the AI provides it
             }
+
+            # Ensure clientOrderId is always unique
+            if not engine_params.get('client_order_id'):
+                engine_params['client_order_id'] = f"rubicon-{uuid.uuid4().hex[:16]}"
 
             # 4. Execute the trade using the clean parameters
             logger.info(f"Processing trade with TradingEngine using parameters: {engine_params}")
@@ -230,6 +260,9 @@ class DiscordBot:
             def is_unfilled(order_result):
                 if not isinstance(order_result, dict):
                     return False
+                # Check for API errors first
+                if 'error' in order_result:
+                    return True
                 # Futures/Spot: executedQty == 0 and (avgPrice == 0 or not present)
                 executed_qty = float(order_result.get('executedQty', 0.0))
                 avg_price = float(order_result.get('avgPrice', 0.0)) if 'avgPrice' in order_result else None
@@ -240,6 +273,20 @@ class DiscordBot:
                 return False
 
             if success:
+                # Check if order was actually placed successfully
+                if isinstance(result_message, dict) and 'error' in result_message:
+                    # Order failed due to validation or API error
+                    error_msg = result_message.get('error', 'Unknown error')
+                    logger.error(f"Order failed for trade {trade_row['id']}: {error_msg}")
+                    await self.db_manager.update_existing_trade(
+                        trade_id=trade_row["id"],
+                        updates={
+                            "status": "FAILED",
+                            "binance_response": result_message
+                        }
+                    )
+                    return {"status": "error", "message": f"Order failed: {error_msg}"}
+
                 # 5. Update database with execution status, order ID, and Binance response
                 updates = {
                     "status": "OPEN",
@@ -334,6 +381,31 @@ class DiscordBot:
                 logger.error(error_msg)
                 return {"status": "error", "message": error_msg}
 
+            # --- SKIP follow-up if original trade is FAILED or UNFILLED ---
+            if trade_row.get('status') in ('FAILED', 'UNFILLED'):
+                logger.warning(f"Skipping follow-up: original trade {trade_row['id']} is {trade_row.get('status')}")
+                # Update alert to reflect no open position
+                alert_updates = {
+                    "parsed_alert": {
+                        "original_content": signal.content,
+                        "processed_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "original_trade_id": trade_row['id'],
+                        "coin_symbol": (trade_row.get('parsed_signal') or {}).get('coin_symbol'),
+                        "trader": signal.trader,
+                        "note": "Skipped: original trade is FAILED or UNFILLED. No open position to update."
+                    },
+                    "binance_response": None
+                }
+                trade_val = getattr(signal, 'trade', None)
+                if not isinstance(trade_val, str):
+                    trade_val = None
+                await self.db_manager.update_alert_by_discord_id_or_trade(
+                    discord_id=signal.discord_id,
+                    trade=trade_val,
+                    updates=alert_updates
+                )
+                return {"status": "skipped", "message": "No open position to update (original trade is FAILED or UNFILLED)"}
+
             # Parse the alert content to determine action
             parsed_action = self.parse_alert_content(signal.content, trade_row)
 
@@ -348,6 +420,18 @@ class DiscordBot:
                 action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason=action_type)
                 if action_successful:
                     trade_updates["status"] = "CLOSED"
+                    # --- Fetch binance_exit_price from Binance ---
+                    coin_symbol_exit = (trade_row.get('parsed_signal') or {}).get('coin_symbol')
+                    if coin_symbol_exit and isinstance(coin_symbol_exit, str):
+                        try:
+                            from src.services.price_service import PriceService
+                            price_service = PriceService()
+                            binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
+                            if binance_exit_price is not None:
+                                trade_updates["binance_exit_price"] = float(binance_exit_price)
+                                logger.info(f"Fetched binance_exit_price for {coin_symbol_exit}: {binance_exit_price}")
+                        except Exception as e:
+                            logger.warning(f"Could not fetch binance_exit_price: {e}")
 
             elif action_type == "take_profit_1":
                 logger.info(f"Processing TP1 for trade {trade_row['id']}. Closing 50% of position.")
@@ -448,12 +532,23 @@ class DiscordBot:
                 "binance_response": binance_response_log # This will be None if no action was taken, or the dict from Binance
             }
 
+            # Always fetch the alert row by trade (discord_id) before updating
+            alert_row = None
+            try:
+                alert_response = self.db_manager.supabase.from_("alerts").select("*").eq("trade", signal.trade).eq("content", signal.content).limit(1).execute()
+                if alert_response.data and len(alert_response.data) > 0:
+                    alert_row = alert_response.data[0]
+            except Exception as e:
+                logger.error(f"Error fetching alert row for update: {e}")
+
             if alert_id is not None:
                 logger.info(f"Updating existing alert record (ID: {alert_id}) with processed data.")
                 await self.db_manager.update_existing_alert(alert_id, alert_updates)
+            elif alert_row and alert_row.get('id'):
+                logger.info(f"Updating alert by found alert id {alert_row['id']} with processed data.")
+                await self.db_manager.update_existing_alert(alert_row['id'], alert_updates)
             else:
-                logger.info("Saving new alert record with processed data.")
-                await self.db_manager.save_alert_to_database(alert_updates)
+                logger.error("No matching alert found to update. Not creating a new row.")
 
             return {
                 "status": "success",

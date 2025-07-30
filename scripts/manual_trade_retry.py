@@ -69,10 +69,8 @@ async def process_single_trade(bot: DiscordBot, supabase: Client, discord_id: st
     else:
         try:
             # Override the price check threshold to allow retrying trades
-            # with large price discrepancies, which often occur with meme coins
-            # where signalers use shorthand prices (e.g., price per 1000 tokens).
             initial_signal_data['price_threshold_override'] = 99999  # Effectively disables the check
-
+            # Do NOT set client_order_id here; let the bot generate a new UUID
             result = await bot.process_initial_signal(initial_signal_data)
             if result.get("status") == "success":
                 logging.info(f"✅ Successfully re-processed initial signal.")
