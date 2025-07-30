@@ -139,21 +139,8 @@ class TradingEngine:
                 logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
 
             # Get symbol filters for precision formatting
-            symbol_filters = await self.binance_exchange.get_futures_symbol_filters(trading_pair)
-            if symbol_filters:
-                lot_size_filter = symbol_filters.get('LOT_SIZE', {})
-                step_size = lot_size_filter.get('stepSize')
-
-                # Format quantity to proper step size
-                if step_size:
-                    from decimal import Decimal, ROUND_DOWN
-                    step_dec = Decimal(str(step_size))
-                    amount_dec = Decimal(str(trade_amount))
-                    # Round down to nearest step size
-                    formatted_amount = (amount_dec // step_dec) * step_dec
-                    trade_amount = float(formatted_amount)
-                    logger.info(f"Formatted quantity to step size {step_size}: {trade_amount} {coin_symbol}")
-
+            # Commented out for now as it's handled elsewhere
+            # symbol_filters = await self.binance_exchange.get_futures_symbol_filters(trading_pair)
         except Exception as e:
             reason = f"Failed to calculate trade amount: {e}"
             logger.error(reason, exc_info=True)
@@ -161,15 +148,21 @@ class TradingEngine:
 
         if trade_amount <= 0:
             return False, "Calculated trade amount is zero or negative."
-
+          #----Calculate trade quantity ----
+        quantities = await self.binance_exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
+        minQuantity = float(quantities['min_quantity'])
+        maxQuantity = float(quantities['max_quantity'])
+        print(f"Min Quantity: {minQuantity}, Max Quantity: {maxQuantity}")
+        trade_amount = max(minQuantity, min(maxQuantity, trade_amount))
+        print(f"Adjusted trade amount: {trade_amount}")
         # --- Enhanced Quantity/Notional Validation ---
         if is_futures:
             # Check quantity bounds with detailed logging
-            if trade_amount < min_qty:
+            if trade_amount < minQuantity:
                 logger.warning(f"Order quantity {trade_amount} below minimum {min_qty} for {trading_pair}. Skipping order.")
                 return False, {"error": f"Quantity {trade_amount} below minimum {min_qty} for {trading_pair}, order skipped."}
 
-            if trade_amount > max_qty:
+            if trade_amount > maxQuantity:
                 logger.warning(f"Order quantity {trade_amount} above maximum {max_qty} for {trading_pair}. Skipping order.")
                 return False, {"error": f"Quantity {trade_amount} above maximum {max_qty} for {trading_pair}, order skipped."}
 
@@ -351,7 +344,7 @@ class TradingEngine:
         maxQuantity = float(quantities['max_quantity'])
         print(f"Min Quantity: {minQuantity}, Max Quantity: {maxQuantity}")
         trade_amount = max(minQuantity, min(maxQuantity, trade_amount))
-
+        print(f"Adjusted trade amount: {trade_amount}")
         order_result = {}
         if is_futures:
             entry_side = SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL
