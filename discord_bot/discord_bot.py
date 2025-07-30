@@ -218,7 +218,7 @@ class DiscordBot:
                 'stop_loss': parsed_data.get('stop_loss'),
                 'take_profits': parsed_data.get('take_profits'),
                 'client_order_id': trade_row.get('discord_id'), # Use discord_id for reconciliation
-                'quantity_multiplier': parsed_data.get('quantity_multiplier') # For memecoin quantity prefixes
+                'quantity_multiplier': 1 #parsed_data.get('quantity_multiplier') For memecoin quantity prefixes
                 # 'dca_range' could be added here if the AI provides it
             }
 

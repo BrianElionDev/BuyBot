@@ -141,6 +141,12 @@ class TradingEngine:
             return False, "Calculated trade amount is zero or negative."
         # --- End Calculate Trade Amount ---
 
+        #----Calculate trade quantity ----
+        quantities = await self.binance_exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
+        minQuantity = float(quantities['min_quantity'])
+        maxQuantity = float(quantities['max_quantity'])
+        print(f"Min Quantity: {minQuantity}, Max Quantity: {maxQuantity}")
+        trade_amount = max(minQuantity, min(maxQuantity, trade_amount))
         order_result = {}
         if is_futures:
             entry_side = SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL

@@ -391,7 +391,7 @@ class BinanceExchange:
 
     async def get_futures_symbol_filters(self, symbol: str) -> Optional[Dict]:
         """
-        Retrieves all filters for a given futures symbol.
+        Retrieves all filters for a given futures symbol, including precision values.
         """
         await self._init_client()
         assert self.client is not None
@@ -400,12 +400,16 @@ class BinanceExchange:
             for s in exchange_info['symbols']:
                 if s['symbol'] == symbol:
                     # Return a dictionary of filters keyed by filterType
-                    return {f['filterType']: f for f in s['filters']}
+                    return {
+                            **{f['filterType']: f for f in s['filters']},
+                            'quantityPrecision': s['quantityPrecision']
+                            }
             return None
         except Exception as e:
             logger.error(f"Could not retrieve precision filters for {symbol}: {e}")
             return None
 
+    
     async def is_futures_symbol_supported(self, symbol: str) -> bool:
         """
         Check if a symbol is supported for futures trading.
@@ -421,6 +425,97 @@ class BinanceExchange:
         except Exception as e:
             logger.error(f"Error checking futures symbol support for {symbol}: {e}")
             return False
+
+    async def get_futures_mark_price(self, symbol: str) -> Optional[float]:
+        """
+        Retrieves the current Mark Price for a given futures symbol.
+        """
+        await self._init_client()
+        assert self.client is not None
+        try:
+            # The futures_mark_price() method can take a symbol argument
+            mark_price_info = await self.client.futures_mark_price(symbol=symbol)
+            if mark_price_info and 'markPrice' in mark_price_info:
+                return float(mark_price_info['markPrice'])
+            return None
+        except Exception as e:
+            logger.error(f"Could not retrieve mark price for {symbol}: {e}")
+            return None
+
+    async def calculate_min_max_market_order_quantity(self, symbol: str) -> Dict:
+        """
+        Calculate the minimum and maximum quantities for a market order on Binance.
+        
+        Args:
+            symbol (str): The trading pair symbol (e.g., 'BTCUSDT')
+            
+        Returns:
+            dict: Contains min_quantity, max_quantity, and other details
+        """
+        symbol_filters = await self.get_futures_symbol_filters(symbol)
+        if not symbol_filters:
+            raise ValueError(f"Could not retrieve filters for symbol {symbol}")
+        current_price = await self.get_futures_mark_price(symbol)
+        
+        min_notional_filter = symbol_filters.get('MIN_NOTIONAL')
+        lot_size_filter = symbol_filters.get('LOT_SIZE')
+        quantityPrecision = symbol_filters.get('quantityPrecision', 0)
+        if not min_notional_filter:
+            raise ValueError("MIN_NOTIONAL filter not found")
+        
+        if not lot_size_filter:
+            raise ValueError("LOT_SIZE filter not found")
+        
+        min_notional = 0
+        if 'notional' in min_notional_filter:
+            min_notional = float(min_notional_filter.get('notional', 0))
+        
+        min_qty_lot_size = float(lot_size_filter.get('minQty', 0))
+        step_size = float(lot_size_filter.get('stepSize', 0))
+        max_quantity = float(lot_size_filter.get('maxQty', 10000))
+        
+        if current_price and current_price > 0:
+            min_qty_from_notional = min_notional / current_price
+        else:
+            min_qty_from_notional = min_notional
+        
+        min_quantity = max(min_qty_lot_size, min_qty_from_notional)
+        min_quantity = round(min_quantity, quantityPrecision)
+        max_quantity = round(max_quantity, quantityPrecision)
+        
+        return {
+            'min_quantity': min_quantity,
+            'max_quantity': max_quantity,
+            'min_notional': min_notional,
+            'step_size': step_size,
+            'min_qty_lot_size': min_qty_lot_size,
+            'min_qty_from_notional': min_qty_from_notional,
+            'current_price': current_price
+        }
+
+    async def get_current_prices(self, symbols: List[str]) -> Dict[str, float]:
+        """
+        Get current prices for multiple symbols.
+        
+        Args:
+            symbols (list): List of symbol strings
+            
+        Returns:
+            dict: Dictionary mapping symbol to current price
+        """
+        prices = {}
+        
+        for symbol in symbols:
+            try:
+                price = await self.get_futures_mark_price(symbol)
+                if price:
+                    prices[symbol] = price
+                else:
+                    logger.warning(f"Could not get price for {symbol}")
+            except Exception as e:
+                logger.warning(f"Could not get price for {symbol}: {e}")
+        
+        return prices
 
     async def close(self):
         """Close the exchange connection."""
