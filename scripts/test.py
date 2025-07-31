@@ -19,6 +19,7 @@ from src.bot.trading_engine import TradingEngine
 from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
 from discord_bot.database import DatabaseManager
+from discord_bot.discord_signal_parser import DiscordSignalParser
 from config import settings as config
 
 # Setup logging
@@ -88,12 +89,8 @@ async def test_price_thresholds():
      
 async def main():   
     """Main function to run the price threshold test."""
-    success = await test_price_thresholds()
-    if success:
-        print("\n✅ Price threshold test completed successfully!")
-    else:
-        print("\n❌ Price threshold test failed!")
-        sys.exit(1)
-
+    discordParser = DiscordSignalParser()
+    parsed = await discordParser.parse_new_trade_signal('LIMIT|BTC|Entry:|1000|SL:|2150')
+    print("Parsed signal:", parsed)
 if __name__ == "__main__":
     asyncio.run(main())
