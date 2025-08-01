@@ -71,26 +71,16 @@ async def test_price_thresholds():
     # Initialize components
     price_service = PriceService()
     binance_exchange = BinanceExchange(api_key, api_secret, is_testnet)
-    
-    available_symbols = ["ETHUSDT"]
-    for symbol_pair in available_symbols:
-        print(f"\n=== Testing {symbol_pair} ===")
-        
-        try:
-            # Test min and max quantity calculation
-            print("\n--- Minimum and Maximum Quantity Calculation ---")
-            quantities = await binance_exchange.calculate_min_max_market_order_quantity(symbol_pair)
-            print(f"MinMax: {quantities['min_quantity']}, {quantities['max_quantity']}")
-        except Exception as e:
-            logging.error(f"Error calculating quantities for {symbol_pair}: {e}")
-            continue
-    
+    price_service = PriceService()
+    currentPrice =await binance_exchange.get_futures_mark_price("SQDUSDT")
+    tokenPrice = await price_service.get_coin_price("SQD")
+    print(f"Current Price in coinGecko: {tokenPrice}")
+    print("🔍Current price binance: \n",currentPrice )
     return True
      
 async def main():   
     """Main function to run the price threshold test."""
-    discordParser = DiscordSignalParser()
-    parsed = await discordParser.parse_new_trade_signal('LIMIT|BTC|Entry:|1000|SL:|2150')
-    print("Parsed signal:", parsed)
+    
+    await test_price_thresholds()
 if __name__ == "__main__":
     asyncio.run(main())

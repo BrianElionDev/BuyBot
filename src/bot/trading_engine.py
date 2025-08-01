@@ -103,7 +103,7 @@ class TradingEngine:
             logger.info(f"Take Profits: {', '.join([f'${tp:.8f}' for tp in take_profits])}")
 
         # Get current market price
-        current_price = await self.price_service.get_coin_price(coin_symbol)
+        current_price = await self.binance_exchange.get_futures_mark_price(f'{coin_symbol.upper()}USDT')
         if not current_price:
             reason = f"Failed to get price for {coin_symbol}"
             logger.error(reason)
