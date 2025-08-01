@@ -7,6 +7,10 @@ from typing import Optional
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from discord_bot.discord_bot import DiscordBot
+from discord_bot.database import (
+    update_trade_pnl,
+    get_trades_needing_pnl_sync,
+)
 
 # --- Setup ---
 load_dotenv()
@@ -241,7 +245,7 @@ async def sync_trade_statuses_with_binance(bot: DiscordBot, supabase: Client):
     """
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=24)
+    cutoff = now - timedelta(hours=120)
     cutoff_iso = cutoff.isoformat()
 
     logging.info("--- Syncing trade statuses with Binance ---")
@@ -479,3 +483,114 @@ async def process_exit_alert_with_pnl(bot: DiscordBot, supabase: Client, alert_d
 
     except Exception as e:
         logging.error(f"Error processing exit alert for trade {trade_id}: {e}")
+
+
+async def sync_pnl_data_with_binance(bot, supabase):
+    """Sync P&L data from Binance Futures API to Supabase using orderId"""
+    try:
+        logging.info("Starting P&L data sync with Binance...")
+
+        # Get trades that need P&L data sync
+        trades = get_trades_needing_pnl_sync(supabase)
+
+        # Group trades by symbol to reduce API calls
+        trades_by_symbol = {}
+        for trade in trades:
+            symbol = trade.get('coin_symbol')
+            if symbol:
+                if symbol not in trades_by_symbol:
+                    trades_by_symbol[symbol] = []
+                trades_by_symbol[symbol].append(trade)
+
+        logging.info(f"Processing {len(trades)} trades across {len(trades_by_symbol)} symbols")
+
+        for symbol, symbol_trades in trades_by_symbol.items():
+            try:
+                trading_pair = f"{symbol}USDT"
+
+                # Check if symbol is supported before making API calls
+                is_supported = await bot.binance_exchange.is_futures_symbol_supported(trading_pair)
+                if not is_supported:
+                    logging.warning(f"Symbol {trading_pair} not supported, skipping P&L sync for {len(symbol_trades)} trades")
+                    continue
+
+                # Get all user trades for this symbol (limit to last 1000 to avoid rate limits)
+                user_trades = await bot.binance_exchange.get_user_trades(symbol=trading_pair, limit=1000)
+
+                if not user_trades:
+                    logging.info(f"No user trades found for {trading_pair}")
+                    continue
+
+                logging.info(f"Found {len(user_trades)} user trades for {trading_pair}")
+
+                # Create lookup by orderId for fast matching
+                trades_by_order_id = {trade.get('orderId'): trade for trade in user_trades if trade.get('orderId')}
+
+                # Process each trade for this symbol
+                for trade in symbol_trades:
+                    try:
+                        # Extract orderId from binance_response
+                        binance_response = trade.get('binance_response', '')
+                        order_id = None
+
+                        # Try to extract orderId from binance_response
+                        if isinstance(binance_response, dict) and 'orderId' in binance_response:
+                            order_id = binance_response['orderId']
+                        elif isinstance(binance_response, str):
+                            # Try to parse JSON response
+                            try:
+                                import json
+                                response_data = json.loads(binance_response)
+                                order_id = response_data.get('orderId')
+                            except:
+                                pass
+
+                        if not order_id:
+                            logging.warning(f"Trade {trade['id']} missing orderId in binance_response, skipping")
+                            continue
+
+                        # Find matching trade by orderId
+                        matching_trade = trades_by_order_id.get(order_id)
+
+                        if matching_trade:
+                            # Extract P&L data from the matching trade
+                            entry_price = float(matching_trade.get('price', 0))
+                            realized_pnl = float(matching_trade.get('realizedPnl', 0))
+
+                            # Get current position for unrealized P&L
+                            positions = await bot.binance_exchange.get_position_risk(symbol=trading_pair)
+                            unrealized_pnl = 0.0
+
+                            for position in positions:
+                                if position.get('symbol') == trading_pair:
+                                    unrealized_pnl = float(position.get('unRealizedProfit', 0))
+                                    break
+
+                            # Update trade record using database helper
+                            pnl_data = {
+                                'entry_price': entry_price,
+                                'exit_price': entry_price,  # For single trades, entry = exit
+                                'realized_pnl': realized_pnl,
+                                'unrealized_pnl': unrealized_pnl,
+                                'last_pnl_sync': datetime.utcnow().isoformat()
+                            }
+
+                            if update_trade_pnl(supabase, trade['id'], pnl_data):
+                                logging.info(f"Updated P&L data for trade {trade['id']} (orderId: {order_id}): Entry={entry_price}, Realized={realized_pnl}, Unrealized={unrealized_pnl}")
+                            else:
+                                logging.error(f"Failed to update P&L data for trade {trade['id']}")
+                        else:
+                            logging.warning(f"No matching trade found for orderId {order_id} in {trading_pair}")
+
+                    except Exception as e:
+                        logging.error(f"Failed to sync P&L for trade {trade.get('id')}: {e}")
+                        continue
+
+            except Exception as e:
+                logging.error(f"Failed to sync P&L for symbol {symbol}: {e}")
+                continue
+
+        logging.info("P&L data sync completed")
+
+    except Exception as e:
+        logging.error(f"Error in P&L data sync: {e}")

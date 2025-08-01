@@ -1,9 +1,10 @@
 import os
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -179,8 +180,8 @@ class DatabaseManager:
 
     async def update_existing_trade(self, signal_id: str = "", trade_id: int = 0, updates: Dict = {}) -> bool:
         """
-        Update an existing trade row with new information.
-        Can find by signal_id or trade_id.
+        Updates an existing trade record in the database.
+        Enhanced to preserve original order responses and track sync issues.
         """
         if not self.supabase:
             logger.error("Supabase client not available.")
@@ -191,6 +192,9 @@ class DatabaseManager:
             return False
 
         try:
+            # Always update the updated_at timestamp
+            updates["updated_at"] = datetime.now().isoformat()
+
             if trade_id:
                 # For updates using database ID
                 response = self.supabase.from_("trades").update(updates).eq("id", trade_id).execute()
@@ -207,6 +211,123 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error updating trade: {e}", exc_info=True)
             return False
+
+    async def update_trade_with_original_response(self, trade_id: int, original_response: Dict, status_response: Optional[Dict] = None, sync_error: Optional[str] = None) -> bool:
+        """
+        Updates a trade while preserving the original order response.
+        This is critical for financial accuracy.
+        """
+        if not self.supabase:
+            logger.error("Supabase client not available.")
+            return False
+
+        try:
+            updates: Dict[str, Any] = {
+                "updated_at": datetime.now().isoformat(),
+                "original_order_response": json.dumps(original_response) if isinstance(original_response, dict) else str(original_response)
+            }
+
+            # Determine if order was actually created successfully
+            order_created_successfully = self._is_order_actually_successful(original_response)
+
+            if order_created_successfully:
+                # Order was created successfully - preserve original response
+                updates["binance_response"] = json.dumps(original_response) if isinstance(original_response, dict) else str(original_response)
+                updates["status"] = "OPEN"  # Assume open if we got orderId
+
+                if "orderId" in original_response:
+                    updates["exchange_order_id"] = str(original_response.get("orderId", ""))
+
+                # Store TP/SL order information if present
+                if "tp_sl_orders" in original_response:
+                    updates["tp_sl_orders"] = json.dumps(original_response["tp_sl_orders"])
+                    logger.info(f"Stored {len(original_response['tp_sl_orders'])} TP/SL orders for trade {trade_id}")
+
+                # If status check failed, track the error but don't overwrite success
+                if sync_error:
+                    updates["sync_error_count"] = 1
+                    updates["sync_issues"] = [sync_error]
+                    updates["manual_verification_needed"] = True
+                    logger.warning(f"Order created successfully but status check failed: {sync_error}")
+                elif status_response:
+                    # Status check succeeded
+                    updates["order_status_response"] = json.dumps(status_response) if isinstance(status_response, dict) else str(status_response)
+                    updates["last_successful_sync"] = datetime.now().isoformat()
+                    updates["sync_error_count"] = 0
+                    updates["sync_issues"] = []
+                    updates["manual_verification_needed"] = False
+
+                    # Update status based on status response
+                    final_status = self._determine_final_status(status_response)
+                    if final_status:
+                        updates["status"] = final_status
+            else:
+                # Order creation failed - this is a legitimate failure
+                updates["binance_response"] = json.dumps(original_response) if isinstance(original_response, dict) else str(original_response)
+                updates["status"] = "FAILED"
+                logger.error(f"Order creation failed: {original_response}")
+
+            response = self.supabase.from_("trades").update(updates).eq("id", trade_id).execute()
+            logger.info(f"Updated trade {trade_id} with preserved original response")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error updating trade with original response: {e}", exc_info=True)
+            return False
+
+    async def update_tp_sl_orders(self, trade_id: int, tp_sl_orders: List[Dict]) -> bool:
+        """
+        Update TP/SL orders for a specific trade.
+        """
+        if not self.supabase:
+            logger.error("Supabase client not available.")
+            return False
+
+        try:
+            updates = {
+                "updated_at": datetime.now().isoformat(),
+                "tp_sl_orders": json.dumps(tp_sl_orders)
+            }
+
+            response = self.supabase.from_("trades").update(updates).eq("id", trade_id).execute()
+            logger.info(f"Updated TP/SL orders for trade {trade_id}: {len(tp_sl_orders)} orders")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error updating TP/SL orders for trade {trade_id}: {e}", exc_info=True)
+            return False
+
+    def _is_order_actually_successful(self, order_response) -> bool:
+        """
+        Check if order was actually created successfully.
+        Critical for financial accuracy.
+        """
+        if isinstance(order_response, dict):
+            # Success indicators
+            has_order_id = 'orderId' in order_response
+            no_error = 'error' not in order_response
+            has_symbol = 'symbol' in order_response
+
+            return has_order_id and no_error and has_symbol
+        return False
+
+    def _determine_final_status(self, status_response) -> Optional[str]:
+        """
+        Determine final status from order status response.
+        """
+        if not isinstance(status_response, dict):
+            return None
+
+        status = status_response.get('status', '').upper()
+
+        if status in ['FILLED', 'PARTIALLY_FILLED']:
+            return 'OPEN'
+        elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
+            return 'FAILED'
+        elif status == 'NEW':
+            return 'OPEN'  # Order is open but not filled yet
+        else:
+            return None  # Unknown status, don't change
 
     async def save_signal_to_db(self, signal_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """

@@ -7,6 +7,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import uuid
+import json
 
 from src.bot.trading_engine import TradingEngine
 from .discord_signal_parser import DiscordSignalParser, client
@@ -57,17 +58,37 @@ class DiscordBot:
 
     def _clean_text_for_llm(self, text: str) -> str:
         """
-        Sanitizes text to remove invisible unicode characters that can confuse LLMs,
-        especially zero-width characters from Discord.
+        Clean text for LLM processing by removing problematic characters and formatting.
         """
         if not text:
             return ""
-        # This regex targets multiple ranges of invisible or problematic Unicode characters:
-        # U+200B-U+200D: Zero-width spaces and joiners
-        # U+FEFF: Byte Order Mark (can appear as a zero-width no-break space)
-        # U+2060-U+206F: General-purpose invisible characters (e.g., word joiner)
-        # U+00AD: Soft hyphen
-        return re.sub(r'[\u200B-\u200D\uFEFF\u2060-\u206F\u00AD]', '', text).strip()
+
+        # Remove or replace problematic characters
+        cleaned = text.replace('"', '"').replace('"', '"')  # Smart quotes to regular quotes
+        cleaned = cleaned.replace(''', "'").replace(''', "'")  # Smart apostrophes to regular apostrophes
+        cleaned = cleaned.replace('–', '-').replace('—', '-')  # Em dashes to regular dashes
+        cleaned = cleaned.replace('…', '...')  # Ellipsis to three dots
+
+        # Remove any other non-ASCII characters that might cause issues
+        cleaned = ''.join(char for char in cleaned if ord(char) < 128)
+
+        return cleaned.strip()
+
+    def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
+        """
+        Safely parse parsed_signal data which can be either a dict or JSON string.
+        """
+        if isinstance(parsed_signal_data, dict):
+            return parsed_signal_data
+        elif isinstance(parsed_signal_data, str):
+            try:
+                return json.loads(parsed_signal_data)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse parsed_signal JSON: {parsed_signal_data}")
+                return {}
+        else:
+            logger.warning(f"Unexpected parsed_signal type: {type(parsed_signal_data)}")
+            return {}
 
     def parse_alert_content(self, content, original_trade_data):
         """
@@ -78,8 +99,14 @@ class DiscordBot:
 
         # Safely extract coin symbol with fallback
         coin_symbol = 'UNKNOWN'
+        # Check if we have the original trade data to get context
         if original_trade_data and isinstance(original_trade_data.get('parsed_signal'), dict):
             coin_symbol = original_trade_data.get('parsed_signal', {}).get('coin_symbol', 'UNKNOWN')
+        elif original_trade_data:
+            parsed_signal = self._parse_parsed_signal(original_trade_data.get('parsed_signal'))
+            coin_symbol = parsed_signal.get('coin_symbol', 'UNKNOWN')
+        else:
+            coin_symbol = 'UNKNOWN'
 
         # Determine action type and details
         if "stopped out" in content_lower or "stop loss" in content_lower or "stopped be" in content_lower:
@@ -180,7 +207,7 @@ class DiscordBot:
                 raise ValueError("AI parsing failed to return valid data.")
 
             # 2. Store the AI's parsed response in the database and set signal_type
-            updates = {"parsed_signal": parsed_data}
+            updates: Dict[str, Any] = {"parsed_signal": json.dumps(parsed_data) if isinstance(parsed_data, dict) else str(parsed_data)}
             position_type = parsed_data.get('position_type')
 
             if position_type:
@@ -196,23 +223,21 @@ class DiscordBot:
                 try:
                     entry_price_structured = float(entry_match.group(1).split('-')[0])
                     if entry_price_structured is not None:
-                        updates["entry_price"] = {"value": float(entry_price_structured)}
+                        updates["entry_price"] = float(entry_price_structured)
                 except Exception:
                     pass
 
             # --- Fetch binance_entry_price from Binance ---
             binance_entry_price = None
-            coin_symbol_for_binance = parsed_data.get('coin_symbol')
-            if coin_symbol_for_binance and isinstance(coin_symbol_for_binance, str):
-                try:
-                    from src.services.price_service import PriceService
-                    price_service = PriceService()
-                    binance_entry_price = await price_service.get_coin_price(coin_symbol_for_binance)
+            try:
+                coin_symbol_for_binance = parsed_data.get('coin_symbol')
+                if coin_symbol_for_binance:
+                    binance_entry_price = await self.price_service.get_coin_price(coin_symbol_for_binance)
                     if binance_entry_price is not None:
-                        updates["binance_entry_price"] = {"value": float(binance_entry_price)}
+                        updates["binance_entry_price"] = float(binance_entry_price)
                         logger.info(f"Fetched binance_entry_price for {coin_symbol_for_binance}: {binance_entry_price}")
-                except Exception as e:
-                    logger.warning(f"Could not fetch binance_entry_price: {e}")
+            except Exception as e:
+                logger.warning(f"Could not fetch binance_entry_price: {e}")
 
             await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
             logger.info(f"Successfully stored parsed signal, signal_type, entry_price, and binance_entry_price for trade ID: {trade_row['id']}")
@@ -280,60 +305,40 @@ class DiscordBot:
                     logger.error(f"Order failed for trade {trade_row['id']}: {error_msg}")
                     await self.db_manager.update_existing_trade(
                         trade_id=trade_row["id"],
-                        updates={
-                            "status": "FAILED",
-                            "binance_response": result_message
-                        }
+                        updates={"status": "FAILED", "binance_response": result_message}
                     )
                     return {"status": "error", "message": f"Order failed: {error_msg}"}
 
-                # 5. Update database with execution status, order ID, and Binance response
-                updates = {
-                    "status": "OPEN",
-                    "binance_response": result_message,
-                    "entry_price": engine_params['signal_price']
-                }
+                # Order was created successfully - use new method to preserve original response
+                logger.info(f"Order created successfully for trade {trade_row['id']}: {result_message}")
 
-                # Ensure the result is a dictionary before accessing keys
-                if isinstance(result_message, dict):
-                    updates["exchange_order_id"] = str(result_message.get('orderId', ''))
+                # Try to get order status, but don't fail if it doesn't work
+                status_response = None
+                sync_error = None
 
-                    # --- Robustly parse position size ---
-                    # For market orders, 'executedQty' is the source of truth.
-                    # For limit orders, 'origQty' is what we want, as 'executedQty' will be 0 until filled.
-                    size = float(result_message.get('executedQty', 0.0))
-                    if size == 0.0:
-                        size = float(result_message.get('origQty', 0.0))
+                if isinstance(result_message, dict) and 'orderId' in result_message:
+                    order_id = result_message['orderId']
+                    symbol = result_message.get('symbol', '')
+                    if symbol:
+                        try:
+                            # Try to get order status
+                            status_response = await self.trading_engine.binance_exchange.get_order_status(symbol, order_id)
+                        except Exception as e:
+                            sync_error = f"Could not get order status: {str(e)}"
+                            logger.warning(f"Status check failed for order {order_id}: {sync_error}")
 
-                    # For spot market orders, the size is in the 'fills' array
-                    if size == 0.0 and 'fills' in result_message and result_message['fills']:
-                        size = sum(float(fill.get('qty', 0.0)) for fill in result_message['fills'])
+                # Ensure result_message is a dict for the update method
+                original_response = result_message if isinstance(result_message, dict) else {"error": str(result_message)}
 
-                    updates["position_size"] = size
+                # Update trade with preserved original response
+                await self.db_manager.update_trade_with_original_response(
+                    trade_id=trade_row["id"],
+                    original_response=original_response,
+                    status_response=status_response,
+                    sync_error=sync_error
+                )
 
-                    # Also capture the true entry price from the fills if available (for market orders)
-                    if 'fills' in result_message and result_message['fills']:
-                        weighted_avg_price = sum(float(f['price']) * float(f['qty']) for f in result_message['fills']) / sum(float(f['qty']) for f in result_message['fills'])
-                        if weighted_avg_price > 0:
-                            updates["entry_price"] = weighted_avg_price
-                            logger.info(f"Updated entry price to {weighted_avg_price} from fills.")
-
-                    # Check if a stop loss order was also created
-                    if 'stop_loss_order_details' in result_message and isinstance(result_message['stop_loss_order_details'], dict):
-                        updates['stop_loss_order_id'] = str(result_message['stop_loss_order_details'].get('orderId', ''))
-
-                    # --- UNFILLED status check ---
-                    if 'orderId' in result_message and is_unfilled(result_message):
-                        updates["status"] = "UNFILLED"
-                        logger.info(f"Trade marked as UNFILLED for trade ID: {trade_row['id']}")
-
-                await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
-
-                logger.info(f"Trade processed successfully for trade ID: {trade_row['id']}. Message: {result_message}")
-                return {
-                    "status": "success",
-                    "message": f"Trade processed successfully: {result_message}"
-                }
+                return {"status": "success", "message": "Order created successfully"}
             else:
                 # 5. Update database with failed status and Binance response
                 updates = {
@@ -390,7 +395,7 @@ class DiscordBot:
                         "original_content": signal.content,
                         "processed_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         "original_trade_id": trade_row['id'],
-                        "coin_symbol": (trade_row.get('parsed_signal') or {}).get('coin_symbol'),
+                        "coin_symbol": self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol'),
                         "trader": signal.trader,
                         "note": "Skipped: original trade is FAILED or UNFILLED. No open position to update."
                     },
@@ -421,7 +426,7 @@ class DiscordBot:
                 if action_successful:
                     trade_updates["status"] = "CLOSED"
                     # --- Fetch binance_exit_price from Binance ---
-                    coin_symbol_exit = (trade_row.get('parsed_signal') or {}).get('coin_symbol')
+                    coin_symbol_exit = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
                     if coin_symbol_exit and isinstance(coin_symbol_exit, str):
                         try:
                             from src.services.price_service import PriceService
@@ -496,7 +501,7 @@ class DiscordBot:
 
                     if exit_price > 0 and qty_closed > 0:
                         # Safely get entry price and position type from the trade row
-                        entry_price = float((trade_row.get('parsed_signal') or {}).get('entry_prices', [0.0])[0])
+                        entry_price = float(self._parse_parsed_signal(trade_row.get('parsed_signal')).get('entry_prices', [0.0])[0])
                         position_type = trade_row.get('signal_type', 'UNKNOWN')
 
                         # Calculate PnL for this specific action
@@ -526,7 +531,7 @@ class DiscordBot:
                     "processed_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                     "action_determined": parsed_action,
                     "original_trade_id": trade_row['id'],
-                    "coin_symbol": parsed_action.get('coin_symbol', (trade_row.get('parsed_signal') or {}).get('coin_symbol')),
+                    "coin_symbol": parsed_action.get('coin_symbol', self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')),
                     "trader": signal.trader
                 },
                 "binance_response": binance_response_log # This will be None if no action was taken, or the dict from Binance
