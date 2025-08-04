@@ -145,29 +145,29 @@ class BinanceDatabaseSync:
             logger.error(f"Error fetching database trades: {e}")
             return []
 
+    def safe_parse_binance_response(self, binance_response: str) -> Dict:
+        """Safely parse binance_response field which is stored as text but may contain JSON."""
+        if isinstance(binance_response, dict):
+            return binance_response
+        elif isinstance(binance_response, str):
+            # Handle empty or invalid strings
+            if not binance_response or binance_response.strip() == '':
+                return {}
+
+            # Try to parse as JSON
+            try:
+                return json.loads(binance_response.strip())
+            except (json.JSONDecodeError, ValueError):
+                # If it's not valid JSON, treat it as a plain text error message
+                return {"error": binance_response.strip()}
+        else:
+            return {}
+
     def extract_order_info(self, binance_response: str) -> Tuple[Optional[str], Optional[str]]:
         """Extract orderId and symbol from binance_response JSON text"""
         try:
-            # Handle empty or None responses
-            if not binance_response or binance_response.strip() == '':
-                logger.debug(f"Empty binance_response: '{binance_response}'")
-                return None, None
-
-            # Clean the response string
-            cleaned_response = binance_response.strip()
-            if cleaned_response == '' or cleaned_response.lower() in ['null', 'none', 'undefined']:
-                logger.debug(f"Invalid binance_response value: '{binance_response}'")
-                return None, None
-
-            # Parse JSON from text field
-            if isinstance(cleaned_response, str):
-                try:
-                    response_data = json.loads(cleaned_response)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"JSON decode error for response '{cleaned_response[:100]}...': {e}")
-                    return None, None
-            else:
-                response_data = cleaned_response
+            # Use safe parsing
+            response_data = self.safe_parse_binance_response(binance_response)
 
             order_id = str(response_data.get('orderId', ''))
             symbol = response_data.get('symbol', '')
@@ -177,36 +177,18 @@ class BinanceDatabaseSync:
                 logger.debug(f"Successfully extracted orderId={order_id}, symbol={symbol}")
                 return order_id, symbol
             else:
-                logger.warning(f"Invalid order data: orderId={order_id}, symbol={symbol}")
+                logger.debug(f"No valid order data found in response")
                 return None, None
 
         except Exception as e:
-            logger.warning(f"Could not extract order info from response '{binance_response[:100]}...': {e}")
+            logger.warning(f"Could not extract order info from response: {e}")
             return None, None
 
     def extract_order_details(self, binance_response: str) -> Dict:
         """Extract comprehensive order details from binance_response JSON text"""
         try:
-            # Handle empty or None responses
-            if not binance_response or binance_response.strip() == '':
-                logger.debug(f"Empty binance_response: '{binance_response}'")
-                return {}
-
-            # Clean the response string
-            cleaned_response = binance_response.strip()
-            if cleaned_response == '' or cleaned_response.lower() in ['null', 'none', 'undefined']:
-                logger.debug(f"Invalid binance_response value: '{binance_response}'")
-                return {}
-
-            # Parse JSON from text field
-            if isinstance(cleaned_response, str):
-                try:
-                    response_data = json.loads(cleaned_response)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"JSON decode error for response '{cleaned_response[:100]}...': {e}")
-                    return {}
-            else:
-                response_data = cleaned_response
+            # Use safe parsing
+            response_data = self.safe_parse_binance_response(binance_response)
 
             # Extract all relevant fields with safe conversion
             return {
@@ -234,7 +216,7 @@ class BinanceDatabaseSync:
             }
 
         except Exception as e:
-            logger.warning(f"Could not extract order details from response '{binance_response[:100]}...': {e}")
+            logger.warning(f"Could not extract order details from response: {e}")
             return {}
 
     def calculate_position_pnl(self, position: Dict) -> Tuple[float, float]:

@@ -1,0 +1,20 @@
+{
+  "total_orders": 72,
+  "unique_symbols": 19,
+  "status_distribution": {
+    "FILLED": 42,
+    "CANCELED": 22,
+    "NEW": 8
+  },
+  "type_distribution": {
+    "LIMIT": 48,
+    "MARKET": 24
+  },
+  "side_distribution": {
+    "BUY": 45,
+    "SELL": 27
+  },
+  "open_orders": 8,
+  "filled_orders": 42,
+  "canceled_orders": 22
+}

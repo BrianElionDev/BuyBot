@@ -3,6 +3,7 @@ from fastapi import FastAPI
 import logging
 from discord_bot.discord_endpoint import router as discord_router
 import asyncio
+from contextlib import asynccontextmanager
 from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
     process_pending_trades,
@@ -25,19 +26,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    asyncio.create_task(trade_retry_scheduler())
+    yield
+    # Shutdown (if needed)
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application for the Discord service."""
-    app = FastAPI(title="Rubicon Trading Bot - Discord Service")
+    app = FastAPI(title="Rubicon Trading Bot - Discord Service", lifespan=lifespan)
 
     app.include_router(discord_router, prefix="/api/v1", tags=["discord"])
 
     @app.get("/")
     async def root():
         return {"message": "Discord Bot Service is running"}
-
-    @app.on_event("startup")
-    async def start_background_tasks():
-        asyncio.create_task(trade_retry_scheduler())
 
     return app
 

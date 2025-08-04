@@ -1,0 +1,26 @@
+{
+  "total_trades": 63,
+  "unique_symbols": 27,
+  "date_range": {
+    "start": "2025-07-30T11:44:05.110000",
+    "end": "2025-08-04T06:58:34.928000"
+  },
+  "total_volume_usdt": 14509.604919999998,
+  "total_commission": 5.36102337,
+  "side_distribution": {
+    "BUY": 41,
+    "SELL": 22
+  },
+  "symbol_distribution": {
+    "ETHUSDT": 13,
+    "BTCUSDT": 10,
+    "SPXUSDT": 4,
+    "TONUSDT": 3,
+    "HYPEUSDT": 3,
+    "ICNTUSDT": 3,
+    "WOOUSDT": 2,
+    "JTOUSDT": 2,
+    "CHILLGUYUSDT": 2,
+    "SOLUSDT": 2
+  }
+}
