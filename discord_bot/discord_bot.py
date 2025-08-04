@@ -182,7 +182,11 @@ class DiscordBot:
             # 2. Store the AI's parsed response in the database and set signal_type
             updates = {"parsed_signal": parsed_data}
             position_type = parsed_data.get('position_type')
-
+            if self.binance_exchange.has_open_futures_postion(f"{parsed_data.get('coin_symbol')}USDT"):
+                logger.info("There exist aready an open trade for this coin symbol, setting position_type to 'FUTURES'.")
+                updates["binance_response"] = f"We have already open postions for: {f"{parsed_data.get('coin_symbol')}USDT"}. Skipping this trade!"
+                await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
+                return {"status": "error", "message": "We have already open postions for this coin symbol. Skipping this trade!"}
             if position_type:
                 updates["signal_type"] = position_type
                 logger.info(f"Extracted signal_type '{position_type}' from parsed signal for trade ID: {trade_row['id']}")
