@@ -3,7 +3,10 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from discord_bot.database import DatabaseManager
+# Import DatabaseManager type for type hints only
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from discord_bot.database import DatabaseManager
 from src.exchange.binance_exchange import BinanceExchange
 from src.services.price_service import PriceService
 
@@ -24,7 +27,7 @@ class TradingEngine:
     """
     The core logic for processing signals and executing trades.
     """
-    def __init__(self, price_service: PriceService, binance_exchange: BinanceExchange, db_manager: DatabaseManager):
+    def __init__(self, price_service: PriceService, binance_exchange: BinanceExchange, db_manager: 'DatabaseManager'):
         self.price_service = price_service
         self.binance_exchange = binance_exchange
         self.db_manager = db_manager
@@ -271,19 +274,34 @@ class TradingEngine:
                 if 'orderId' in order_result:
                     logger.info(f"Order created successfully: {order_result['orderId']}")
 
-                    # Create TP/SL orders as separate orders after position opening
-                    tp_sl_orders = await self._create_tp_sl_orders(
-                        trading_pair=trading_pair,
-                        position_type=position_type,
-                        position_size=order_result.get('origQty', trade_amount),
-                        take_profits=take_profits,
-                        stop_loss=stop_loss
-                    )
+                    # Handle TP/SL orders based on order type
+                    if order_type.upper() == 'MARKET':
+                        # For MARKET orders, create TP/SL immediately since position is opened instantly
+                        logger.info(f"Creating TP/SL orders immediately for MARKET order")
+                        tp_sl_orders = await self._create_tp_sl_orders(
+                            trading_pair=trading_pair,
+                            position_type=position_type,
+                            position_size=order_result.get('origQty', trade_amount),
+                            take_profits=take_profits,
+                            stop_loss=stop_loss
+                        )
 
-                    # Add TP/SL order details to the main order result
-                    if tp_sl_orders:
-                        order_result['tp_sl_orders'] = tp_sl_orders
-                        logger.info(f"Created {len(tp_sl_orders)} TP/SL orders for {trading_pair}")
+                        # Add TP/SL order details to the main order result
+                        if tp_sl_orders:
+                            order_result['tp_sl_orders'] = tp_sl_orders
+                            logger.info(f"Created {len(tp_sl_orders)} TP/SL orders for {trading_pair}")
+
+                    elif order_type.upper() == 'LIMIT':
+                        # For LIMIT orders, store TP/SL parameters for later creation after fill
+                        logger.info(f"LIMIT order placed - TP/SL orders will be created after order is filled")
+                        order_result['pending_tp_sl'] = {
+                            'trading_pair': trading_pair,
+                            'position_type': position_type,
+                            'position_size': order_result.get('origQty', trade_amount),
+                            'take_profits': take_profits,
+                            'stop_loss': stop_loss
+                        }
+                        logger.info(f"Stored TP/SL parameters for post-fill creation")
 
                     # Return success - order status will be checked separately in Discord bot
                     return True, order_result
@@ -706,6 +724,59 @@ class TradingEngine:
         except Exception as e:
             logger.error(f"Error updating stop loss: {e}", exc_info=True)
             return False, {"error": f"Stop loss update failed: {str(e)}"}
+
+    async def create_pending_tp_sl_orders(self, trade_data: Dict) -> Tuple[bool, List[Dict]]:
+        """
+        Create TP/SL orders for a LIMIT order that has been filled.
+        This method is called when a LIMIT order status changes to FILLED.
+        """
+        try:
+            # Check if there are pending TP/SL parameters
+            binance_response = trade_data.get('binance_response')
+            if isinstance(binance_response, str):
+                import json
+                try:
+                    binance_response = json.loads(binance_response)
+                except Exception:
+                    binance_response = {}
+
+            pending_tp_sl = binance_response.get('pending_tp_sl') if binance_response else None
+            if not pending_tp_sl:
+                logger.info("No pending TP/SL parameters found for trade")
+                return True, []
+
+            # Extract parameters
+            trading_pair = pending_tp_sl.get('trading_pair')
+            position_type = pending_tp_sl.get('position_type')
+            position_size = float(pending_tp_sl.get('position_size', 0))
+            take_profits = pending_tp_sl.get('take_profits')
+            stop_loss = pending_tp_sl.get('stop_loss')
+
+            if not trading_pair or not position_type or position_size <= 0:
+                logger.error(f"Invalid pending TP/SL parameters: {pending_tp_sl}")
+                return False, []
+
+            logger.info(f"Creating TP/SL orders for filled LIMIT order: {trading_pair}")
+
+            # Create TP/SL orders
+            tp_sl_orders = await self._create_tp_sl_orders(
+                trading_pair=trading_pair,
+                position_type=position_type,
+                position_size=position_size,
+                take_profits=take_profits,
+                stop_loss=stop_loss
+            )
+
+            if tp_sl_orders:
+                logger.info(f"Successfully created {len(tp_sl_orders)} TP/SL orders for {trading_pair}")
+                return True, tp_sl_orders
+            else:
+                logger.warning(f"No TP/SL orders were created for {trading_pair}")
+                return True, []
+
+        except Exception as e:
+            logger.error(f"Error creating pending TP/SL orders: {e}", exc_info=True)
+            return False, []
 
     async def close(self):
         """Close all exchange connections."""

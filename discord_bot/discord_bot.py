@@ -10,9 +10,9 @@ import uuid
 import json
 
 from src.bot.trading_engine import TradingEngine
-from .discord_signal_parser import DiscordSignalParser, client
-from .models import InitialDiscordSignal, DiscordUpdateSignal
-from .database import DatabaseManager
+from discord_bot.discord_signal_parser import DiscordSignalParser, client
+from discord_bot.models import InitialDiscordSignal, DiscordUpdateSignal
+from discord_bot.database import DatabaseManager
 from config import settings as config
 from supabase import create_client, Client
 from src.services.price_service import PriceService
