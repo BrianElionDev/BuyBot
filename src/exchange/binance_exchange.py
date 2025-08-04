@@ -398,6 +398,24 @@ class BinanceExchange:
         except Exception as e:
             logger.error(f"An unexpected error occurred while fetching position information: {e}")
             return []
+    async def has_open_futures_postion(self, pair: str) -> bool:
+        """
+        Retrieves information about futures positions.
+        """
+        await self._init_client()
+        assert self.client is not None
+        try:
+            positions = await self.client.futures_position_information()
+            for position in positions:
+                if position['symbol'] == pair and float(position['positionAmt']) != 0:
+                    logger.info(f"Open position found for {pair}")
+                    return True
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get futures position information: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching position information: {e}")
+            return False
 
     async def get_spot_symbol_filters(self, symbol: str) -> Optional[Dict]:
         """

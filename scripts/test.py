@@ -68,14 +68,10 @@ async def test_price_thresholds():
         logging.error("BINANCE_API_KEY and BINANCE_API_SECRET must be set")
         return False
 
-    # Initialize components
-    price_service = PriceService()
     binance_exchange = BinanceExchange(api_key, api_secret, is_testnet)
-    price_service = PriceService()
-    currentPrice =await binance_exchange.get_futures_mark_price("SQDUSDT")
-    tokenPrice = await price_service.get_coin_price("SQD")
-    print(f"Current Price in coinGecko: {tokenPrice}")
-    print("🔍Current price binance: \n",currentPrice )
+    hasOpenPosition =await binance_exchange.has_open_futures_postion("ETHUSDT")
+    
+    print("🔍Has open postion for token pair: \n",hasOpenPosition )
     return True
      
 async def main():   
