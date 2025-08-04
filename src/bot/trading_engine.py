@@ -31,6 +31,22 @@ class TradingEngine:
         self.trade_cooldowns = {}
         logger.info("TradingEngine initialized.")
 
+    def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
+        """
+        Safely parse parsed_signal data which can be either a dict or JSON string.
+        """
+        if isinstance(parsed_signal_data, dict):
+            return parsed_signal_data
+        elif isinstance(parsed_signal_data, str):
+            try:
+                return json.loads(parsed_signal_data)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse parsed_signal JSON: {parsed_signal_data}")
+                return {}
+        else:
+            logger.warning(f"Unexpected parsed_signal type: {type(parsed_signal_data)}")
+            return {}
+
     async def process_signal(
         self,
         coin_symbol: str,
@@ -243,162 +259,200 @@ class TradingEngine:
                     price=signal_price if order_type == 'LIMIT' else None,
                     client_order_id=client_order_id
                 )
-                # Auto-cancel LIMIT order after timeout if not filled
-                if order_type == 'LIMIT' and order_result and 'orderId' in order_result:
-                    order_id = order_result['orderId']
-                    await asyncio.sleep(10)
-                    status = await self.binance_exchange.get_order_status(trading_pair, order_id)
-                    if status is None:
-                        logger.error(f"Could not get status for order {order_id}")
-                        return False, {"error": "Could not get order status"}
 
-                    executed_qty = float(status.get('executedQty', 0))
-                    orig_qty = float(status.get('origQty', trade_amount))
-                    if status.get('status') == 'NEW':
-                        logger.warning(f"LIMIT order {order_id} for {trading_pair} not filled after 10s. Cancelling.")
-                        await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
-                        logger.info(f"Retrying as MARKET order for {trading_pair}.")
-                        order_result = await self.binance_exchange.create_futures_order(
-                            pair=trading_pair,
-                            side=entry_side,
-                            order_type_market='MARKET',
-                            amount=trade_amount,
-                            client_order_id=client_order_id
-                        )
-                    elif executed_qty > 0 and executed_qty < orig_qty:
-                        logger.info(f"Order {order_id} for {trading_pair} partially filled: {executed_qty}/{orig_qty}")
-                        # Update trade status to PARTIALLY_FILLED (add DB update here)
-                    elif status.get('status') == 'CANCELED' and executed_qty > 0:
-                        logger.info(f"Order {order_id} for {trading_pair} canceled after partial fill: {executed_qty}/{orig_qty}")
-                        # Update trade status to PARTIALLY_CANCELED (add DB update here)
+                # Check if order was created successfully
+                if 'orderId' in order_result:
+                    logger.info(f"Order created successfully: {order_result['orderId']}")
+
+                    # Create TP/SL orders as separate orders after position opening
+                    tp_sl_orders = await self._create_tp_sl_orders(
+                        trading_pair=trading_pair,
+                        position_type=position_type,
+                        position_size=order_result.get('origQty', trade_amount),
+                        take_profits=take_profits,
+                        stop_loss=stop_loss
+                    )
+
+                    # Add TP/SL order details to the main order result
+                    if tp_sl_orders:
+                        order_result['tp_sl_orders'] = tp_sl_orders
+                        logger.info(f"Created {len(tp_sl_orders)} TP/SL orders for {trading_pair}")
+
+                    # Return success - order status will be checked separately in Discord bot
+                    return True, order_result
+                elif 'error' in order_result:
+                    logger.error(f"Order creation failed: {order_result['error']}")
+                    return False, order_result
+                else:
+                    logger.warning(f"Unexpected order result: {order_result}")
+                    return False, {"error": "Unexpected order result"}
             else:
+                # Spot trading logic (if needed)
                 order_result = await self.binance_exchange.create_order(
                     pair=trading_pair,
                     side=SIDE_BUY,
                     order_type_market=ORDER_TYPE_MARKET,
                     amount=trade_amount
                 )
+
+                if 'orderId' in order_result:
+                    logger.info(f"Spot order created successfully: {order_result['orderId']}")
+                    return True, order_result
+                else:
+                    logger.error(f"Spot order creation failed: {order_result}")
+                    return False, order_result
+
         except Exception as e:
             logger.error(f"Order placement failed for {trading_pair}: {e}", exc_info=True)
-            # Optionally send alert here
-            if "network" in str(e).lower() or "timeout" in str(e).lower():
-                # Update trade status to RETRY_PENDING (add DB update here)
-                pass
             return False, {"error": f"Order placement failed: {str(e)}"}
 
-        # --- Log unfilled orders ---
-        if order_result and 'orderId' in order_result and float(order_result.get('executedQty', 0)) == 0:
-            logger.warning(f"Order {order_result['orderId']} for {trading_pair} was not filled. Details: {order_result}")
-            # Optionally send alert here
+        # --- End of order placement logic ---
+        # Note: Order status checking is now handled separately in the Discord bot
+        # to prevent API permission issues from affecting order creation
 
-        # Check price difference threshold
-        threshold = price_threshold_override if price_threshold_override is not None else config.PRICE_THRESHOLD
+        # The order placement logic above should have already returned True/False
+        # If we reach here, something went wrong
+        logger.error(f"Unexpected execution flow for {trading_pair} - order placement should have returned")
+        return False, {"error": "Unexpected execution flow"}
 
-        # Use dynamic thresholds based on coin type
-        memecoin_symbols = ['PEPE', 'BONK', 'DOGE', 'SHIB', 'FLOKI', 'PENGU', 'H', 'TOSHI', 'TURBO', 'MOG', 'FARTCOIN', 'PUMP', 'PUMPFUN']
-        low_liquidity_symbols = ['ICNT', 'SPX', 'SYRUP', 'VIC', 'SPEC', 'HAEDAL', 'ZORA', 'CUDI', 'BERA', 'ALU', 'INIT', 'XLM', 'ADA', 'REZ', 'SEI', 'VIRTUAL', 'ES', 'HBAR', 'ONDO', 'LAUNCHCOIN', 'PNUT', 'MAV', 'PLUME']
+    async def _create_tp_sl_orders(self, trading_pair: str, position_type: str, position_size: float,
+                                 take_profits: Optional[List[float]] = None, stop_loss: Optional[Union[float, str]] = None) -> List[Dict]:
+        """
+        Create Take Profit and Stop Loss orders as separate orders after position opening.
+        This follows Binance Futures API requirements where TP/SL must be separate orders.
+        """
+        tp_sl_orders = []
 
-        if coin_symbol.upper() in memecoin_symbols:
-            threshold = max(threshold, config.MEMECOIN_PRICE_THRESHOLD)
-            logger.info(f"Using memecoin threshold: {threshold}% for {coin_symbol}")
-        elif coin_symbol.upper() in low_liquidity_symbols:
-            threshold = max(threshold, config.LOW_LIQUIDITY_PRICE_THRESHOLD)
-            logger.info(f"Using low-liquidity threshold: {threshold}% for {coin_symbol}")
-
-        price_diff = abs(current_price - signal_price) / signal_price * 100
-        if price_diff > threshold:
-            # For high price differences, try using market order instead of rejecting
-            if order_type == 'LIMIT':
-                logger.warning(f"Price difference high ({price_diff:.2f}%) for {coin_symbol}. Switching to MARKET order.")
-                order_type = 'MARKET'
-                # Continue with market order instead of rejecting
-            else:
-                reason = f"Price difference too high: {price_diff:.2f}% (threshold: {threshold}%)"
-                logger.warning(reason)
-                return False, reason
-
-        # --- Calculate Trade Amount ---
-        trade_amount = 0.0
         try:
-            # REMOVE: USDT/USDM balance logic
-            trade_amount = config.TRADE_AMOUNT / current_price
-            logger.info(f"Using fixed trade amount: {trade_amount} {coin_symbol} (${config.TRADE_AMOUNT:.2f})")
+            # Determine the side for TP/SL orders based on position type
+            if position_type.upper() == 'LONG':
+                tp_sl_side = SIDE_SELL  # Sell to close long position
+            elif position_type.upper() == 'SHORT':
+                tp_sl_side = SIDE_BUY   # Buy to close short position
+            else:
+                logger.warning(f"Unknown position type {position_type} for TP/SL orders")
+                return tp_sl_orders
 
-            # Apply quantity multiplier if specified (for memecoins)
-            if quantity_multiplier and quantity_multiplier > 1:
-                trade_amount *= quantity_multiplier
-                logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
+            # Create Take Profit orders
+            if take_profits and isinstance(take_profits, list):
+                for i, tp_price in enumerate(take_profits):
+                    try:
+                        tp_price_float = float(tp_price)
+                        tp_order = await self.binance_exchange.create_futures_order(
+                            pair=trading_pair,
+                            side=tp_sl_side,
+                            order_type_market='TAKE_PROFIT_MARKET',
+                            amount=position_size,
+                            stop_price=tp_price_float
+                        )
+
+                        if tp_order and 'orderId' in tp_order:
+                            tp_order['order_type'] = 'TAKE_PROFIT'
+                            tp_order['tp_level'] = i + 1
+                            tp_sl_orders.append(tp_order)
+                            logger.info(f"Created TP order {i+1} at {tp_price_float} for {trading_pair}")
+                        else:
+                            logger.error(f"Failed to create TP order {i+1}: {tp_order}")
+                    except Exception as e:
+                        logger.error(f"Error creating TP order {i+1} at {tp_price}: {e}")
+
+            # Create Stop Loss order
+            if stop_loss:
+                try:
+                    sl_price_float = float(stop_loss)
+                    sl_order = await self.binance_exchange.create_futures_order(
+                        pair=trading_pair,
+                        side=tp_sl_side,
+                        order_type_market='STOP_MARKET',
+                        amount=position_size,
+                        stop_price=sl_price_float
+                    )
+
+                    if sl_order and 'orderId' in sl_order:
+                        sl_order['order_type'] = 'STOP_LOSS'
+                        tp_sl_orders.append(sl_order)
+                        logger.info(f"Created SL order at {sl_price_float} for {trading_pair}")
+                    else:
+                        logger.error(f"Failed to create SL order: {sl_order}")
+                except Exception as e:
+                    logger.error(f"Error creating SL order at {stop_loss}: {e}")
+
+            return tp_sl_orders
 
         except Exception as e:
-            reason = f"Failed to calculate trade amount: {e}"
-            logger.error(reason, exc_info=True)
-            return False, reason
+            logger.error(f"Error in _create_tp_sl_orders for {trading_pair}: {e}")
+            return tp_sl_orders
 
-        if trade_amount <= 0:
-            return False, "Calculated trade amount is zero or negative."
-        # --- End Calculate Trade Amount ---
+    async def update_tp_sl_orders(self, trading_pair: str, position_type: str,
+                                new_take_profits: Optional[List[float]] = None,
+                                new_stop_loss: Optional[float] = None) -> Tuple[bool, List[Dict]]:
+        """
+        Update TP/SL orders by canceling existing ones and creating new ones.
+        This follows Binance Futures API requirements where TP/SL orders cannot be updated directly.
+        """
+        try:
+            # 1. Cancel existing TP/SL orders for the symbol
+            logger.info(f"Canceling existing TP/SL orders for {trading_pair}")
+            cancel_result = await self.binance_exchange.cancel_all_futures_orders(trading_pair)
 
-        #----Calculate trade quantity ----
-        quantities = await self.binance_exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
-        minQuantity = float(quantities['min_quantity'])
-        maxQuantity = float(quantities['max_quantity'])
-        print(f"Min Quantity: {minQuantity}, Max Quantity: {maxQuantity}")
-        trade_amount = max(minQuantity, min(maxQuantity, trade_amount))
-        print(f"Adjusted trade amount: {trade_amount}")
-        order_result = {}
-        if is_futures:
-            entry_side = SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL
-            order_result = await self.binance_exchange.create_futures_order(
-                pair=trading_pair,
-                side=entry_side,
-                order_type_market=order_type,
-                amount=trade_amount,
-                price=signal_price if order_type == 'LIMIT' else None,
-                client_order_id=client_order_id
+            if not cancel_result:
+                logger.warning(f"Failed to cancel existing orders for {trading_pair}")
+
+            # 2. Get current position size
+            positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
+            position_size = 0.0
+
+            for position in positions:
+                if position.get('symbol') == trading_pair:
+                    position_size = abs(float(position.get('positionAmt', 0)))
+                    break
+
+            if position_size == 0:
+                logger.warning(f"No open position found for {trading_pair}")
+                return False, []
+
+            # 3. Create new TP/SL orders
+            new_orders = await self._create_tp_sl_orders(
+                trading_pair=trading_pair,
+                position_type=position_type,
+                position_size=position_size,
+                take_profits=new_take_profits,
+                stop_loss=new_stop_loss
             )
 
-            if order_result and 'orderId' in order_result and stop_loss:
-                try:
-                    sl_price = float(stop_loss)
-                    sl_order_result = await self.binance_exchange.create_futures_order(
-                        pair=trading_pair,
-                        side=SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY,
-                        order_type_market=FUTURE_ORDER_TYPE_STOP_MARKET,
-                        stop_price=sl_price,
-                        amount=order_result.get('origQty', trade_amount) if order_result else trade_amount,
-                        reduce_only=True
-                    )
-                    if sl_order_result and 'orderId' in sl_order_result:
-                        logger.info(f"Successfully created stop-loss order: {sl_order_result}")
-                        if order_result:
-                            order_result['stop_loss_order_details'] = sl_order_result
-                    else:
-                        logger.error(f"Failed to create stop-loss order: {sl_order_result}. Main trade remains open.")
-                except (ValueError, TypeError):
-                    logger.warning(f"Could not determine a valid numerical stop loss price from '{stop_loss}'. Skipping SL order creation.")
-        else: # Spot
-            order_result = await self.binance_exchange.create_order(
-                pair=trading_pair,
-                side=SIDE_BUY,
-                order_type_market=ORDER_TYPE_MARKET,
-                amount=trade_amount
-            )
+            if new_orders:
+                logger.info(f"Successfully updated TP/SL orders for {trading_pair}: {len(new_orders)} orders")
+                return True, new_orders
+            else:
+                logger.warning(f"No new TP/SL orders created for {trading_pair}")
+                return False, []
 
-        if order_result and 'orderId' in order_result:
-            self.trade_cooldowns[cooldown_key] = time.time()
-            logger.info(f"CEX trade successful for {coin_symbol}: {order_result}")
-            return True, order_result
-        else:
-            reason = f"CEX trade failed for {coin_symbol}. Response: {order_result}"
-            logger.error(reason)
-            return False, order_result
+        except Exception as e:
+            logger.error(f"Error updating TP/SL orders for {trading_pair}: {e}")
+            return False, []
+
+    async def cancel_tp_sl_orders(self, trading_pair: str) -> bool:
+        """
+        Cancel all TP/SL orders for a specific symbol.
+        """
+        try:
+            result = await self.binance_exchange.cancel_all_futures_orders(trading_pair)
+            if result:
+                logger.info(f"Successfully canceled all TP/SL orders for {trading_pair}")
+            else:
+                logger.warning(f"Failed to cancel TP/SL orders for {trading_pair}")
+            return result
+        except Exception as e:
+            logger.error(f"Error canceling TP/SL orders for {trading_pair}: {e}")
+            return False
 
     async def cancel_order(self, active_trade: Dict) -> Tuple[bool, Dict]:
         """
         Cancels an open order associated with a trade.
         """
         try:
-            coin_symbol = (active_trade.get("parsed_signal") or {}).get("coin_symbol")
+            parsed_signal = self._parse_parsed_signal(active_trade.get("parsed_signal"))
+            coin_symbol = parsed_signal.get("coin_symbol")
             order_id = active_trade.get("exchange_order_id")
 
             if not coin_symbol or not order_id:
@@ -458,8 +512,9 @@ class TradingEngine:
                 binance_response = {}
         exchange_order_id = (active_trade.get('exchange_order_id') or (binance_response.get('orderId') if binance_response else None))
         stop_loss_order_id = (active_trade.get('stop_loss_order_id') or ((binance_response.get('stop_loss_order_details') or {}).get('orderId') if binance_response else None))
-        coin_symbol = ((active_trade.get('parsed_signal') or {}).get('coin_symbol') or active_trade.get('coin_symbol'))
-        position_type = ((active_trade.get('parsed_signal') or {}).get('position_type') or active_trade.get('signal_type'))
+        parsed_signal = self._parse_parsed_signal(active_trade.get('parsed_signal'))
+        coin_symbol = parsed_signal.get('coin_symbol') or active_trade.get('coin_symbol')
+        position_type = parsed_signal.get('position_type') or active_trade.get('signal_type')
         entry_price = active_trade.get('entry_price')
         if not coin_symbol or not position_type:
             logger.error(f"Missing coin_symbol or position_type for trade {trade_id}")
@@ -560,7 +615,7 @@ class TradingEngine:
         Closes a percentage of an open futures position at the current market price.
         """
         try:
-            parsed_signal = active_trade.get("parsed_signal") or {}
+            parsed_signal = self._parse_parsed_signal(active_trade.get("parsed_signal"))
             coin_symbol = parsed_signal.get("coin_symbol")
             position_type = parsed_signal.get("position_type", "SPOT").upper()
             position_size = float(active_trade.get("position_size") or 0.0)
@@ -608,7 +663,7 @@ class TradingEngine:
         Update stop loss for an active position.
         """
         try:
-            parsed_signal = active_trade.get("parsed_signal") or {}
+            parsed_signal = self._parse_parsed_signal(active_trade.get("parsed_signal"))
             coin_symbol = parsed_signal.get("coin_symbol")
             position_type = parsed_signal.get("position_type", "SPOT")
             position_size = float(active_trade.get("position_size") or 0.0)

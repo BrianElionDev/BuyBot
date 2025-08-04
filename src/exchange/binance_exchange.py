@@ -199,10 +199,26 @@ class BinanceExchange:
             logger.info(f"Successfully cancelled order {order_id} for {pair}.")
             return True, response
         except BinanceAPIException as e:
-            # It's common for an order to be already filled or cancelled, which can raise an error.
-            # We log these as warnings because it's often not a critical failure.
             logger.warning(f"Could not cancel order {order_id} for {pair} (it may already be filled/cancelled): {e}")
+            return False, {"error": str(e), "code": e.code}
+        except Exception as e:
+            logger.error(f"Unexpected error cancelling order {order_id} for {pair}: {e}")
             return False, {"error": str(e)}
+
+    async def cancel_all_futures_orders(self, pair: str) -> bool:
+        """Cancels all open futures orders for a specific symbol."""
+        await self._init_client()
+        assert self.client is not None
+        try:
+            response = await self.client.futures_cancel_all_open_orders(symbol=pair)
+            logger.info(f"Successfully cancelled all open orders for {pair}.")
+            return True
+        except BinanceAPIException as e:
+            logger.warning(f"Could not cancel all orders for {pair}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error cancelling all orders for {pair}: {e}")
+            return False
 
     async def get_all_spot_symbols(self) -> List[str]:
         """Fetches all valid SPOT symbols from Binance."""
@@ -323,7 +339,7 @@ class BinanceExchange:
             )
             return order
         except BinanceAPIException as e:
-            logger.error(f"Failed to get order status: {e}")
+            logger.error(f"Failed to get: {e}")
             return None
 
     async def cancel_order(self, pair: str, order_id: str) -> bool:
