@@ -975,7 +975,7 @@ async def backfill_trades_from_binance_history(bot, supabase, days: int = 30, sy
                 )
                 all_binance_orders.extend(chunk_orders)
 
-                await asyncio.sleep(0.5)  # Rate limiting between chunks
+                await asyncio.sleep(0.5)
 
             except Exception as e:
                 logging.error(f"Error fetching chunk data: {e}")

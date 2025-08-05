@@ -1,4 +1,4 @@
-symbol,id,orderId,side,price,qty,realizedPnl,quoteQty,commission,commissionAsset,time,positionSide,maker,buyer
+symbol,id,,side,price,qty,realizedPnl,quoteQty,commission,commissionAsset,time,positionSide,maker,buyer
 BANANAUSDT,500854,7908661,BUY,25.9450000,1.3,1.44040000,33.72850000,0.00674570,USDT,1753875845110,BOTH,True,True
 CUSDT,11299,13683,SELL,0.3260000,611,-1.39586151,199.1860000,0.03983720,USDT,1753876035007,BOTH,True,False
 BTCUSDT,379374319,5503885019,BUY,117673.20,0.001,0,117.67320,0.04706928,USDT,1753876767972,BOTH,False,True
