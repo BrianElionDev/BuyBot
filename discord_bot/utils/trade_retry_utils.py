@@ -32,6 +32,24 @@ def initialize_clients() -> tuple[Optional[DiscordBot], Optional[Client]]:
     bot = DiscordBot()
     return bot, supabase
 
+def safe_parse_sync_order_response(sync_order_response: str) -> dict:
+    """Safely parse sync_order_response field which is stored as text but may contain JSON."""
+    if isinstance(sync_order_response, dict):
+        return sync_order_response
+    elif isinstance(sync_order_response, str):
+        # Handle empty or invalid strings
+        if not sync_order_response or sync_order_response.strip() == '':
+            return {}
+
+        # Try to parse as JSON
+        try:
+            return json.loads(sync_order_response.strip())
+        except (json.JSONDecodeError, ValueError):
+            # If it's not valid JSON, treat it as a plain text error message
+            return {"error": sync_order_response.strip()}
+    else:
+        return {}
+
 def safe_parse_binance_response(binance_response: str) -> dict:
     """Safely parse binance_response field which is stored as text but may contain JSON."""
     if isinstance(binance_response, dict):
@@ -248,8 +266,8 @@ async def sync_trade_statuses_with_binance(bot: DiscordBot, supabase: Client):
         binance_orders = await bot.binance_exchange.get_all_open_futures_orders()
         binance_positions = await bot.binance_exchange.get_futures_position_information()
 
-        # Get database trades from last 48 hours
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+        # Get database trades from last 7 days (optimized for performance)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         cutoff_iso = cutoff.isoformat()
         response = supabase.from_("trades").select("*").gte("createdAt", cutoff_iso).execute()
         db_trades = response.data or []
@@ -421,8 +439,16 @@ async def sync_orders_to_database_enhanced(bot: DiscordBot, supabase: Client, bi
     # Create lookup for database trades by orderId
     db_trades_by_order_id = {}
     for trade in db_trades:
+        # Try sync_order_response first, then fallback to binance_response
+        sync_order_response = trade.get('sync_order_response', '')
         binance_response = trade.get('binance_response', '')
-        if binance_response:
+
+        if sync_order_response:
+            order_details = extract_order_details_from_response(sync_order_response)
+            order_id = order_details.get('orderId')
+            if order_id:
+                db_trades_by_order_id[str(order_id)] = trade
+        elif binance_response:
             order_details = extract_order_details_from_response(binance_response)
             order_id = order_details.get('orderId')
             if order_id:
@@ -439,13 +465,14 @@ async def sync_orders_to_database_enhanced(bot: DiscordBot, supabase: Client, bi
         if order_id in db_trades_by_order_id:
             db_trade = db_trades_by_order_id[order_id]
             try:
-                # Update order information
+                # Update order information with sync_order_response
                 update_data = {
                     'order_status': order.get('status'),
                     'executed_qty': float(order.get('executedQty', 0)),
                     'avg_price': float(order.get('avgPrice', 0)),
                     'last_order_sync': current_time,
-                    'updated_at': current_time
+                    'updated_at': current_time,
+                    'sync_order_response': json.dumps(order)
                 }
 
                 supabase.table("trades").update(update_data).eq("id", db_trade['id']).execute()
@@ -668,7 +695,7 @@ async def update_trade_as_canceled(supabase: Client, trade_id: int, status: str)
     now = datetime.now(timezone.utc).isoformat()
     updates = {
         "status": "CANCELED",
-        "binance_response": f"Order canceled on {now}",
+        "sync_order_response": f"Order canceled on {now}",
         "updated_at": now
     }
     await update_trade_status(supabase, trade_id, updates)
@@ -678,7 +705,7 @@ async def update_trade_as_expired(supabase: Client, trade_id: int, status: str):
     now = datetime.now(timezone.utc).isoformat()
     updates = {
         "status": "EXPIRED",
-        "binance_response": f"Order expired on {now}",
+        "sync_order_response": f"Order expired on {now}",
         "updated_at": now
     }
     await update_trade_status(supabase, trade_id, updates)
@@ -688,7 +715,7 @@ async def update_trade_as_closed(supabase: Client, trade_id: int, reason: str):
     now = datetime.now(timezone.utc).isoformat()
     updates = {
         "status": "CLOSED",
-        "binance_response": f"Trade closed: {reason} on {now}",
+        "sync_order_response": f"Trade closed: {reason} on {now}",
         "updated_at": now
     }
     await update_trade_status(supabase, trade_id, updates)
@@ -760,7 +787,7 @@ async def update_trade_with_exit_data(supabase: Client, trade_id: int, exit_pric
             "exit_price": exit_price,
             "pnl": pnl_value,
             "status": "CLOSED",
-            "binance_response": f"Position closed: {exit_reason} at {exit_price} (PnL: {pnl_value:.2f})",
+            "sync_order_response": f"Position closed: {exit_reason} at {exit_price} (PnL: {pnl_value:.2f})",
             "updated_at": now
         }
 
@@ -844,24 +871,38 @@ async def sync_pnl_data_with_binance(bot, supabase):
                 # Process each trade for this symbol
                 for trade in symbol_trades:
                     try:
-                        # Extract orderId from binance_response
+                        # Extract orderId from sync_order_response or binance_response
+                        sync_order_response = trade.get('sync_order_response', '')
                         binance_response = trade.get('binance_response', '')
                         order_id = None
 
-                        # Try to extract orderId from binance_response
-                        if isinstance(binance_response, dict) and 'orderId' in binance_response:
-                            order_id = binance_response['orderId']
-                        elif isinstance(binance_response, str):
+                        # Try sync_order_response first, then fallback to binance_response
+                        if isinstance(sync_order_response, dict) and 'orderId' in sync_order_response:
+                            order_id = sync_order_response['orderId']
+                        elif isinstance(sync_order_response, str):
                             # Try to parse JSON response
                             try:
                                 import json
-                                response_data = json.loads(binance_response)
+                                response_data = json.loads(sync_order_response)
                                 order_id = response_data.get('orderId')
                             except:
                                 pass
 
+                        # Fallback to binance_response if sync_order_response doesn't have orderId
                         if not order_id:
-                            logging.warning(f"Trade {trade['id']} missing orderId in binance_response, skipping")
+                            if isinstance(binance_response, dict) and 'orderId' in binance_response:
+                                order_id = binance_response['orderId']
+                            elif isinstance(binance_response, str):
+                                # Try to parse JSON response
+                                try:
+                                    import json
+                                    response_data = json.loads(binance_response)
+                                    order_id = response_data.get('orderId')
+                                except:
+                                    pass
+
+                        if not order_id:
+                            logging.warning(f"Trade {trade['id']} missing orderId in sync_order_response or binance_response, skipping")
                             continue
 
                         # Find matching trade by orderId

@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 import uuid
 import json
 
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 from src.bot.trading_engine import TradingEngine
 from discord_bot.discord_signal_parser import DiscordSignalParser, client
 from discord_bot.models import InitialDiscordSignal, DiscordUpdateSignal
@@ -17,6 +21,7 @@ from config import settings as config
 from supabase import create_client, Client
 from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
+from discord_bot.websocket_manager import DiscordBotWebSocketManager
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -53,6 +58,9 @@ class DiscordBot:
             db_manager=self.db_manager
         )
         self.signal_parser = DiscordSignalParser()
+
+        # Initialize WebSocket manager for real-time database sync
+        self.websocket_manager = DiscordBotWebSocketManager(self, self.db_manager)
 
         logger.info(f"DiscordBot initialized with {'AI' if client else 'simple'} Signal Parser.")
 
@@ -583,8 +591,47 @@ class DiscordBot:
         return round(pnl, 2)
 
     async def close(self):
-        """Gracefully shutdown the trading engine."""
-        await self.trading_engine.close()
+        """Gracefully shutdown the trading engine and WebSocket manager."""
+        try:
+            # Stop WebSocket manager
+            if hasattr(self, 'websocket_manager') and self.websocket_manager:
+                await self.websocket_manager.stop()
+
+            # Close trading engine
+            await self.trading_engine.close()
+
+            logger.info("DiscordBot closed successfully.")
+        except Exception as e:
+            logger.error(f"Error closing DiscordBot: {e}")
+
+    async def start_websocket_sync(self):
+        """Start WebSocket real-time database synchronization."""
+        try:
+            if hasattr(self, 'websocket_manager') and self.websocket_manager:
+                success = await self.websocket_manager.start()
+                if success:
+                    logger.info("WebSocket real-time sync started successfully")
+                    return True
+                else:
+                    logger.error("Failed to start WebSocket sync")
+                    return False
+            else:
+                logger.error("WebSocket manager not initialized")
+                return False
+        except Exception as e:
+            logger.error(f"Error starting WebSocket sync: {e}")
+            return False
+
+    def get_websocket_status(self) -> dict:
+        """Get WebSocket manager status."""
+        if hasattr(self, 'websocket_manager') and self.websocket_manager:
+            return self.websocket_manager.get_status()
+        else:
+            return {
+                'running': False,
+                'initialized': False,
+                'error': 'WebSocket manager not available'
+            }
 
 # Global bot instance
 discord_bot = DiscordBot()

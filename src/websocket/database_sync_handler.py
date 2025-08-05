@@ -118,8 +118,13 @@ class DatabaseSyncHandler:
                 if response.data:
                     return response.data[0]
 
-            # Search by exchange_order_id
-            response = self.db_manager.supabase.from_("trades").select("*").eq("exchange_order_id", order_id).execute()
+            # Get 7-day cutoff for performance
+            from datetime import datetime, timedelta, timezone
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            cutoff_iso = cutoff.isoformat()
+
+            # Search by exchange_order_id (limited to 7 days)
+            response = self.db_manager.supabase.from_("trades").select("*").eq("exchange_order_id", order_id).gte("created_at", cutoff_iso).execute()
 
             if response.data:
                 trade = response.data[0]
@@ -127,11 +132,11 @@ class DatabaseSyncHandler:
                 self.order_id_cache[order_id] = trade['id']
                 return trade
 
-            # If not found by exchange_order_id, try parsing binance_response
-            response = self.db_manager.supabase.from_("trades").select("*").execute()
+            # If not found by exchange_order_id, try parsing sync_order_response (limited to 7 days)
+            response = self.db_manager.supabase.from_("trades").select("*").gte("created_at", cutoff_iso).execute()
             for trade in response.data:
-                binance_response = trade.get('binance_response', '')
-                if binance_response and order_id in binance_response:
+                sync_order_response = trade.get('sync_order_response', '')
+                if sync_order_response and order_id in sync_order_response:
                     # Found it! Update the exchange_order_id
                     await self._update_trade_order_id(trade['id'], order_id)
                     self.order_id_cache[order_id] = trade['id']
@@ -152,7 +157,7 @@ class DatabaseSyncHandler:
         try:
             updates = {
                 'updated_at': datetime.now().isoformat(),
-                'binance_response': json.dumps(execution_data)
+                'sync_order_response': json.dumps(execution_data)
             }
 
             # Update based on order status
@@ -213,10 +218,14 @@ class DatabaseSyncHandler:
 
     async def _get_open_trades(self) -> List[Dict[str, Any]]:
         """
-        Get all open trades from database.
+        Get all open trades from database (limited to 7 days for performance).
         """
         try:
-            response = self.db_manager.supabase.from_("trades").select("*").eq("status", "OPEN").execute()
+            from datetime import datetime, timedelta, timezone
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            cutoff_iso = cutoff.isoformat()
+
+            response = self.db_manager.supabase.from_("trades").select("*").eq("status", "OPEN").gte("created_at", cutoff_iso).execute()
             return response.data or []
         except Exception as e:
             logger.error(f"Error getting open trades: {e}")
@@ -224,12 +233,16 @@ class DatabaseSyncHandler:
 
     async def _get_open_trades_by_symbol(self, symbol: str) -> List[Dict[str, Any]]:
         """
-        Get open trades for a specific symbol.
+        Get open trades for a specific symbol (limited to 7 days for performance).
         """
         try:
+            from datetime import datetime, timedelta, timezone
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            cutoff_iso = cutoff.isoformat()
+
             # Remove 'USDT' suffix for database lookup
             coin_symbol = symbol.replace('USDT', '')
-            response = self.db_manager.supabase.from_("trades").select("*").eq("status", "OPEN").eq("coin_symbol", coin_symbol).execute()
+            response = self.db_manager.supabase.from_("trades").select("*").eq("status", "OPEN").eq("coin_symbol", coin_symbol).gte("created_at", cutoff_iso).execute()
             return response.data or []
         except Exception as e:
             logger.error(f"Error getting open trades for {symbol}: {e}")
