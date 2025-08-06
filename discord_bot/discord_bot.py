@@ -214,7 +214,7 @@ class DiscordBot:
             try:
                 stop_loss_value = float(match.group(1))
                 return {
-                    "action_type": "stop_loss_update",
+                    "action_type": "stop_loss_moved_to_update",
                     "action_description": f"Stop loss moved to {stop_loss_value} for {coin_symbol}",
                     "binance_action": "UPDATE_STOP_ORDER",
                     "position_status": "OPEN",
@@ -352,7 +352,7 @@ class DiscordBot:
             # 2. Store the AI's parsed response in the database and set signal_type
             updates: Dict[str, Any] = {"parsed_signal": json.dumps(parsed_data) if isinstance(parsed_data, dict) else str(parsed_data)}
             position_type = parsed_data.get('position_type')
-            if self.binance_exchange.has_open_futures_postion(f"{parsed_data.get('coin_symbol')}USDT"):
+            if await self.binance_exchange.has_open_futures_postion(f"{parsed_data.get('coin_symbol')}USDT"):
                 logger.info("There exist aready an open trade for this coin symbol, setting position_type to 'FUTURES'.")
                 updates["binance_response"] = f"We have already open postions for: {f"{parsed_data.get('coin_symbol')}USDT"}. Skipping this trade!"
                 await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
@@ -614,6 +614,17 @@ class DiscordBot:
                 else:
                     # Get the new price from the parsed data if available
                     new_sl_price = float(parsed_action.get("value", 0.0))
+
+                if new_sl_price > 0:
+                    action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
+                    if action_successful and isinstance(binance_response_log, dict):
+                        # The response from a successful SL update contains the new order details
+                        trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
+                else:
+                    logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}")
+            elif action_type == "stop_loss_moved_to_update":
+                logger.info(f"Processing stop loss update for trade {trade_row['id']}")
+                new_sl_price = float(parsed_action.get("stop_loss", 0.0))
 
                 if new_sl_price > 0:
                     action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
