@@ -648,6 +648,17 @@ class DiscordBot:
                         trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
                 else:
                     logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}")
+            elif action_type == "stop_loss_moved_to_update":
+                logger.info(f"Processing stop loss update for trade {trade_row['id']}")
+                new_sl_price = float(parsed_action.get("stop_loss", 0.0))
+
+                if new_sl_price > 0:
+                    action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
+                    if action_successful and isinstance(binance_response_log, dict):
+                        # The response from a successful SL update contains the new order details
+                        trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
+                else:
+                    logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}")
 
             elif action_type == "order_cancelled":
                 logger.info(f"Processing cancellation for trade {trade_row['id']}")
