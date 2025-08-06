@@ -90,7 +90,7 @@ class DiscordBot:
             logger.warning(f"Unexpected parsed_signal type: {type(parsed_signal_data)}")
             return {}
 
-    def parse_alert_content(self, content, original_trade_data):
+    def parse_alert_content(self, content, signal_data):
         """
         Parse alert content and determine what action(s) should be taken.
         Returns structured data for logging. Can handle single or multiple actions.
@@ -99,38 +99,50 @@ class DiscordBot:
 
         # Safely extract coin symbol with fallback
         coin_symbol = 'UNKNOWN'
-        # Check if we have the original trade data to get context
-        if original_trade_data and isinstance(original_trade_data.get('parsed_signal'), dict):
-            coin_symbol = original_trade_data.get('parsed_signal', {}).get('coin_symbol', 'UNKNOWN')
-        elif original_trade_data:
-            parsed_signal = self._parse_parsed_signal(original_trade_data.get('parsed_signal'))
-            coin_symbol = parsed_signal.get('coin_symbol', 'UNKNOWN')
-        else:
-            coin_symbol = 'UNKNOWN'
-
-        # Initialize actions list
-        actions = []
-        
-        # Check for multiple actions in the alert
-        has_tp1 = "tp1" in content_lower
-        has_tp2 = "tp2" in content_lower
-        has_stop_loss_update = any(phrase in content_lower for phrase in ["stops moved to be", "sl to be", "moved to be"])
-        has_stop_loss_hit = any(phrase in content_lower for phrase in ["stopped out", "stopped be"]) and not has_stop_loss_update
-        has_position_closed = "closed" in content_lower and not any(phrase in content_lower for phrase in ["tp1", "tp2", "stops moved", "sl to be"])
-        has_order_cancelled = "limit order cancelled" in content_lower
-
-        # Add actions in priority order
-        if has_tp1:
-            actions.append({
+        # Determine action type and details
+        stop_loss_regex = r"stoploss moved to ([-+]?\d*\.?\d+)"
+        if "stopped out" in content_lower or "stop loss" in content_lower or "closed be" in content_lower or  "stopped be" in content_lower or "closed in profits" in content_lower or  "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
+            # Distinguish between a SL update (move to BE) and a SL being hit
+            return {
+                "action_type": "stop_loss_hit",
+                "action_description": f"Stop loss hit for {coin_symbol}",
+                "binance_action": "MARKET_SELL",
+                "stop_loss": None,
+                "take_profit":None,
+                "position_status": "CLOSED",
+                "reason": "Stop loss triggered"
+            }
+        elif "limit order cancelled" in content_lower:
+            return {
+                "action_type": "limit_order_cancelled",
+                "action_description": f"Limit order cancelld for {coin_symbol}",
+                "binance_action": "CANCEL_ORDER",
+                "position_status": "CLOSED",
+                "stop_loss": None,
+                "take_profit":None,
+                "reason": "Cancel limit order"
+            }
+        elif "move stops to 1H" in content_lower or "updated stoploss" in content_lower or "move stops to " in content_lower or "updated stop loss " in content_lower:
+            return {
+                "action_type": "cancelled_stoploss_order_and_create_new",
+                "action_description": f"Limit order cancelld for {coin_symbol}",
+                "binance_action": "UPDATE_ORDER",
+                "position_status": "OPEN",
+                "stop_loss": 0.02,
+                "take_profit":None,
+                "reason": "Cancel SL order and create new one +-2%" 
+            }
+        elif "tp1" in content_lower:
+            return {
                 "action_type": "take_profit_1",
                 "action_description": f"Take Profit 1 hit for {coin_symbol}",
                 "binance_action": "PARTIAL_SELL",
                 "position_status": "PARTIALLY_CLOSED",
                 "reason": "TP1 target reached"
-            })
-
-        if has_tp2:
-            actions.append({
+            }
+     
+        elif "tp2" in content_lower:
+            return {
                 "action_type": "take_profit_2",
                 "action_description": f"Take Profit 2 hit for {coin_symbol}",
                 "binance_action": "PARTIAL_SELL",
@@ -145,240 +157,172 @@ class DiscordBot:
                 "binance_action": "UPDATE_STOP_ORDER",
                 "position_status": "OPEN",
                 "reason": "Risk management - move to break even"
-            })
-
-        if has_stop_loss_hit:
-            actions.append({
-                "action_type": "stop_loss_hit",
-                "action_description": f"Stop loss hit for {coin_symbol}",
-                "binance_action": "MARKET_SELL",
-                "position_status": "CLOSED",
-                "reason": "Stop loss triggered"
-            })
-
-        if has_position_closed:
-            actions.append({
-                "action_type": "position_closed",
-                "action_description": f"Position closed for {coin_symbol}",
-                "binance_action": "MARKET_SELL",
-                "position_status": "CLOSED",
-                "reason": "Manual close signal received"
-            })
-
-        if has_order_cancelled:
-            actions.append({
-                "action_type": "order_cancelled",
-                "action_description": f"Limit order cancelled for {coin_symbol}",
-                "binance_action": "CANCEL_ORDER",
-                "position_status": "CANCELLED",
-                "reason": "Order cancellation"
-            })
-
-        # If no actions found, return unknown
-        if not actions:
-            actions.append({
+            }
+        elif "stoploss moved to" in content_lower:
+            match = re.search(stop_loss_regex, content_lower)
+            if match:
+                stop_loss_value = float(match.group(1)) # Convert the extracted string to a float
+                return {
+                "action_type": "stop_loss_update",
+                "action_description": f"Stop loss moved to {stop_loss_value} for {coin_symbol}",
+                "binance_action": "UPDATE_STOP_ORDER",
+                "position_status": "OPEN",
+                "stop_loss": stop_loss_value,
+                "take_profit": None,
+                "reason": "Stop loss adjusted to specific value"
+                }
+        else:
+            return {
                 "action_type": "unknown_update",
                 "action_description": f"Update for {coin_symbol}: {content}",
                 "binance_action": "NO_ACTION",
                 "position_status": "UNKNOWN",
                 "reason": "Unrecognized alert type"
-            })
-
-        # Return single action or multiple actions
-        if len(actions) == 1:
-            return actions[0]
-        else:
-            return {
-                "multiple_actions": True,
-                "actions": actions,
-                "action_type": "multiple_actions",  # For backward compatibility
-                "action_description": f"Multiple actions for {coin_symbol}: {', '.join([a['action_type'] for a in actions])}",
-                "binance_action": "MULTIPLE_ACTIONS",
-                "position_status": "MIXED",
-                "reason": f"Executing {len(actions)} actions in sequence"
             }
 
-    async def execute_single_action(self, action, trade_row, signal):
+    def parse_alert_content(self, content: str, signal_data: dict) -> dict:
         """
-        Execute a single action from the parsed alert content.
-        Returns (success, binance_response_log)
+        Parse alert content and determine what action should be taken.
+        Returns structured data for logging and action determination.
+
+        Args:
+            content (str): The raw text content of the alert.
+            signal_data (dict): A dictionary containing additional context,
+                                such as the coin symbol, current price,
+                                entry price, and position type (LONG/SHORT).
+
+        Returns:
+            dict: A dictionary with the parsed action and relevant details.
         """
-        action_type = action["action_type"]
-        action_successful = False
-        binance_response_log = None
-        trade_updates = {}
+        content_lower = content.lower()
+        coin_symbol = content.split("｜")[0]  or 'UNKNOWN'
+        print("Symbol:", coin_symbol)
+        stop_loss_regex = r"stoploss moved to ([-+]?\d*\.?\d+)"
+        # 1. Take Profit 1 with Stop Loss move to Break Even
+        if "tp1 & stops moved to be" in content_lower:
+            return {
+                "action_type": "tp1_and_sl_to_be",
+                "action_description": f"TP1 hit and stop loss moved to break even for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL_AND_UPDATE_STOP_ORDER",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP1 hit and risk management - move to break even"
+            }
 
-        # Determine what trading action to take based on the parsed action
-        if action_type == "stop_loss_hit" or action_type == "position_closed":
-            logger.info(f"Processing '{action_type}' for trade {trade_row['id']}. Closing position.")
-            action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason=action_type)
-            if action_successful:
-                trade_updates["status"] = "CLOSED"
+        # 2. Stop Loss move to a specific value
+        match = re.search(stop_loss_regex, content_lower)
+        if match:
+            try:
+                stop_loss_value = float(match.group(1))
+                return {
+                    "action_type": "stop_loss_update",
+                    "action_description": f"Stop loss moved to {stop_loss_value} for {coin_symbol}",
+                    "binance_action": "UPDATE_STOP_ORDER",
+                    "position_status": "OPEN",
+                    "stop_loss": stop_loss_value,
+                    "take_profit": None,
+                    "reason": "Stop loss adjusted to specific value"
+                }
+            except (ValueError, IndexError):
+                # Fallback if regex match is malformed
+                pass
 
-                # Ensure coin_symbol is stored in database
-                if not trade_row.get('coin_symbol') and action.get('coin_symbol'):
-                    trade_updates["coin_symbol"] = action.get('coin_symbol')
-                    logger.info(f"Updated coin_symbol to {action.get('coin_symbol')} for trade {trade_row['id']}")
-                
-                # --- Fetch binance_exit_price from Binance ---
-                coin_symbol_exit = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
-                if coin_symbol_exit and isinstance(coin_symbol_exit, str):
-                    try:
-                        from src.services.price_service import PriceService
-                        price_service = PriceService()
-                        binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
-                        if binance_exit_price is not None:
-                            trade_updates["binance_exit_price"] = float(binance_exit_price)
-                            logger.info(f"Fetched binance_exit_price for {coin_symbol_exit}: {binance_exit_price}")
-                    except Exception as e:
-                        logger.warning(f"Could not fetch binance_exit_price: {e}")
+        # 3. Stop Loss moved to Break Even
+        if "stops moved to be" in content_lower or "sl to be" in content_lower:
+            return {
+                "action_type": "stop_loss_update",
+                "action_description": f"Stop loss moved to break even for {coin_symbol}",
+                "binance_action": "UPDATE_STOP_ORDER",
+                "position_status": "OPEN",
+                "reason": "Risk management - move to break even"
+            }
 
-        elif action_type == "take_profit_1":
-            logger.info(f"Processing TP1 for trade {trade_row['id']}. Closing 50% of position.")
-            action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_1", close_percentage=50.0)
-            if action_successful:
-                trade_updates["status"] = "PARTIALLY_CLOSED"
-                
-                # Update position_size in database - remaining 50%
-                current_position_size = float(trade_row.get('position_size', 0.0))
-                new_position_size = current_position_size * 0.5  # 50% remaining
-                trade_updates["position_size"] = new_position_size
-                logger.info(f"Updated position_size from {current_position_size} to {new_position_size} after TP1")
-
-        elif action_type == "take_profit_2":
-            logger.info(f"Processing TP2 for trade {trade_row['id']}. Closing remaining position.")
-            # Assumption: TP2 closes the rest of the position. A more complex system could calculate remaining size.
-            action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_2", close_percentage=100.0)
-            if action_successful:
-                trade_updates["status"] = "CLOSED"
-                
-                # Ensure coin_symbol is stored in database
-                if not trade_row.get('coin_symbol') and action.get('coin_symbol'):
-                    trade_updates["coin_symbol"] = action.get('coin_symbol')
-                    logger.info(f"Updated coin_symbol to {action.get('coin_symbol')} for trade {trade_row['id']}")
-
-        elif action_type == "stop_loss_update":
-            logger.info(f"Processing stop loss update for trade {trade_row['id']}")
-            new_sl_price = 0.0
-
-            # Check for "BE" (Break Even) signal
-            if action.get("value") == "BE" or "be" in signal.content.lower():
-                # Get the actual position data from Binance for accurate break-even calculation
-                try:
-                    coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
-                    if coin_symbol:
-                        trading_pair = f"{coin_symbol}USDT"
-                        positions = await self.binance_exchange.get_futures_position_information()
-                        
-                        # Find the specific position
-                        position = None
-                        for pos in positions:
-                            if pos['symbol'] == trading_pair and float(pos['positionAmt']) != 0:
-                                position = pos
-                                break
-                        
-                        if position:
-                            # Use the entry price from Binance position data as break-even
-                            entry_price = float(position['entryPrice'])
-                            new_sl_price = entry_price
-                            
-                            # Round to 2 decimal places for precision
-                            new_sl_price = round(new_sl_price, 2)
-                            
-                            logger.info(f"Determined break-even price as {new_sl_price} (using entry price directly)")
-                        else:
-                            # Fallback to database entry price
-                            original_entry_price = trade_row.get('entry_price')
-                            if original_entry_price:
-                                # Use entry price directly as break-even
-                                new_sl_price = float(original_entry_price)
-                                
-                                # Round to 2 decimal places for precision
-                                new_sl_price = round(new_sl_price, 2)
-                                
-                                logger.info(f"Determined break-even price as {new_sl_price} from database entry price.")
-                            else:
-                                logger.error(f"Could not determine entry price for BE stop loss on trade {trade_row['id']}")
-                    else:
-                        logger.error(f"Could not determine coin symbol for BE stop loss on trade {trade_row['id']}")
-                except Exception as e:
-                    logger.warning(f"Could not fetch position data from Binance: {e}. Using database entry price.")
-                    # Fallback to database entry price
-                    original_entry_price = trade_row.get('entry_price')
-                    if original_entry_price:
-                        # Use entry price directly as break-even
-                        new_sl_price = float(original_entry_price)
-                        
-                        # Round to 2 decimal places for precision
-                        new_sl_price = round(new_sl_price, 2)
-                        
-                        logger.info(f"Determined break-even price as {new_sl_price} from database entry price.")
-                    else:
-                        logger.error(f"Could not determine entry price for BE stop loss on trade {trade_row['id']}")
-            else:
-                # Get the new price from the parsed data if available
-                new_sl_price = float(action.get("value", 0.0))
-
-            if new_sl_price > 0:
-                action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
-                if action_successful and isinstance(binance_response_log, dict):
-                    # The response from a successful SL update contains the new order details
-                    trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
-            else:
-                logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}")
-
-        elif action_type == "order_cancelled":
-            logger.info(f"Processing cancellation for trade {trade_row['id']}")
-            action_successful, binance_response_log = await self.trading_engine.cancel_order(trade_row)
-            if action_successful:
-                trade_updates["status"] = "CANCELLED"
-
-        elif action_type == "order_filled":
-             # Usually, the initial signal opens the position. This is just an informational update.
-             # We can update the status to ensure it reflects 'OPEN'.
-             logger.info(f"Received 'order filled' notification for trade {trade_row['id']}. Status confirmed as OPEN.")
-             trade_updates["status"] = "OPEN"
-             action_successful = True # No engine action, but we mark as successful to log correctly.
-             binance_response_log = {"message": "Order fill notification processed."}
-
-        # After executing action, update the database
-        if action_successful:
-            logger.info(f"Successfully executed '{action_type}' for trade {trade_row['id']}. Binance Response: {binance_response_log}")
-
-            # --- PNL and Exit Price Calculation ---
-            if binance_response_log and 'fill_price' in binance_response_log and 'executed_qty' in binance_response_log:
-                exit_price = float(binance_response_log['fill_price'])
-                qty_closed = float(binance_response_log['executed_qty'])
-
-                if exit_price > 0 and qty_closed > 0:
-                    # Safely get entry price and position type from the trade row
-                    entry_price = float(self._parse_parsed_signal(trade_row.get('parsed_signal')).get('entry_prices', [0.0])[0])
-                    position_type = trade_row.get('signal_type', 'UNKNOWN')
-
-                    # Calculate PnL for this specific action
-                    newly_realized_pnl = self._calculate_pnl(position_type, entry_price, exit_price, qty_closed)
-
-                    # Get existing PnL and add the new PnL
-                    current_pnl = float(trade_row.get('pnl_usd', 0.0) or 0.0)
-                    total_pnl = current_pnl + newly_realized_pnl
-
-                    trade_updates["pnl_usd"] = total_pnl
-                    trade_updates["exit_price"] = exit_price # This will store the latest exit price
-
-                    logger.info(f"PnL for this action: {newly_realized_pnl:.2f}. Total realized PnL for trade: {total_pnl:.2f}")
-
-            # Update the trade with new status or SL order ID
-            if trade_updates:
-                await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=trade_updates)
-                logger.info(f"Updated trade {trade_row['id']} with: {trade_updates}")
-        elif binance_response_log: # Action was attempted but failed
-            logger.error(f"Failed to execute '{action_type}' for trade {trade_row['id']}. Reason: {binance_response_log}")
-
-        # Return the result with trade updates included
-        if binance_response_log and isinstance(binance_response_log, dict):
-            binance_response_log['trade_updates'] = trade_updates
+        # 4. Stop Loss triggered/position closed
+        if "stopped out" in content_lower or "stop loss" in content_lower or "closed be" in content_lower or \
+           "stopped be" in content_lower or "closed in profits" in content_lower or \
+           "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
+            return {
+                "action_type": "stop_loss_hit",
+                "action_description": f"Position closed for {coin_symbol} due to stop loss or manual close.",
+                "binance_action": "MARKET_SELL",
+                "stop_loss": None,
+                "take_profit": None,
+                "position_status": "CLOSED",
+                "reason": "Stop loss triggered or position manually closed"
+            }
         
-        return action_successful, binance_response_log
+        # 5. Take Profit 1 hit
+        if "tp1" in content_lower:
+            return {
+                "action_type": "take_profit_1",
+                "action_description": f"Take Profit 1 hit for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP1 target reached"
+            }
+      
+        # 6. Take Profit 2 hit
+        if "tp2" in content_lower:
+            return {
+                "action_type": "take_profit_2",
+                "action_description": f"Take Profit 2 hit for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP2 target reached"
+            }
+        if "tp1 & stops moved to be" in content_lower:
+            return {
+                "action_type": "take_profit_1_and_sl_to_be",
+                "action_description": f"Take Profit 1 hit and stop loss moved to break even for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL_AND_UPDATE_STOP_ORDER",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": " TP1 hit and risk management - move to break even"
+            }
+
+        # 7. Limit Order Filled
+        if "limit order filled" in content_lower:
+            return {
+                "action_type": "limit_order_filled",
+                "action_description": f"Limit order filled for {coin_symbol}. Open new SL/TP orders.",
+                "binance_action": "NONE",
+                "position_status": "OPEN",
+                "reason": "Limit order filled, position confirmed"
+            }
+
+        # 8. Limit Order Cancelled
+        if "limit order cancelled" in content_lower:
+            return {
+                "action_type": "limit_order_cancelled",
+                "action_description": f"Limit order cancelled for {coin_symbol}",
+                "binance_action": "CANCEL_ORDER",
+                "position_status": "CLOSED", 
+                "stop_loss": None,
+                "take_profit": None,
+                "reason": "Cancel limit order"
+            }
+        
+        # 9. Dynamic Stop Loss Updates (e.g., "move stops to 1H", "updated stoploss", "Move stops to 30m < ...")
+        if "move stops to 1h" in content_lower or "updated stoploss" in content_lower or \
+           "move stops to" in content_lower or "updated stop loss" in content_lower or \
+           "move stops to 30m" in content_lower:
+
+            return {
+                    "action_type": "dynamic_stop_loss_update",
+                    "action_description": f"Stop loss updated to 2% away from current price for {coin_symbol}",
+                    "binance_action": "UPDATE_STOP_ORDER",
+                    "position_status": "OPEN",
+                    "stop_loss": 0.02,
+                    "take_profit": None,
+                    "reason": "Stop loss adjusted dynamically"
+                }
+
+        # 10. Fallback for unrecognized alerts
+        return {
+            "action_type": "unknown_update",
+            "action_description": f"Update for {coin_symbol}: {content}",
+            "binance_action": "NO_ACTION",
+            "position_status": "UNKNOWN",
+            "reason": "Unrecognized alert type"
+        }
 
     async def process_initial_signal(self, signal_data: Dict[str, Any]) -> Dict[str, str]:
         """

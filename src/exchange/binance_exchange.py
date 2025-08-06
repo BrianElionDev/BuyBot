@@ -79,6 +79,7 @@ class BinanceExchange:
                                  client_order_id: Optional[str] = None, reduce_only: bool = False) -> Dict:
         await self._init_client()
         assert self.client is not None
+        print(f"Creating futures order with params: {client_order_id}")  # Debugging line
 
         # --- Enhanced Precision Handling ---
         try:
@@ -136,12 +137,6 @@ class BinanceExchange:
             params['reduceOnly'] = 'true'
         if client_order_id:
             params['newClientOrderId'] = client_order_id
-
-        # Debug logging to see exactly what parameters are being sent
-        logger.info(f"Sending order parameters to Binance: {params}")
-        logger.info(f"Order type: {order_type_market}, Price parameter: {price}")
-        logger.info(f"Final params dict: {params}")
-
         try:
             response = await self.client.futures_create_order(**params)
             return response
