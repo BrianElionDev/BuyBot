@@ -228,12 +228,12 @@ class DiscordBot:
             else:
                 logger.warning(f"Could not find 'coin_symbol' in parsed_signal for trade ID: {trade_row['id']}")
             
-            # BYPASS: Do not skip if open position exists
-            # if self.binance_exchange.has_open_futures_postion(f"{parsed_data.get('coin_symbol')}USDT"):
-            #     logger.info("There exist aready an open trade for this coin symbol, setting position_type to 'FUTURES'.")
-            #     updates["binance_response"] = f"We have already open postions for: {parsed_data.get('coin_symbol')}USDT. Skipping this trade!"
-            #     await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
-            #     return {"status": "error", "message": "We have already open postions for this coin symbol. Skipping this trade!"}
+            # Check if open position exists
+            if self.binance_exchange.has_open_futures_postion(f"{parsed_data.get('coin_symbol')}USDT"):
+                logger.info("There exist aready an open trade for this coin symbol, setting position_type to 'FUTURES'.")
+                updates["binance_response"] = f"We have already open postions for: {parsed_data.get('coin_symbol')}USDT. Skipping this trade!"
+                await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
+                return {"status": "error", "message": "We have already open postions for this coin symbol. Skipping this trade!"}
             if position_type:
                 updates["signal_type"] = position_type
                 logger.info(f"Extracted signal_type '{position_type}' from parsed signal for trade ID: {trade_row['id']}")
