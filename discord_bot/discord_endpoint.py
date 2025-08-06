@@ -79,3 +79,22 @@ async def receive_update_signal(signal: DiscordUpdateSignal, background_tasks: B
     except Exception as e:
         logger.error(f"Error receiving update signal: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/discord/signal/update/test", summary="Receive a trade update signal")
+async def receive_update_signal(signal: DiscordUpdateSignal):
+    """
+    Receives a follow-up signal to update an existing trade.
+
+    This endpoint handles updates for trades that are already active, such as
+    "stop loss hit" or "position closed". It finds the original trade using the
+    `trade` (signal_id) field and updates its status in the database.
+    """
+    try:
+        result =  discord_bot.parse_alert_content(signal.content,signal.dict())
+        return {
+            "status": "success",
+            "data": result,
+        }
+    except Exception as e:
+        logger.error(f"Error receiving update signal: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
