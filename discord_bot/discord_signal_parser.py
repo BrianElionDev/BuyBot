@@ -174,7 +174,7 @@ class DiscordSignalParser:
 
         # Parse the cleaned signal
         parsed_data = await _parse_with_openai(cleaned_signal)
-
+        parsed_data['order_type'] = 'LIMIT' if "LIMIT" in signal_content.upper() else 'MARKET'
         if parsed_data and quantity and coin_symbol:
             # Add quantity information to the parsed data
             parsed_data['quantity_multiplier'] = quantity

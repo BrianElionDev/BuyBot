@@ -19,6 +19,7 @@ from src.bot.trading_engine import TradingEngine
 from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
 from discord_bot.database import DatabaseManager
+from discord_bot.discord_signal_parser import DiscordSignalParser
 from config import settings as config
 
 # Setup logging
@@ -67,33 +68,15 @@ async def test_price_thresholds():
         logging.error("BINANCE_API_KEY and BINANCE_API_SECRET must be set")
         return False
 
-    # Initialize components
-    price_service = PriceService()
     binance_exchange = BinanceExchange(api_key, api_secret, is_testnet)
+    hasOpenPosition =await binance_exchange.has_open_futures_postion("ETHUSDT")
     
-    available_symbols = ["ETHUSDT"]
-    for symbol_pair in available_symbols:
-        print(f"\n=== Testing {symbol_pair} ===")
-        
-        try:
-            # Test min and max quantity calculation
-            print("\n--- Minimum and Maximum Quantity Calculation ---")
-            quantities = await binance_exchange.calculate_min_max_market_order_quantity(symbol_pair)
-            print(f"MinMax: {quantities['min_quantity']}, {quantities['max_quantity']}")
-        except Exception as e:
-            logging.error(f"Error calculating quantities for {symbol_pair}: {e}")
-            continue
-    
+    print("🔍Has open postion for token pair: \n",hasOpenPosition )
     return True
      
 async def main():   
     """Main function to run the price threshold test."""
-    success = await test_price_thresholds()
-    if success:
-        print("\n✅ Price threshold test completed successfully!")
-    else:
-        print("\n❌ Price threshold test failed!")
-        sys.exit(1)
-
+    
+    await test_price_thresholds()
 if __name__ == "__main__":
     asyncio.run(main())
