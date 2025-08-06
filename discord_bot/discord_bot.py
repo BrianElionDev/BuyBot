@@ -69,7 +69,7 @@ class DiscordBot:
         # U+00AD: Soft hyphen
         return re.sub(r'[\u200B-\u200D\uFEFF\u2060-\u206F\u00AD]', '', text).strip()
 
-    def parse_alert_content(self, content, original_trade_data):
+    def parse_alert_content(self, content, signal_data):
         """
         Parse alert content and determine what action should be taken.
         Returns structured data for logging.
@@ -78,37 +78,39 @@ class DiscordBot:
 
         # Safely extract coin symbol with fallback
         coin_symbol = 'UNKNOWN'
-        if original_trade_data and isinstance(original_trade_data.get('parsed_signal'), dict):
-            coin_symbol = original_trade_data.get('parsed_signal', {}).get('coin_symbol', 'UNKNOWN')
-
         # Determine action type and details
-        if "stopped out" in content_lower or "stop loss" in content_lower or "stopped be" in content_lower:
+        stop_loss_regex = r"stoploss moved to ([-+]?\d*\.?\d+)"
+        if "stopped out" in content_lower or "stop loss" in content_lower or "closed be" in content_lower or  "stopped be" in content_lower or "closed in profits" in content_lower or  "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
             # Distinguish between a SL update (move to BE) and a SL being hit
-            if "moved to be" in content_lower or "sl to be" in content_lower:
-                return {
-                    "action_type": "stop_loss_update",
-                    "action_description": f"Stop loss moved to break even for {coin_symbol}",
-                    "binance_action": "UPDATE_STOP_ORDER",
-                    "position_status": "OPEN",
-                    "reason": "Risk management - move to break even"
-                }
             return {
                 "action_type": "stop_loss_hit",
                 "action_description": f"Stop loss hit for {coin_symbol}",
                 "binance_action": "MARKET_SELL",
+                "stop_loss": None,
+                "take_profit":None,
                 "position_status": "CLOSED",
                 "reason": "Stop loss triggered"
             }
-
-        elif "closed" in content_lower:
+        elif "limit order cancelled" in content_lower:
             return {
-                "action_type": "position_closed",
-                "action_description": f"Position closed for {coin_symbol}",
-                "binance_action": "MARKET_SELL",
+                "action_type": "limit_order_cancelled",
+                "action_description": f"Limit order cancelld for {coin_symbol}",
+                "binance_action": "CANCEL_ORDER",
                 "position_status": "CLOSED",
-                "reason": "Manual close signal received"
+                "stop_loss": None,
+                "take_profit":None,
+                "reason": "Cancel limit order"
             }
-
+        elif "move stops to 1H" in content_lower or "updated stoploss" in content_lower or "move stops to " in content_lower or "updated stop loss " in content_lower:
+            return {
+                "action_type": "cancelled_stoploss_order_and_create_new",
+                "action_description": f"Limit order cancelld for {coin_symbol}",
+                "binance_action": "UPDATE_ORDER",
+                "position_status": "OPEN",
+                "stop_loss": 0.02,
+                "take_profit":None,
+                "reason": "Cancel SL order and create new one +-2%" 
+            }
         elif "tp1" in content_lower:
             return {
                 "action_type": "take_profit_1",
@@ -117,7 +119,7 @@ class DiscordBot:
                 "position_status": "PARTIALLY_CLOSED",
                 "reason": "TP1 target reached"
             }
-
+     
         elif "tp2" in content_lower:
             return {
                 "action_type": "take_profit_2",
@@ -135,16 +137,19 @@ class DiscordBot:
                 "position_status": "OPEN",
                 "reason": "Risk management - move to break even"
             }
-
-        elif "limit order cancelled" in content_lower:
-            return {
-                "action_type": "order_cancelled",
-                "action_description": f"Limit order cancelled for {coin_symbol}",
-                "binance_action": "CANCEL_ORDER",
-                "position_status": "CANCELLED",
-                "reason": "Order cancellation"
-            }
-
+        elif "stoploss moved to" in content_lower:
+            match = re.search(stop_loss_regex, content_lower)
+            if match:
+                stop_loss_value = float(match.group(1)) # Convert the extracted string to a float
+                return {
+                "action_type": "stop_loss_update",
+                "action_description": f"Stop loss moved to {stop_loss_value} for {coin_symbol}",
+                "binance_action": "UPDATE_STOP_ORDER",
+                "position_status": "OPEN",
+                "stop_loss": stop_loss_value,
+                "take_profit": None,
+                "reason": "Stop loss adjusted to specific value"
+                }
         else:
             return {
                 "action_type": "unknown_update",
@@ -153,6 +158,150 @@ class DiscordBot:
                 "position_status": "UNKNOWN",
                 "reason": "Unrecognized alert type"
             }
+
+    def parse_alert_content(self, content: str, signal_data: dict) -> dict:
+        """
+        Parse alert content and determine what action should be taken.
+        Returns structured data for logging and action determination.
+
+        Args:
+            content (str): The raw text content of the alert.
+            signal_data (dict): A dictionary containing additional context,
+                                such as the coin symbol, current price,
+                                entry price, and position type (LONG/SHORT).
+
+        Returns:
+            dict: A dictionary with the parsed action and relevant details.
+        """
+        content_lower = content.lower()
+        coin_symbol = content.split("｜")[0]  or 'UNKNOWN'
+        print("Symbol:", coin_symbol)
+        stop_loss_regex = r"stoploss moved to ([-+]?\d*\.?\d+)"
+        # 1. Take Profit 1 with Stop Loss move to Break Even
+        if "tp1 & stops moved to be" in content_lower:
+            return {
+                "action_type": "tp1_and_sl_to_be",
+                "action_description": f"TP1 hit and stop loss moved to break even for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL_AND_UPDATE_STOP_ORDER",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP1 hit and risk management - move to break even"
+            }
+
+        # 2. Stop Loss move to a specific value
+        match = re.search(stop_loss_regex, content_lower)
+        if match:
+            try:
+                stop_loss_value = float(match.group(1))
+                return {
+                    "action_type": "stop_loss_update",
+                    "action_description": f"Stop loss moved to {stop_loss_value} for {coin_symbol}",
+                    "binance_action": "UPDATE_STOP_ORDER",
+                    "position_status": "OPEN",
+                    "stop_loss": stop_loss_value,
+                    "take_profit": None,
+                    "reason": "Stop loss adjusted to specific value"
+                }
+            except (ValueError, IndexError):
+                # Fallback if regex match is malformed
+                pass
+
+        # 3. Stop Loss moved to Break Even
+        if "stops moved to be" in content_lower or "sl to be" in content_lower:
+            return {
+                "action_type": "stop_loss_update",
+                "action_description": f"Stop loss moved to break even for {coin_symbol}",
+                "binance_action": "UPDATE_STOP_ORDER",
+                "position_status": "OPEN",
+                "reason": "Risk management - move to break even"
+            }
+
+        # 4. Stop Loss triggered/position closed
+        if "stopped out" in content_lower or "stop loss" in content_lower or "closed be" in content_lower or \
+           "stopped be" in content_lower or "closed in profits" in content_lower or \
+           "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
+            return {
+                "action_type": "stop_loss_hit",
+                "action_description": f"Position closed for {coin_symbol} due to stop loss or manual close.",
+                "binance_action": "MARKET_SELL",
+                "stop_loss": None,
+                "take_profit": None,
+                "position_status": "CLOSED",
+                "reason": "Stop loss triggered or position manually closed"
+            }
+        
+        # 5. Take Profit 1 hit
+        if "tp1" in content_lower:
+            return {
+                "action_type": "take_profit_1",
+                "action_description": f"Take Profit 1 hit for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP1 target reached"
+            }
+      
+        # 6. Take Profit 2 hit
+        if "tp2" in content_lower:
+            return {
+                "action_type": "take_profit_2",
+                "action_description": f"Take Profit 2 hit for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP2 target reached"
+            }
+        if "tp1 & stops moved to be" in content_lower:
+            return {
+                "action_type": "take_profit_1_and_sl_to_be",
+                "action_description": f"Take Profit 1 hit and stop loss moved to break even for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL_AND_UPDATE_STOP_ORDER",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": " TP1 hit and risk management - move to break even"
+            }
+
+        # 7. Limit Order Filled
+        if "limit order filled" in content_lower:
+            return {
+                "action_type": "limit_order_filled",
+                "action_description": f"Limit order filled for {coin_symbol}. Open new SL/TP orders.",
+                "binance_action": "NONE",
+                "position_status": "OPEN",
+                "reason": "Limit order filled, position confirmed"
+            }
+
+        # 8. Limit Order Cancelled
+        if "limit order cancelled" in content_lower:
+            return {
+                "action_type": "limit_order_cancelled",
+                "action_description": f"Limit order cancelled for {coin_symbol}",
+                "binance_action": "CANCEL_ORDER",
+                "position_status": "CLOSED", 
+                "stop_loss": None,
+                "take_profit": None,
+                "reason": "Cancel limit order"
+            }
+        
+        # 9. Dynamic Stop Loss Updates (e.g., "move stops to 1H", "updated stoploss", "Move stops to 30m < ...")
+        if "move stops to 1h" in content_lower or "updated stoploss" in content_lower or \
+           "move stops to" in content_lower or "updated stop loss" in content_lower or \
+           "move stops to 30m" in content_lower:
+
+            return {
+                    "action_type": "dynamic_stop_loss_update",
+                    "action_description": f"Stop loss updated to 2% away from current price for {coin_symbol}",
+                    "binance_action": "UPDATE_STOP_ORDER",
+                    "position_status": "OPEN",
+                    "stop_loss": 0.02,
+                    "take_profit": None,
+                    "reason": "Stop loss adjusted dynamically"
+                }
+
+        # 10. Fallback for unrecognized alerts
+        return {
+            "action_type": "unknown_update",
+            "action_description": f"Update for {coin_symbol}: {content}",
+            "binance_action": "NO_ACTION",
+            "position_status": "UNKNOWN",
+            "reason": "Unrecognized alert type"
+        }
 
     async def process_initial_signal(self, signal_data: Dict[str, Any]) -> Dict[str, str]:
         """
