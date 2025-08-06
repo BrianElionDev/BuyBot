@@ -121,7 +121,7 @@ async def reconcile_and_process():
                 if action:
                     signal_payload["action"] = action
                     signal_payload["details"] = details
-                result = await bot.process_update_signal(signal_payload, alert_id=alert["id"])
+                result = await bot.process_update_signal(signal_payload)
                 logging.info(f"Result: {result}")
 
 if __name__ == "__main__":
