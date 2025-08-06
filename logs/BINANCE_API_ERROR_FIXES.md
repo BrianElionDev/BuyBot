@@ -3,11 +3,13 @@
 ## Issues Identified
 
 ### 1. Binance API Error: "Could not get order status"
+
 **Error**: `APIError(code=-2015): Invalid API-key, IP, or permissions for action`
 
 **Root Cause**: The API key doesn't have the necessary permissions to query order status or the IP isn't whitelisted.
 
 ### 2. Database Error: Invalid JSON format for double precision
+
 **Error**: `invalid input syntax for type double precision: "{"value":0.184165}"`
 
 **Root Cause**: Code was trying to store JSON objects in double precision columns.
@@ -15,15 +17,18 @@
 ## Fixes Implemented
 
 ### Database Fix ✅
+
 Fixed the database update issue by storing values as floats instead of JSON objects:
 
 **Before:**
+
 ```python
 updates["entry_price"] = {"value": float(entry_price_structured)}
 updates["binance_entry_price"] = {"value": float(binance_entry_price)}
 ```
 
 **After:**
+
 ```python
 updates["entry_price"] = float(entry_price_structured)
 updates["binance_entry_price"] = float(binance_entry_price)
@@ -34,6 +39,7 @@ updates["binance_entry_price"] = float(binance_entry_price)
 The Binance API error requires manual configuration changes:
 
 #### 1. Check API Key Permissions
+
 1. Log into your Binance account
 2. Go to **API Management**
 3. Check your API key permissions:
@@ -42,11 +48,13 @@ The Binance API error requires manual configuration changes:
    - ✅ **Enable Spot & Margin Trading** (if using spot trading)
 
 #### 2. Check IP Whitelist
+
 1. In API Management, verify your current IP is whitelisted
 2. Add your server's IP address to the whitelist
 3. If using a dynamic IP, consider using a static IP or VPN
 
 #### 3. Verify API Key Status
+
 1. Ensure the API key is **Active**
 2. Check if there are any restrictions on the key
 3. Verify the key hasn't expired
@@ -54,6 +62,7 @@ The Binance API error requires manual configuration changes:
 ## Alternative Solutions
 
 ### Option 1: Use Different API Endpoint
+
 If order status queries continue to fail, we can modify the code to use a different approach:
 
 ```python
@@ -72,6 +81,7 @@ async def check_order_status_alternative(self, symbol: str, order_id: str):
 ```
 
 ### Option 2: Skip Order Status Check
+
 For immediate fix, we can skip the order status check and rely on the order creation response:
 
 ```python
@@ -88,12 +98,14 @@ else:
 ## Testing the Fixes
 
 ### 1. Test Database Fix
+
 ```bash
 # Run the retry script to test database updates
 python scripts/manual_trade_retry.py
 ```
 
 ### 2. Test Binance API
+
 ```bash
 # Test API connectivity
 python scripts/account_scripts/check_binance_permissions.py

@@ -119,8 +119,8 @@ async def process_follow_up_alerts(processed_trade_ids: List[str]):
                 "structured": alert.get("structured"),
             }
 
-            # Pass the alert's database ID to the processing function
-            result = await discord_bot.process_update_signal(signal_payload, alert_id=alert.get("id"))
+                        # Pass the alert's database ID to the processing function
+            result = await discord_bot.process_update_signal(signal_payload)
             logging.info(f"Result for alert {alert.get('id')}: {result.get('message')}")
 
         except Exception as e:

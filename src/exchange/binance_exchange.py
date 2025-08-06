@@ -76,7 +76,8 @@ class BinanceExchange:
 
     async def create_futures_order(self, pair: str, side: str, order_type_market: str, amount: float,
                                  price: Optional[float] = None, stop_price: Optional[float] = None,
-                                 client_order_id: Optional[str] = None, reduce_only: bool = False) -> Dict:
+                                 client_order_id: Optional[str] = None, reduce_only: bool = False,
+                                 close_position: bool = False) -> Dict:
         await self._init_client()
         assert self.client is not None
         print(f"Creating futures order with params: {client_order_id}")  # Debugging line
@@ -121,16 +122,28 @@ class BinanceExchange:
         params = {
             'symbol': pair,
             'side': side,
-            'type': order_type_market,
-            'quantity': f"{amount}"
+            'type': order_type_market
         }
+        
+        # Handle quantity vs closePosition
+        if close_position:
+            params['closePosition'] = 'true'
+            # When using closePosition, quantity should be 0 or not specified
+            if amount > 0:
+                logger.warning(f"closePosition=True but amount={amount} specified. Setting amount to 0.")
+        else:
+            params['quantity'] = f"{amount}"
+        
         if order_type_market == 'LIMIT' and price is not None:
             params['price'] = f"{price}"
             params['timeInForce'] = 'GTC'
         if stop_price:
             params['stopPrice'] = f"{stop_price}"
-            params['closePosition'] = 'true'
-        if reduce_only:
+            # Use GTC for stop orders to ensure they don't expire while waiting for alerts
+            params['timeInForce'] = 'GTC'
+        
+        # Always use reduceOnly for all orders (except when closePosition is True)
+        if reduce_only and not close_position:
             params['reduceOnly'] = 'true'
         if client_order_id:
             params['newClientOrderId'] = client_order_id
@@ -149,14 +162,13 @@ class BinanceExchange:
         side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
         try:
             # For simplicity, we assume closing is always a MARKET order.
-            # We explicitly set reduce_only to False to handle cases where the
-            # position doesn't exist on the exchange (state mismatch).
+            # Use reduceOnly for consistent behavior
             response = await self.create_futures_order(
                 pair=pair,
                 side=side,
                 order_type_market=FUTURE_ORDER_TYPE_MARKET,
                 amount=amount,
-                reduce_only=False
+                reduce_only=True
             )
             return True, response
         except Exception as e:
@@ -172,14 +184,14 @@ class BinanceExchange:
             # 1. Cancel existing stop loss orders for the symbol
             await self.client.futures_cancel_all_open_orders(symbol=pair)
 
-            # 2. Create a new STOP_MARKET order. This must be reduceOnly.
+            # 2. Create a new STOP_MARKET order using reduceOnly for consistency
             response = await self.client.futures_create_order(
                 symbol=pair,
                 side=side,
                 type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                quantity=amount,
+                quantity=f"{amount}",
                 stopPrice=stop_price,
-                reduceOnly=True
+                reduceOnly='true'
             )
             return True, response
         except Exception as e:
