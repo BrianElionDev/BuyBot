@@ -3,17 +3,15 @@ from fastapi import FastAPI
 import logging
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
-from discord_endpoint import router as discord_router
 import asyncio
 from contextlib import asynccontextmanager
-from utils.trade_retry_utils import (
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from discord_bot.discord_endpoint import router as discord_router
+from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
-    process_pending_trades,
-    sync_pnl_data_with_binance,
-    process_empty_binance_response_trades,
-    process_margin_insufficient_trades,
     sync_trade_statuses_with_binance,
 )
 
