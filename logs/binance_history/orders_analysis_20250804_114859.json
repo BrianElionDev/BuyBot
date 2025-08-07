@@ -1,0 +1,17 @@
+{
+  "total_orders": 4,
+  "unique_symbols": 4,
+  "status_distribution": {
+    "NEW": 4
+  },
+  "type_distribution": {
+    "LIMIT": 4
+  },
+  "side_distribution": {
+    "SELL": 3,
+    "BUY": 1
+  },
+  "open_orders": 4,
+  "filled_orders": 0,
+  "canceled_orders": 0
+}

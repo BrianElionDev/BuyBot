@@ -35,19 +35,35 @@ class TradingEngine:
         logger.info("TradingEngine initialized.")
 
     def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
-        """
-        Safely parse parsed_signal data which can be either a dict or JSON string.
-        """
+        """Parse the parsed_signal JSON string into a dictionary."""
         if isinstance(parsed_signal_data, dict):
             return parsed_signal_data
         elif isinstance(parsed_signal_data, str):
             try:
                 return json.loads(parsed_signal_data)
             except json.JSONDecodeError:
-                logger.warning(f"Failed to parse parsed_signal JSON: {parsed_signal_data}")
+                logger.warning(f"Could not parse parsed_signal JSON: {parsed_signal_data}")
                 return {}
         else:
             logger.warning(f"Unexpected parsed_signal type: {type(parsed_signal_data)}")
+            return {}
+
+    def _safe_parse_binance_response(self, binance_response) -> Dict:
+        """Safely parse binance_response field which is stored as text but may contain JSON."""
+        if isinstance(binance_response, dict):
+            return binance_response
+        elif isinstance(binance_response, str):
+            # Handle empty or invalid strings
+            if not binance_response or binance_response.strip() == '':
+                return {}
+
+            # Try to parse as JSON
+            try:
+                return json.loads(binance_response.strip())
+            except (json.JSONDecodeError, ValueError):
+                # If it's not valid JSON, treat it as a plain text error message
+                return {"error": binance_response.strip()}
+        else:
             return {}
 
     async def process_signal(
@@ -131,7 +147,8 @@ class TradingEngine:
         # --- Proximity Check for LIMIT Orders ---
         if order_type.upper() == "LIMIT":
             market_price = await self.price_service.get_coin_price(coin_symbol)
-            threshold = 0.02  # 2%
+            # Use configurable threshold for limit order price validation
+            threshold = config.LIMIT_ORDER_PRICE_THRESHOLD / 100.0  # Convert percentage to decimal
             if market_price and abs(signal_price - market_price) / market_price > threshold:
                 logger.warning(f"LIMIT order price {signal_price} is too far from market price {market_price} (>{threshold*100}%). Skipping order.")
                 return False, {"error": f"Limit price {signal_price} too far from market price {market_price}, order skipped."}
@@ -521,13 +538,7 @@ class TradingEngine:
 
         # Parse position size and order info
         position_size = float(active_trade.get('position_size') or 0.0)
-        binance_response = active_trade.get('binance_response')
-        if isinstance(binance_response, str):
-            import json
-            try:
-                binance_response = json.loads(binance_response)
-            except Exception:
-                binance_response = {}
+        binance_response = self._safe_parse_binance_response(active_trade.get('binance_response'))
         exchange_order_id = (active_trade.get('exchange_order_id') or (binance_response.get('orderId') if binance_response else None))
         stop_loss_order_id = (active_trade.get('stop_loss_order_id') or ((binance_response.get('stop_loss_order_details') or {}).get('orderId') if binance_response else None))
         parsed_signal = self._parse_parsed_signal(active_trade.get('parsed_signal'))
@@ -725,14 +736,7 @@ class TradingEngine:
         """
         try:
             # Check if there are pending TP/SL parameters
-            binance_response = trade_data.get('binance_response')
-            if isinstance(binance_response, str):
-                import json
-                try:
-                    binance_response = json.loads(binance_response)
-                except Exception:
-                    binance_response = {}
-
+            binance_response = self._safe_parse_binance_response(trade_data.get('binance_response'))
             pending_tp_sl = binance_response.get('pending_tp_sl') if binance_response else None
             if not pending_tp_sl:
                 logger.info("No pending TP/SL parameters found for trade")
