@@ -19,6 +19,7 @@ from src.bot.trading_engine import TradingEngine
 from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
 from discord_bot.database import DatabaseManager
+from discord_bot.discord_bot import DiscordBot
 from discord_bot.discord_signal_parser import DiscordSignalParser
 from config import settings as config
 
@@ -68,10 +69,24 @@ async def test_price_thresholds():
         logging.error("BINANCE_API_KEY and BINANCE_API_SECRET must be set")
         return False
 
-    binance_exchange = BinanceExchange(api_key, api_secret, is_testnet)
-    hasOpenPosition =await binance_exchange.get_all_open_futures_orders()
+    #binance_exchange = BinanceExchange(api_key, api_secret, is_testnet)
+    #hasOpenPosition =await binance_exchange.get_symbol_precision("ETHUSDT")
     
-    print("🔍Has open postion for token pair: \n",hasOpenPosition )
+    # Create DiscordBot instance to test parse_alert_content
+    discord_bot = DiscordBot()
+    
+    # Test signal data
+    signal_data = {
+        "discord_id": "1400363548219015178",
+        "trader": "@-Tareeq",
+        "trade": "1402303150849003550",
+        "timestamp": "2025-07-31T06:24:47.392Z",
+        "content": " ETH ⁠🚀｜trades⁠: Stop has moved to be @-Tareeq"
+    }
+    
+    # Test the parse_alert_content method
+    parsed =  discord_bot.parse_alert_content("ETH ⁠🚀｜trades⁠: DCA'd and entry now 1.7125 @-Tareeq", signal_data)
+    print("Parsed result:", parsed)
     return True
      
 async def main():   

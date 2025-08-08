@@ -1078,6 +1078,62 @@ class TradingEngine:
             logger.error(f"Error updating stop loss: {e}", exc_info=True)
             return False, {"error": f"Stop loss update failed: {str(e)}"}
 
+    async def calculate_2_percent_stop_loss(self, coin_symbol: str, position_type: str) -> Optional[float]:
+        """
+        Calculate a 2% stop loss price from the current market price.
+        
+        Args:
+            coin_symbol: The trading symbol (e.g., 'BTC')
+            position_type: The position type ('LONG' or 'SHORT')
+            
+        Returns:
+            The calculated stop loss price or None if calculation fails
+        """
+        return await self.calculate_percentage_stop_loss(coin_symbol, position_type, 2.0)
+
+    async def calculate_percentage_stop_loss(self, coin_symbol: str, position_type: str, percentage: float) -> Optional[float]:
+        """
+        Calculate a percentage-based stop loss price from the current market price.
+        
+        Args:
+            coin_symbol: The trading symbol (e.g., 'BTC')
+            position_type: The position type ('LONG' or 'SHORT')
+            percentage: The percentage for stop loss calculation (e.g., 2.0 for 2%)
+            
+        Returns:
+            The calculated stop loss price or None if calculation fails
+        """
+        try:
+            # Validate percentage input
+            if percentage <= 0 or percentage > 50:  # Reasonable range: 0.1% to 50%
+                logger.error(f"Invalid stop loss percentage: {percentage}%. Must be between 0.1 and 50.")
+                return None
+            
+            trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
+            current_price = await self.binance_exchange.get_futures_mark_price(trading_pair)
+            precision = await self.binance_exchange.get_symbol_precision(trading_pair)
+            
+            if not current_price:
+                logger.error(f"Could not get current price for {trading_pair}")
+                return None
+            
+            # Calculate percentage-based stop loss from current price
+            if position_type.upper() == 'LONG':
+                stop_loss_price = current_price * (1 - percentage / 100)  # percentage below current price
+                logger.info(f"LONG position: Calculated {percentage}% stop loss. Current: {current_price}, SL: {stop_loss_price}")
+            elif position_type.upper() == 'SHORT':
+                stop_loss_price = current_price * (1 + percentage / 100)  # percentage above current price
+                logger.info(f"SHORT position: Calculated {percentage}% stop loss. Current: {current_price}, SL: {stop_loss_price}")
+            else:
+                logger.error(f"Unknown position type: {position_type}")
+                return None
+            rounded_stop_loss_price = round(stop_loss_price,precision )  
+            return rounded_stop_loss_price
+            
+        except Exception as e:
+            logger.error(f"Error calculating {percentage}% stop loss for {coin_symbol}: {e}")
+            return None
+
     async def close(self):
         """Close all exchange connections."""
         await self.binance_exchange.close_client()

@@ -101,7 +101,11 @@ class DiscordBot:
         coin_symbol = 'UNKNOWN'
         # Determine action type and details
         stop_loss_regex = r"stoploss moved to ([-+]?\d*\.?\d+)"
-        
+        stops_to_be_regex= r"\b(stop|sl)\b.*\bbe\b"
+        stops_to_x_regex = r"\b(stop\w*|sl)\b.*\bto\b\s*(-?\d+(\.\d+)?)"
+        dca_to_entry_regex = r"\bdca\b.*\bentry\b.*?(\d+\.\d+)(?:\s|$)"
+
+
         # 1. Take Profit 1 with Stop Loss move to Break Even (MUST BE FIRST!)
         if "tp1 & stops moved to be" in content_lower:
             return {
@@ -139,9 +143,17 @@ class DiscordBot:
                 "action_description": f"Limit order cancelld for {coin_symbol}",
                 "binance_action": "UPDATE_ORDER",
                 "position_status": "OPEN",
-                "stop_loss": 0.02,
+                "stop_loss": 2,
                 "take_profit":None,
                 "reason": "Cancel SL order and create new one +-2%" 
+            }
+        elif "tp1 taken" in content_lower:
+            return {
+                "action_type": "take_profit_taken_hit",
+                "action_description": f"Take Profit 2 hit for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP2 target reached"
             }
         elif "tp1" in content_lower:
             return {
@@ -151,7 +163,6 @@ class DiscordBot:
                 "position_status": "PARTIALLY_CLOSED",
                 "reason": "TP1 target reached"
             }
-     
         elif "tp2" in content_lower:
             return {
                 "action_type": "take_profit_2",
@@ -160,25 +171,47 @@ class DiscordBot:
                 "position_status": "PARTIALLY_CLOSED",
                 "reason": "TP2 target reached"
             }
-
-        if "stops moved to be" in content_lower or "sl to be" in content_lower:
+        elif "tp1 taken" in content_lower:
+            return {
+                "action_type": "take_profit_taken_hit",
+                "action_description": f"Take Profit 2 hit for {coin_symbol}",
+                "binance_action": "PARTIAL_SELL",
+                "position_status": "PARTIALLY_CLOSED",
+                "reason": "TP2 target reached"
+            }
+        if re.search(stops_to_be_regex, content_lower):
             return {
                 "action_type": "stop_loss_update",
                 "action_description": f"Stop loss moved to break even for {coin_symbol}",
                 "binance_action": "UPDATE_STOP_ORDER",
                 "position_status": "OPEN",
+                "stop_loss": "BE",
+                "take_profit": None,
                 "reason": "Risk management - move to break even"
             }
-        elif "stoploss moved to" in content_lower:
-            match = re.search(stop_loss_regex, content_lower)
+        elif re.search(stops_to_x_regex, content_lower):
+            match = re.search(stops_to_x_regex, content_lower)
             if match:
-                stop_loss_value = float(match.group(1)) # Convert the extracted string to a float
+                entry_value = match.group(2) # Convert the extracted string to a float
                 return {
                 "action_type": "stop_loss_update",
-                "action_description": f"Stop loss moved to {stop_loss_value} for {coin_symbol}",
+                "action_description": f"Stop loss moved to {entry_value} for {coin_symbol}",
                 "binance_action": "UPDATE_STOP_ORDER",
                 "position_status": "OPEN",
-                "stop_loss": stop_loss_value,
+                "stop_loss": entry_value,
+                "take_profit": None,
+                "reason": "Stop loss adjusted to specific value"
+                }
+        elif re.search(dca_to_entry_regex, content_lower):
+            match = re.search(dca_to_entry_regex, content_lower)
+            if match:
+                entry_value = match.group(1) # Convert the extracted string to a float
+                return {
+                "action_type": "dca_to_entry",
+                "action_description": f"Create a new order if their is no open positions {entry_value} for {coin_symbol}",
+                "binance_action": "CREATE_NEW_ORDER_IF_NONE_STOP_ORDER",
+                "position_status": "OPEN",
+                "entry": entry_value,
                 "take_profit": None,
                 "reason": "Stop loss adjusted to specific value"
                 }
@@ -229,7 +262,7 @@ class DiscordBot:
                 logger.warning(f"Could not find 'coin_symbol' in parsed_signal for trade ID: {trade_row['id']}")
             
             # Check if open position exists
-            if self.binance_exchange.has_open_futures_postion(f"{parsed_data.get('coin_symbol')}USDT"):
+            if await self.binance_exchange.has_open_futures_postion(f"{parsed_data.get('coin_symbol')}USDT"):
                 logger.info("There exist aready an open trade for this coin symbol, setting position_type to 'FUTURES'.")
                 updates["binance_response"] = f"We have already open postions for: {parsed_data.get('coin_symbol')}USDT. Skipping this trade!"
                 await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
@@ -584,7 +617,7 @@ class DiscordBot:
                 new_sl_price = 0.0
 
                 # Check for "BE" (Break Even) signal
-                if parsed_action.get("value") == "BE" or "be" in signal.content.lower():
+                if parsed_action.get("stop_loss") == "BE" or "be" in signal.content.lower():
                     # Get the actual position data from Binance for accurate break-even calculation
                     try:
                         coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
@@ -639,8 +672,8 @@ class DiscordBot:
                             logger.error(f"Could not determine entry price for BE stop loss on trade {trade_row['id']}")
                 else:
                     # Get the new price from the parsed data if available
-                    new_sl_price = float(parsed_action.get("value", 0.0))
-
+                    new_sl_price = float(parsed_action.get("stop_loss", 0.0))
+                print(f"New SL price determined from parsed action: {new_sl_price}")
                 if new_sl_price > 0:
                     action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
                     if action_successful and isinstance(binance_response_log, dict):
@@ -648,21 +681,143 @@ class DiscordBot:
                         trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
                 else:
                     logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}")
-            elif action_type == "stop_loss_moved_to_update":
+            elif action_type == "cancelled_stoploss_order_and_create_new":
                 logger.info(f"Processing stop loss update for trade {trade_row['id']}")
-                new_sl_price = float(parsed_action.get("stop_loss", 0.0))
-
-                if new_sl_price > 0:
-                    action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
+                
+                try:
+                    coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
+                    position_type = trade_row.get('signal_type', 'UNKNOWN')
+                    if not coin_symbol:
+                        logger.error(f"Could not determine coin symbol for trade {trade_row['id']}")
+                        return {"status": "error", "message": "Could not determine coin symbol for stop loss update."}
+                    
+                    stop_loss_percentage = parsed_action.get('stop_loss_percentage', 2.0)
+                    if stop_loss_percentage <= 0 or stop_loss_percentage > 50:
+                        logger.error(f"Invalid stop loss percentage: {stop_loss_percentage}%. Must be between 0.1 and 50.")
+                        return {"status": "error", "message": f"Invalid stop loss percentage: {stop_loss_percentage}%. Must be between 0.1 and 50."}
+                    
+                    new_sl_price = await self.trading_engine.calculate_percentage_stop_loss(coin_symbol, position_type, stop_loss_percentage)
+                    print(f"New SL price determined from percentage: {new_sl_price}")
+                    if not new_sl_price:
+                        logger.error(f"Could not calculate {stop_loss_percentage}% stop loss for {coin_symbol}")
+                        return {"status": "error", "message": f"Could not calculate {stop_loss_percentage}% stop loss for {coin_symbol}"}
+                    if new_sl_price > 0: 
+                        action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
+                        if action_successful and isinstance(binance_response_log, dict):
+                            trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
+                        else:
+                            logger.warning(f"Stop loss update failed for trade {trade_row['id']}. Binance response: {binance_response_log}")
+                    else: 
+                        logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}. new_sl_price was {new_sl_price}")
+                except Exception as e:
+                    logger.error(f"An error occurred while updating stop loss for trade {trade_row['id']}: {e}")
+            elif action_type == "take_profit_taken_hit":
+                logger.info(f"Processing take profit taken hit for trade {trade_row['id']} - creating new TP and moving SL to entry")
+                
+                try:
+                    coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
+                    position_type = trade_row.get('signal_type', 'UNKNOWN')
+                    if not coin_symbol:
+                        logger.error(f"Could not determine coin symbol for trade {trade_row['id']}")
+                        return {"status": "error", "message": "Could not determine coin symbol for take profit taken hit."}
+                    
+                    trading_pair = f"{coin_symbol}USDT"
+                    positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
+                    current_position_size = 0.0
+                    for position in positions:
+                        if position.get('symbol') == trading_pair and float(position.get('positionAmt', 0)) != 0:
+                            current_position_size = abs(float(position.get('positionAmt', 0)))
+                            break
+                    
+                    if current_position_size <= 0:
+                        logger.warning(f"No open position found for {trading_pair} - position may have been fully closed")
+                        return {"status": "warning", "message": f"No open position found for {trading_pair}"}
+                    
+                    logger.info(f"Current position size for {trading_pair}: {current_position_size}")
+                    
+                    # Step 2: Get current market price
+                    current_price = await self.binance_exchange.get_futures_mark_price(trading_pair)
+                    if not current_price or current_price <= 0:
+                        logger.error(f"Could not get current price for {trading_pair}")
+                        return {"status": "error", "message": f"Could not get current price for {trading_pair}"}
+                    
+                    logger.info(f"Current price for {trading_pair}: {current_price}")
+                    
+                    # Step 3: Calculate new TP price (3% away from current price)
+                    if position_type.upper() == 'LONG':
+                        new_tp_price = current_price * 1.03  # 3% above current price
+                    else:  # SHORT
+                        new_tp_price = current_price * 0.97  # 3% below current price
+                    
+                    logger.info(f"New TP price calculated: {new_tp_price} (3% {'above' if position_type.upper() == 'LONG' else 'below'} current price)")
+                    
+                                         # Step 4: Get entry price for break-even stop loss
+                    entry_price = float(self._parse_parsed_signal(trade_row.get('parsed_signal')).get('entry_prices', [0.0])[0])
+                    if entry_price <= 0:
+                         logger.error(f"Could not determine entry price for trade {trade_row['id']}")
+                         return {"status": "error", "message": f"Could not determine entry price for trade {trade_row['id']}"}
+                    
+                    logger.info(f"Entry price for break-even SL: {entry_price}")
+                    
+                    # Step 5: Cancel existing TP/SL orders
+                    logger.info(f"Canceling existing TP/SL orders for {trading_pair}")
+                    await self.trading_engine.cancel_tp_sl_orders(trading_pair, trade_row)
+                    
+                    # Step 6: Create new TP order for remaining position
+                    tp_side = 'SELL' if position_type.upper() == 'LONG' else 'BUY'
+                    new_tp_order = await self.binance_exchange.create_futures_order(
+                        pair=trading_pair,
+                        side=tp_side,
+                        order_type_market='TAKE_PROFIT_MARKET',
+                        amount=current_position_size,
+                        stop_price=new_tp_price,
+                        reduce_only=True
+                    )
+                    
+                    if not new_tp_order or 'orderId' not in new_tp_order:
+                        logger.error(f"Failed to create new TP order: {new_tp_order}")
+                        return {"status": "error", "message": f"Failed to create new TP order for {trading_pair}"}
+                    
+                    logger.info(f"Successfully created new TP order: {new_tp_order['orderId']} at {new_tp_price}")
+                    
+                    # Step 7: Update stop loss to entry (break-even)
+                    action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, entry_price)
                     if action_successful and isinstance(binance_response_log, dict):
-                        # The response from a successful SL update contains the new order details
                         trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
-                else:
-                    logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}")
-
-            elif action_type == "order_cancelled":
+                        logger.info(f"Successfully moved stop loss to entry price: {entry_price}")
+                    else:
+                        logger.warning(f"Stop loss update to entry failed for trade {trade_row['id']}. Binance response: {binance_response_log}")
+                    
+                    # Step 8: Update trade status and position size
+                    trade_updates["status"] = "PARTIALLY_CLOSED"
+                    trade_updates["position_size"] = current_position_size
+                    
+                    # Store the new TP order information
+                    if 'tp_sl_orders' not in trade_updates:
+                        trade_updates['tp_sl_orders'] = []
+                    trade_updates['tp_sl_orders'].append({
+                        'orderId': new_tp_order['orderId'],
+                        'order_type': 'TAKE_PROFIT',
+                        'tp_level': 2,  # This is the second TP
+                        'stopPrice': str(new_tp_price),
+                        'symbol': trading_pair,
+                        'amount': str(current_position_size)
+                    })
+                    
+                    action_successful = True
+                    binance_response_log = {
+                        'message': f'TP taken hit processed - new TP at {new_tp_price}, SL moved to entry {entry_price}',
+                        'new_tp_order': new_tp_order,
+                        'position_size': current_position_size
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"An error occurred while processing take profit taken hit for trade {trade_row['id']}: {e}")
+                    return {"status": "error", "message": f"Error processing take profit taken hit: {str(e)}"}
+            elif action_type == "limit_order_cancelled":
                 logger.info(f"Processing cancellation for trade {trade_row['id']}")
                 action_successful, binance_response_log = await self.trading_engine.cancel_order(trade_row)
+                await self.trading_engine.cancel_tp_sl_orders(f"{trade_row.get('coin_symbol', 'UNKNOWN')}USDT", trade_row)
                 if action_successful:
                     trade_updates["status"] = "CANCELLED"
 
