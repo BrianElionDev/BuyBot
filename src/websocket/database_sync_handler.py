@@ -160,38 +160,40 @@ class DatabaseSyncHandler:
                 'sync_order_response': json.dumps(execution_data)
             }
 
-            # Update based on order status
+            # Import status constants
+            from discord_bot.status_constants import map_binance_order_status, determine_position_status_from_order
+
+            # Update order status
+            order_status = map_binance_order_status(status)
+            updates['order_status'] = order_status
+
+            # Determine position status based on order status and executed quantity
+            position_status = determine_position_status_from_order(order_status, executed_qty)
+            updates['status'] = position_status  # status column now holds position status
+
+            # Add additional data based on order status
             if status == 'FILLED':
                 if executed_qty > 0:
                     updates.update({
-                        'status': 'CLOSED',
-                        'exit_price': avg_price,
-                        'binance_exit_price': avg_price,
-                        'pnl_usd': realized_pnl,
-                        'position_size': executed_qty
+                        'exit_price': str(avg_price),
+                        'binance_exit_price': str(avg_price),
+                        'pnl_usd': str(realized_pnl),
+                        'position_size': str(executed_qty)
                     })
                     logger.info(f"Trade {trade_id} FILLED at {avg_price} - PnL: {realized_pnl}")
 
             elif status == 'PARTIALLY_FILLED':
                 updates.update({
-                    'status': 'PARTIALLY_CLOSED',
-                    'exit_price': avg_price,
-                    'binance_exit_price': avg_price,
-                    'position_size': executed_qty
+                    'exit_price': str(avg_price),
+                    'binance_exit_price': str(avg_price),
+                    'position_size': str(executed_qty)
                 })
                 logger.info(f"Trade {trade_id} PARTIALLY_FILLED at {avg_price}")
 
             elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
-                updates.update({
-                    'status': 'FAILED'
-                })
                 logger.warning(f"Trade {trade_id} {status} - {execution_data}")
 
             elif status == 'NEW':
-                # Order was just created
-                updates.update({
-                    'status': 'PENDING'
-                })
                 logger.info(f"Trade {trade_id} order created")
             else:
                 logger.warning(f"Skipping trade update - status is {status} for order {trade_id}")

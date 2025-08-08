@@ -302,9 +302,22 @@ class BinanceDatabaseSync:
                         'manual_verification_needed': False
                     }
 
-                    # Update status based on order status
+                    # Import status constants
+                    import sys
+                    import os
+                    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                    from discord_bot.status_constants import map_binance_order_status, determine_position_status_from_order
+
+                    # Update order status
+                    order_status = map_binance_order_status(status)
+                    update_data['order_status'] = order_status
+
+                    # Determine position status
+                    position_status = determine_position_status_from_order(order_status, 0)  # We'll get position size from positions sync
+                    update_data['status'] = position_status  # status column now holds position status
+
+                    # Get additional data for filled orders
                     if status == 'FILLED':
-                        update_data['status'] = 'OPEN'  # Position is now open
                         # Get current price for exit calculation
                         try:
                             current_price = await self.binance_exchange.get_order_status(symbol, order_id)
@@ -312,11 +325,6 @@ class BinanceDatabaseSync:
                                 update_data['binance_exit_price'] = float(current_price['avgPrice'])
                         except Exception as e:
                             logger.warning(f"Could not get exit price for {symbol}: {e}")
-
-                    elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
-                        update_data['status'] = 'FAILED'
-                    elif status == 'NEW':
-                        update_data['status'] = 'PENDING'  # Order is still pending
 
                     # Update the trade
                     self.supabase.table("trades").update(update_data).eq("id", trade_id).execute()
@@ -394,9 +402,9 @@ class BinanceDatabaseSync:
                             'manual_verification_needed': False
                         }
 
-                        # If position is closed (zero size), update status
+                        # If position is closed (zero size), update position status
                         if position_amt == 0:
-                            update_data['status'] = 'CLOSED'
+                            update_data['status'] = 'CLOSED'  # Position status
                             # Calculate realized PnL (simplified)
                             entry_price = db_trade.get('entry_price', 0)
                             if entry_price and mark_price:
@@ -406,6 +414,9 @@ class BinanceDatabaseSync:
                                     realized_pnl = (entry_price - mark_price) * abs(position_amt)
                                 update_data['realized_pnl'] = realized_pnl
                                 update_data['pnl_usd'] = realized_pnl
+                        else:
+                            # Position is open
+                            update_data['status'] = 'OPEN'  # Position status
 
                         # Update the trade
                         self.supabase.table("trades").update(update_data).eq("id", db_trade['id']).execute()

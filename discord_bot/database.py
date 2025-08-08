@@ -257,14 +257,15 @@ class DatabaseManager:
                     updates["sync_issues"] = []
                     updates["manual_verification_needed"] = False
 
-                    # Update status based on status response
-                    final_status = self._determine_final_status(status_response)
-                    if final_status:
-                        updates["status"] = final_status
+                    # Determine both order and position status
+                    order_status, position_status = self._determine_order_and_position_status(status_response)
+                    updates["order_status"] = order_status
+                    updates["status"] = position_status  # status column now holds position status
             else:
                 # Order creation failed - this is a legitimate failure
                 updates["binance_response"] = json.dumps(original_response) if isinstance(original_response, dict) else str(original_response)
-                updates["status"] = "FAILED"
+                updates["order_status"] = "REJECTED"
+                updates["status"] = "NONE"  # No position created
                 logger.error(f"Order creation failed: {original_response}")
 
             response = self.supabase.from_("trades").update(updates).eq("id", trade_id).execute()
@@ -328,6 +329,24 @@ class DatabaseManager:
             return 'OPEN'  # Order is open but not filled yet
         else:
             return None  # Unknown status, don't change
+
+    def _determine_order_and_position_status(self, status_response, position_size: float = 0) -> tuple[str, str]:
+        """
+        Determine both order_status and position_status from Binance response.
+
+        Returns:
+            tuple: (order_status, position_status)
+        """
+        from .status_constants import map_binance_order_status, determine_position_status_from_order
+
+        if not isinstance(status_response, dict):
+            return 'PENDING', 'NONE'
+
+        binance_status = status_response.get('status', '').upper()
+        order_status = map_binance_order_status(binance_status)
+        position_status = determine_position_status_from_order(order_status, position_size)
+
+        return order_status, position_status
 
     async def save_signal_to_db(self, signal_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """

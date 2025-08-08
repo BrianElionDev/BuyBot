@@ -25,7 +25,7 @@ async def check_balance():
 
     api_key = os.getenv("BINANCE_API_KEY")
     api_secret = os.getenv("BINANCE_API_SECRET")
-    is_testnet = True  # Set to True for testnet, False for mainnet
+    is_testnet = False # Set to True for testnet, False for mainnet
 
     if not api_key or not api_secret:
         logging.error("API Key or Secret not found in .env file.")
@@ -46,44 +46,88 @@ async def check_balance():
         )
         logging.info("✅ BinanceExchange initialized successfully")
 
-        # --- Check if we can access the client directly for more detailed info ---
+        # Initialize the client first
+        await binance_exchange._init_client()
+        client = binance_exchange.client
+
+        print("\n" + "="*70)
+        print("          DETAILED BINANCE TESTNET ACCOUNT CHECK")
+        print("="*70)
+
+        # Get futures account information
         try:
-            # Access the underlying client to get raw account data
-            client = binance_exchange.client
+            logging.info("Attempting to get detailed futures account info...")
 
-            print("\n" + "="*70)
-            print("          DETAILED BINANCE TESTNET ACCOUNT CHECK")
-            print("="*70)
+            if client is None:
+                raise Exception("Client not initialized")
 
-            # Try to get futures account info directly
-            try:
-                logging.info("Attempting to get detailed futures account info...")
-                futures_account_balances = await binance_exchange.get_account_balances()
+            # Get futures account information
+            futures_account = await client.futures_account()
 
-                # The get_account_balances function already filters for non-zero balances.
-                # We'll display what we get back.
+            if not futures_account or not futures_account.get('assets'):
+                print("❌ TESTNET ACCOUNT IS COMPLETELY EMPTY OR BALANCE IS NOT VISIBLE TO API KEY")
+                print("\nTo fix:")
+                print("1. Add funds using the faucet: https://testnet.binance.vision/")
+                print("2. Ensure your API key has 'Enable Futures' permission.")
+            else:
+                print("📊 FUTURES ACCOUNT BALANCES:")
+                print(f"{'Asset':<8} {'Wallet Balance':<18} {'Available Balance':<18} {'Unrealized PnL':<15}")
+                print("-"*75)
 
-                if not futures_account_balances:
-                    print("❌ TESTNET ACCOUNT IS COMPLETELY EMPTY OR BALANCE IS NOT VISIBLE TO API KEY")
-                    print("\nTo fix:")
-                    print("1. Add funds using the faucet: https://testnet.binance.vision/")
-                    print("2. Ensure your API key has 'Enable Futures' permission.")
+                total_balance = 0
+                for asset in futures_account['assets']:
+                    wallet_balance = float(asset.get('walletBalance', '0'))
+                    available_balance = float(asset.get('availableBalance', '0'))
+                    unrealized_pnl = float(asset.get('unrealizedProfit', '0'))
 
+                    if wallet_balance > 0 or available_balance > 0 or unrealized_pnl != 0:
+                        print(f"{asset['asset']:<8} {wallet_balance:<18.8f} {available_balance:<18.8f} {unrealized_pnl:<15.8f}")
+                        total_balance += wallet_balance
+
+                if total_balance > 0:
+                    print("-"*75)
+                    print(f"✅ TOTAL WALLET BALANCE: {total_balance:.8f} USDT")
                 else:
-                    print(f"{'Asset':<8} {'Wallet Balance':<18}")
-                    print("-"*70)
-                    for asset, balance in futures_account_balances.items():
-                        print(f"{asset:<8} {balance:<18.8f}")
-                    print("-"*70)
-                    print("✅ TESTNET ACCOUNT HAS A VISIBLE BALANCE.")
-
-            except Exception as e:
-                logging.error(f"Failed to get detailed futures account: {e}")
-
-            print("="*70 + "\n")
+                    print("-"*75)
+                    print("❌ NO POSITIVE BALANCES FOUND")
 
         except Exception as e:
-            logging.error(f"Failed to access account details: {e}")
+            logging.error(f"Failed to get detailed futures account: {e}")
+
+        # Also try to get spot account information
+        try:
+            print("\n📊 SPOT ACCOUNT BALANCES:")
+            if client is None:
+                raise Exception("Client not initialized")
+            spot_account = await client.get_account()
+
+            if spot_account and spot_account.get('balances'):
+                print(f"{'Asset':<8} {'Free':<18} {'Locked':<18}")
+                print("-"*50)
+
+                total_spot_balance = 0
+                for balance in spot_account['balances']:
+                    free = float(balance.get('free', '0'))
+                    locked = float(balance.get('locked', '0'))
+
+                    if free > 0 or locked > 0:
+                        print(f"{balance['asset']:<8} {free:<18.8f} {locked:<18.8f}")
+                        if balance['asset'] == 'USDT':
+                            total_spot_balance += free + locked
+
+                if total_spot_balance > 0:
+                    print("-"*50)
+                    print(f"✅ TOTAL SPOT USDT: {total_spot_balance:.8f}")
+                else:
+                    print("-"*50)
+                    print("❌ NO SPOT BALANCES FOUND")
+            else:
+                print("❌ Could not retrieve spot account information")
+
+        except Exception as e:
+            logging.error(f"Failed to get spot account: {e}")
+
+        print("="*70 + "\n")
 
         logging.info("Detailed balance check complete.")
 

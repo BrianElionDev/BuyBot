@@ -20,6 +20,7 @@ async def check_binance_account():
     Connects to Binance and displays open futures positions and orders,
     then correlates them with database records.
     """
+    exchange = None
     # --- Load Environment Variables ---
     load_dotenv()
 
@@ -48,6 +49,7 @@ async def check_binance_account():
             api_secret=api_secret,
             is_testnet=is_testnet
         )
+        await exchange._init_client()
         client = exchange.client
         supabase: Client = create_client(url, key)
         logging.info("✅ Binance and Supabase clients initialized successfully")
@@ -79,7 +81,9 @@ async def check_binance_account():
         print("="*95)
         open_orders = []
         try:
-            open_orders = client.futures_get_open_orders()
+            if client is None:
+                raise Exception("Client not initialized")
+            open_orders = await client.futures_get_open_orders()
             if not open_orders:
                 print("No open orders found.")
             else:
@@ -99,7 +103,7 @@ async def check_binance_account():
             print(" " * 25 + "ORDER CORRELATION AND ALERT HISTORY")
             print("="*95)
 
-            for order in await open_orders:
+            for order in open_orders:
                 order_id = str(order['orderId'])
                 print(f"\n--- Analyzing Order ID: {order_id} ({order['symbol']}) ---")
 
@@ -134,6 +138,9 @@ async def check_binance_account():
 
     except Exception as e:
         logging.error(f"Failed to initialize clients: {e}")
+    finally:
+        if exchange is not None:
+            await exchange.close_client()
 
 if __name__ == "__main__":
     asyncio.run(check_binance_account())

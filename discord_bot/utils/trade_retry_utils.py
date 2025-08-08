@@ -625,7 +625,17 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
                 if matching_order:
                     order_status = matching_order.get('status')
 
-                    # Update trade based on order status
+                    # Import status constants
+                    from discord_bot.status_constants import map_binance_order_status
+
+                    # Update order status
+                    mapped_order_status = map_binance_order_status(order_status)
+                    update_data = {
+                        'order_status': mapped_order_status,
+                        'updated_at': current_time
+                    }
+
+                    # Determine position status based on order status
                     if order_status == 'FILLED':
                         # Check if position is still open
                         try:
@@ -638,30 +648,18 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
 
                             if position_open:
                                 # Position is still open
-                                update_data = {
-                                    'status': 'OPEN',
-                                    'updated_at': current_time
-                                }
+                                update_data['status'] = 'OPEN'  # Position status
                             else:
                                 # Position is closed
-                                update_data = {
-                                    'status': 'CLOSED',
-                                    'binance_exit_price': float(matching_order.get('avgPrice', 0)),
-                                    'updated_at': current_time
-                                }
+                                update_data['status'] = 'CLOSED'  # Position status
+                                update_data['binance_exit_price'] = str(float(matching_order.get('avgPrice', 0)))
                         except Exception:
                             # If we can't check position, assume closed
-                            update_data = {
-                                'status': 'CLOSED',
-                                'binance_exit_price': float(matching_order.get('avgPrice', 0)),
-                                'updated_at': current_time
-                            }
+                            update_data['status'] = 'CLOSED'  # Position status
+                            update_data['binance_exit_price'] = str(float(matching_order.get('avgPrice', 0)))
 
                     elif order_status in ['CANCELED', 'EXPIRED', 'REJECTED']:
-                        update_data = {
-                            'status': 'FAILED',
-                            'updated_at': current_time
-                        }
+                        update_data['status'] = 'NONE'  # No position exists
 
                     elif order_status == 'NEW':
                         update_data = {
@@ -1072,11 +1070,12 @@ async def backfill_single_trade_from_history(bot, supabase, trade: Dict, binance
 
         # If no realized PnL from Binance, calculate it
         if realized_pnl == 0.0 and exit_price > 0:
-            entry_price = trade.get('entry_price', 0.0)
-            position_size = trade.get('position_size', 0.0)
+            entry_price = trade.get('entry_price')
+            position_size = trade.get('position_size')
             position_type = trade.get('signal_type', 'LONG')
 
-            if entry_price > 0 and position_size > 0:
+            # Handle None values properly
+            if entry_price is not None and position_size is not None and entry_price > 0 and position_size > 0:
                 realized_pnl = calculate_pnl(entry_price, exit_price, position_size, position_type)
 
         # Prepare update data

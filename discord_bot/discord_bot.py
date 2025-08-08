@@ -313,7 +313,11 @@ class DiscordBot:
                     logger.error(f"Order failed for trade {trade_row['id']}: {error_msg}")
                     await self.db_manager.update_existing_trade(
                         trade_id=trade_row["id"],
-                        updates={"status": "FAILED", "binance_response": result_message}
+                        updates={
+                            "order_status": "REJECTED",
+                            "status": "NONE",  # No position created
+                            "binance_response": result_message
+                        }
                     )
                     return {"status": "error", "message": f"Order failed: {error_msg}"}
 
@@ -350,12 +354,14 @@ class DiscordBot:
             else:
                 # 5. Update database with failed status and Binance response
                 updates = {
-                    "status": "FAILED",
+                    "order_status": "REJECTED",
+                    "status": "NONE",  # No position created
                     "binance_response": result_message
                 }
                 # --- UNFILLED status check for failed trades ---
                 if isinstance(result_message, dict) and 'orderId' in result_message and is_unfilled(result_message):
-                    updates["status"] = "UNFILLED"
+                    updates["order_status"] = "PENDING"
+                    updates["status"] = "NONE"
                     logger.info(f"Trade marked as UNFILLED (failure branch) for trade ID: {trade_row['id']}")
                 await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=updates)
 
@@ -370,7 +376,10 @@ class DiscordBot:
             trade_id = locals().get('trade_row', {}).get('id')
             if trade_id is not None:
                 # Update database with failed status
-                updates = {"status": "FAILED"}
+                updates = {
+                    "order_status": "REJECTED",
+                    "status": "NONE"  # No position created
+                }
                 await self.db_manager.update_existing_trade(trade_id=trade_id, updates=updates)
 
             error_msg = f"Error executing initial trade: {str(e)}"
@@ -395,8 +404,8 @@ class DiscordBot:
                 return {"status": "error", "message": error_msg}
 
             # --- SKIP follow-up if original trade is FAILED or UNFILLED ---
-            if trade_row.get('status') in ('FAILED', 'UNFILLED'):
-                logger.warning(f"Skipping follow-up: original trade {trade_row['id']} is {trade_row.get('status')}")
+            if trade_row.get('order_status') in ('REJECTED', 'CANCELED', 'EXPIRED') or trade_row.get('status') == 'NONE':
+                logger.warning(f"Skipping follow-up: original trade {trade_row['id']} has order_status={trade_row.get('order_status')} and position_status={trade_row.get('status')}")
                 # Update alert to reflect no open position
                 alert_updates = {
                     "parsed_alert": {
