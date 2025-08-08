@@ -4,7 +4,10 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from discord_bot.database import DatabaseManager
+# Import DatabaseManager type for type hints only
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from discord_bot.database import DatabaseManager
 from src.exchange.binance_exchange import BinanceExchange
 from src.services.price_service import PriceService
 
@@ -25,7 +28,7 @@ class TradingEngine:
     """
     The core logic for processing signals and executing trades.
     """
-    def __init__(self, price_service: PriceService, binance_exchange: BinanceExchange, db_manager: DatabaseManager):
+    def __init__(self, price_service: PriceService, binance_exchange: BinanceExchange, db_manager: 'DatabaseManager'):
         self.price_service = price_service
         self.binance_exchange = binance_exchange
         self.db_manager = db_manager
@@ -33,19 +36,35 @@ class TradingEngine:
         logger.info("TradingEngine initialized.")
 
     def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
-        """
-        Safely parse parsed_signal data which can be either a dict or JSON string.
-        """
+        """Parse the parsed_signal JSON string into a dictionary."""
         if isinstance(parsed_signal_data, dict):
             return parsed_signal_data
         elif isinstance(parsed_signal_data, str):
             try:
                 return json.loads(parsed_signal_data)
             except json.JSONDecodeError:
-                logger.warning(f"Failed to parse parsed_signal JSON: {parsed_signal_data}")
+                logger.warning(f"Could not parse parsed_signal JSON: {parsed_signal_data}")
                 return {}
         else:
             logger.warning(f"Unexpected parsed_signal type: {type(parsed_signal_data)}")
+            return {}
+
+    def _safe_parse_binance_response(self, binance_response) -> Dict:
+        """Safely parse binance_response field which is stored as text but may contain JSON."""
+        if isinstance(binance_response, dict):
+            return binance_response
+        elif isinstance(binance_response, str):
+            # Handle empty or invalid strings
+            if not binance_response or binance_response.strip() == '':
+                return {}
+
+            # Try to parse as JSON
+            try:
+                return json.loads(binance_response.strip())
+            except (json.JSONDecodeError, ValueError):
+                # If it's not valid JSON, treat it as a plain text error message
+                return {"error": binance_response.strip()}
+        else:
             return {}
 
     async def process_signal(
@@ -285,6 +304,18 @@ class TradingEngine:
                     if stop_loss_order_id:
                         order_result['stop_loss_order_id'] = stop_loss_order_id
                         logger.info(f"Stop loss order ID stored: {stop_loss_order_id}")
+
+                    elif order_type.upper() == 'LIMIT':
+                        # For LIMIT orders, store TP/SL parameters for later creation after fill
+                        logger.info(f"LIMIT order placed - TP/SL orders will be created after order is filled")
+                        order_result['pending_tp_sl'] = {
+                            'trading_pair': trading_pair,
+                            'position_type': position_type,
+                            'position_size': order_result.get('origQty', trade_amount),
+                            'take_profits': take_profits,
+                            'stop_loss': stop_loss
+                        }
+                        logger.info(f"Stored TP/SL parameters for post-fill creation")
 
                     # Return success - order status will be checked separately in Discord bot
                     return True, order_result
@@ -704,13 +735,7 @@ class TradingEngine:
 
         # Parse position size and order info
         position_size = float(active_trade.get('position_size') or 0.0)
-        binance_response = active_trade.get('binance_response')
-        if isinstance(binance_response, str):
-            import json
-            try:
-                binance_response = json.loads(binance_response)
-            except Exception:
-                binance_response = {}
+        binance_response = self._safe_parse_binance_response(active_trade.get('binance_response'))
         exchange_order_id = (active_trade.get('exchange_order_id') or (binance_response.get('orderId') if binance_response else None))
         stop_loss_order_id = (active_trade.get('stop_loss_order_id') or ((binance_response.get('stop_loss_order_details') or {}).get('orderId') if binance_response else None))
         parsed_signal = self._parse_parsed_signal(active_trade.get('parsed_signal'))

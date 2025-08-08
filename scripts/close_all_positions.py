@@ -2,15 +2,31 @@
 """
 Binance Emergency Close Script
 Closes all open positions and cancels all open orders on Binance (both spot and futures)
+
+Usage:
+    # Close all positions and orders (emergency mode)
+    python close_all_positions.py
+
+    # Close all positions and orders without selling spot assets
+    python close_all_positions.py --no-spot
+
+    # Close only July 2025 trades at market price
+    python close_all_positions.py --july-only
+
+    # Close only July 2025 trades (alternative flag)
+    python close_all_positions.py --july-trades
 """
 
 import asyncio
 import logging
 import os
 import sys
+import json
 from typing import Dict, List, Tuple
 from decimal import Decimal
 from dotenv import load_dotenv
+from datetime import datetime, timezone
+from supabase import create_client, Client
 
 # Add the project root to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,6 +50,16 @@ class BinanceEmergencyClose:
         self.exchange = BinanceExchange(api_key, api_secret, is_testnet)
         self.is_testnet = is_testnet
 
+        # Initialize Supabase client
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_KEY")
+        if url and key:
+            self.supabase = create_client(url, key)
+            logger.info("Successfully connected to Supabase.")
+        else:
+            logger.warning("Supabase URL or Key not found. Database functionality will be disabled.")
+            self.supabase = None
+
     async def initialize(self):
         """Initialize the Binance client"""
         await self.exchange._init_client()
@@ -42,6 +68,247 @@ class BinanceEmergencyClose:
     async def close(self):
         """Close the exchange connection"""
         await self.exchange.close()
+
+    async def get_july_open_trades(self) -> List[Dict]:
+        """Get all open trades from July 2025"""
+        if not self.supabase:
+            logger.error("Supabase client not available.")
+            return []
+
+        try:
+            # Query for open trades created in July 2025
+            july_start = "2025-07-01 00:00:00+00"
+            july_end = "2025-08-01 00:00:00+00"
+
+            response = self.supabase.from_("trades").select("*") \
+                .eq("status", "OPEN") \
+                .gte("createdAt", july_start) \
+                .lt("createdAt", july_end) \
+                .execute()
+
+            trades = response.data or []
+            logger.info(f"Found {len(trades)} open trades from July 2025")
+            return trades
+
+        except Exception as e:
+            logger.error(f"Error querying July trades: {e}")
+            return []
+
+    async def close_july_trade(self, trade: Dict) -> Tuple[bool, str]:
+        """Close a single July trade at market price"""
+        try:
+            trade_id = trade['id']
+
+            # Extract symbol from parsed_signal if coin_symbol is None
+            symbol = trade.get('coin_symbol')
+            if not symbol and trade.get('parsed_signal'):
+                try:
+                    parsed_signal = trade['parsed_signal']
+                    if isinstance(parsed_signal, str):
+                        parsed_signal = json.loads(parsed_signal)
+                    symbol = parsed_signal.get('coin_symbol')
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # Extract position type from parsed_signal or use signal_type
+            position_type = 'LONG'  # default
+            if trade.get('parsed_signal'):
+                try:
+                    parsed_signal = trade['parsed_signal']
+                    if isinstance(parsed_signal, str):
+                        parsed_signal = json.loads(parsed_signal)
+                    position_type = parsed_signal.get('position_type', trade.get('signal_type', 'LONG'))
+                except (json.JSONDecodeError, TypeError):
+                    position_type = trade.get('signal_type', 'LONG')
+            else:
+                position_type = trade.get('signal_type', 'LONG')
+
+            # For now, we'll use a default quantity since position_size is None
+            # In a real scenario, you might want to get this from Binance positions
+            quantity = 1.0  # Default quantity - you may need to adjust this
+
+            if not symbol:
+                return False, f"Invalid trade data: symbol={symbol}, position_type={position_type}"
+
+            # Add USDT suffix if not present
+            if not symbol.endswith('USDT'):
+                symbol = f"{symbol}USDT"
+
+            logger.info(f"Closing July trade {trade_id}: {symbol} {position_type} {quantity}")
+
+            # Determine the side to close the position
+            if position_type.upper() == 'LONG':
+                close_side = SIDE_SELL
+            else:  # SHORT
+                close_side = SIDE_BUY
+
+            # Create market order to close position
+            response = await self.exchange.create_futures_order(
+                pair=symbol,
+                side=close_side,
+                order_type_market='MARKET',
+                amount=quantity,
+                reduce_only=True
+            )
+
+            if 'orderId' in response:
+                # Get the execution price from the response
+                avg_price = float(response.get('avgPrice', 0))
+                if avg_price > 0:
+                    # Calculate PnL
+                    entry_price = float(trade.get('entry_price', 0))
+                    if entry_price > 0:
+                        if position_type.upper() == 'LONG':
+                            pnl = (avg_price - entry_price) * quantity
+                        else:  # SHORT
+                            pnl = (entry_price - avg_price) * quantity
+                    else:
+                        pnl = 0.0
+                else:
+                    pnl = 0.0
+
+                # Update the trade in database
+                update_data = {
+                    'status': 'CLOSED',
+                    'exit_price': avg_price,
+                    'binance_exit_price': avg_price,
+                    'pnl_usd': pnl,
+                    'realized_pnl': pnl,
+                    'updated_at': datetime.now(timezone.utc).isoformat()
+                }
+
+                if self.supabase:
+                    self.supabase.table("trades").update(update_data).eq("id", trade_id).execute()
+                    logger.info(f"Updated trade {trade_id} in database with exit data")
+
+                logger.info(f"Successfully closed July trade {trade_id}: {response['orderId']} at {avg_price}, PnL: {pnl}")
+                return True, f"Trade closed: {response['orderId']}, PnL: {pnl}"
+            else:
+                error_msg = f"Failed to close July trade {trade_id}: {response}"
+                logger.error(error_msg)
+                return False, error_msg
+
+        except Exception as e:
+            error_msg = f"Error closing July trade {trade.get('id', 'UNKNOWN')}: {e}"
+            logger.error(error_msg)
+            return False, error_msg
+
+    async def close_all_july_trades(self) -> Dict[str, List[str]]:
+        """Close all open trades from July 2025"""
+        logger.info("=" * 60)
+        logger.info("CLOSING ALL JULY 2025 TRADES")
+        logger.info("=" * 60)
+
+        trades = await self.get_july_open_trades()
+        results = {"success": [], "failed": [], "marked_closed": []}
+
+        if not trades:
+            logger.info("No open July trades found")
+            return results
+
+        logger.info(f"Found {len(trades)} July trades to process:")
+        for trade in trades:
+            # Extract symbol from parsed_signal if coin_symbol is None
+            symbol = trade.get('coin_symbol')
+            if not symbol and trade.get('parsed_signal'):
+                try:
+                    parsed_signal = trade['parsed_signal']
+                    if isinstance(parsed_signal, str):
+                        parsed_signal = json.loads(parsed_signal)
+                    symbol = parsed_signal.get('coin_symbol', 'UNKNOWN')
+                except (json.JSONDecodeError, TypeError):
+                    symbol = 'UNKNOWN'
+            else:
+                symbol = symbol or 'UNKNOWN'
+
+            # Extract position type
+            position_type = 'UNKNOWN'
+            if trade.get('parsed_signal'):
+                try:
+                    parsed_signal = trade['parsed_signal']
+                    if isinstance(parsed_signal, str):
+                        parsed_signal = json.loads(parsed_signal)
+                    position_type = parsed_signal.get('position_type', trade.get('signal_type', 'UNKNOWN'))
+                except (json.JSONDecodeError, TypeError):
+                    position_type = trade.get('signal_type', 'UNKNOWN')
+            else:
+                position_type = trade.get('signal_type', 'UNKNOWN')
+
+            entry_price = trade.get('entry_price', 0)
+            logger.info(f"  - {symbol} {position_type} @ {entry_price}")
+
+        # Get current Binance positions to check which trades are actually open
+        logger.info("Checking current Binance positions...")
+        binance_positions = await self.get_all_open_futures_positions()
+        binance_symbols = {pos['symbol'] for pos in binance_positions if float(pos.get('positionAmt', 0)) != 0}
+        logger.info(f"Found {len(binance_symbols)} active positions on Binance: {list(binance_symbols)}")
+
+        for trade in trades:
+            trade_id = trade['id']
+
+            # Extract symbol for comparison
+            symbol = trade.get('coin_symbol')
+            if not symbol and trade.get('parsed_signal'):
+                try:
+                    parsed_signal = trade['parsed_signal']
+                    if isinstance(parsed_signal, str):
+                        parsed_signal = json.loads(parsed_signal)
+                    symbol = parsed_signal.get('coin_symbol')
+                except (json.JSONDecodeError, TypeError):
+                    symbol = None
+
+            if symbol:
+                # Add USDT suffix for comparison
+                if not symbol.endswith('USDT'):
+                    symbol_with_suffix = f"{symbol}USDT"
+                else:
+                    symbol_with_suffix = symbol
+
+                # Check if this symbol has an active position on Binance
+                if symbol_with_suffix in binance_symbols:
+                    # Position exists on Binance, try to close it
+                    success, message = await self.close_july_trade(trade)
+                    if success:
+                        results["success"].append(f"{symbol} (ID: {trade_id}): {message}")
+                    else:
+                        results["failed"].append(f"{symbol} (ID: {trade_id}): {message}")
+                else:
+                    # No position on Binance, mark as closed in database
+                    success = await self.mark_trade_as_closed(trade_id, symbol)
+                    if success:
+                        results["marked_closed"].append(f"{symbol} (ID: {trade_id}): Marked as CLOSED (no position on Binance)")
+                    else:
+                        results["failed"].append(f"{symbol} (ID: {trade_id}): Failed to mark as CLOSED")
+            else:
+                # No symbol found, mark as closed
+                success = await self.mark_trade_as_closed(trade_id, "UNKNOWN")
+                if success:
+                    results["marked_closed"].append(f"UNKNOWN (ID: {trade_id}): Marked as CLOSED (no symbol)")
+                else:
+                    results["failed"].append(f"UNKNOWN (ID: {trade_id}): Failed to mark as CLOSED")
+
+        logger.info(f"July trades processed: {len(results['success'])} closed, {len(results['marked_closed'])} marked closed, {len(results['failed'])} failed")
+        return results
+
+    async def mark_trade_as_closed(self, trade_id: int, symbol: str) -> bool:
+        """Mark a trade as closed in the database"""
+        try:
+            if not self.supabase:
+                logger.error("Supabase client not available.")
+                return False
+
+            update_data = {
+                'status': 'CLOSED',
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }
+
+            self.supabase.table("trades").update(update_data).eq("id", trade_id).execute()
+            logger.info(f"Marked trade {trade_id} ({symbol}) as CLOSED in database")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error marking trade {trade_id} as closed: {e}")
+            return False
 
     async def get_all_open_futures_positions(self) -> List[Dict]:
         """Get all open futures positions"""
@@ -427,70 +694,128 @@ async def main():
         logger.error("BINANCE_API_KEY and BINANCE_API_SECRET must be set in environment variables")
         return
 
-    # Check if user wants to include spot sales
+    # Parse command line arguments
     include_spot_sales = True
-    if len(sys.argv) > 1 and sys.argv[1].lower() in ['--no-spot', '--no-spot-sales']:
-        include_spot_sales = False
-        logger.info("Spot sales disabled via command line argument")
+    close_july_trades_only = False
 
-    # Confirm action
-    print("\n" + "="*80)
-    print("🚨 BINANCE EMERGENCY CLOSE SCRIPT 🚨")
-    print("="*80)
-    print(f"Testnet Mode: {'YES' if is_testnet else 'NO'}")
-    print(f"Include Spot Sales: {'YES' if include_spot_sales else 'NO'}")
-    print("\nThis script will:")
-    print("1. Close ALL open futures positions")
-    print("2. Cancel ALL open futures orders")
-    print("3. Cancel ALL open spot orders")
-    if include_spot_sales:
-        print("4. Sell ALL spot assets for USDT")
-    print("\n⚠️  WARNING: This action cannot be undone! ⚠️")
-    print("="*80)
+    for arg in sys.argv[1:]:
+        if arg.lower() in ['--no-spot', '--no-spot-sales']:
+            include_spot_sales = False
+        elif arg.lower() in ['--july-only', '--july-trades']:
+            close_july_trades_only = True
 
-    # Get user confirmation
-    if is_testnet:
-        print("\n✅ Testnet mode detected - proceeding automatically")
-    else:
-        confirm = input("\nType 'EMERGENCY' to confirm: ")
-        if confirm != 'EMERGENCY':
-            print("Operation cancelled.")
-            return
-
-    # Initialize and execute
+    # Initialize
     emergency_close = BinanceEmergencyClose(api_key, api_secret, is_testnet)
 
-    try:
-        await emergency_close.initialize()
-        results = await emergency_close.emergency_close_all(include_spot_sales)
+    if close_july_trades_only:
+        # July trades only mode
+        print("\n" + "="*80)
+        print("📅 JULY 2025 TRADES CLOSURE SCRIPT 📅")
+        print("="*80)
+        print(f"Testnet Mode: {'YES' if is_testnet else 'NO'}")
+        print("\nThis script will:")
+        print("1. Query database for all OPEN trades created in July 2025")
+        print("2. Close each trade at market price")
+        print("3. Update PnL and exit price in database")
+        print("\n⚠️  WARNING: This action cannot be undone! ⚠️")
+        print("="*80)
 
-        # Final verification
-        logger.info("\n" + "="*60)
-        logger.info("FINAL VERIFICATION")
-        logger.info("="*60)
-
-        # Check remaining positions
-        remaining_positions = await emergency_close.get_all_open_futures_positions()
-        if remaining_positions:
-            logger.warning(f"⚠️  {len(remaining_positions)} positions still open!")
-            for pos in remaining_positions:
-                logger.warning(f"  - {pos['symbol']}: {pos['positionAmt']}")
+        # Get user confirmation
+        if is_testnet:
+            print("\n✅ Testnet mode detected - proceeding automatically")
         else:
-            logger.info("✅ No open futures positions remaining")
+            confirm = input("\nType 'JULY' to confirm: ")
+            if confirm != 'JULY':
+                print("Operation cancelled.")
+                return
 
-        # Check remaining orders
-        remaining_futures_orders = await emergency_close.get_all_open_futures_orders()
-        remaining_spot_orders = await emergency_close.get_all_open_spot_orders()
+        try:
+            await emergency_close.initialize()
+            results = await emergency_close.close_all_july_trades()
 
-        if remaining_futures_orders or remaining_spot_orders:
-            logger.warning(f"⚠️  {len(remaining_futures_orders)} futures orders and {len(remaining_spot_orders)} spot orders still open!")
+            # Print results
+            logger.info("\n" + "="*60)
+            logger.info("JULY TRADES CLOSURE SUMMARY")
+            logger.info("="*60)
+
+            if results["success"]:
+                logger.info("✅ Successfully closed trades:")
+                for success in results["success"]:
+                    logger.info(f"  - {success}")
+
+            if results["marked_closed"]:
+                logger.info("📝 Marked as closed (no position on Binance):")
+                for marked in results["marked_closed"]:
+                    logger.info(f"  - {marked}")
+
+            if results["failed"]:
+                logger.warning("❌ Failed to process trades:")
+                for failure in results["failed"]:
+                    logger.warning(f"  - {failure}")
+
+            logger.info(f"\nTotal: {len(results['success'])} closed, {len(results['marked_closed'])} marked closed, {len(results['failed'])} failed")
+
+        except Exception as e:
+            logger.error(f"July trades closure failed: {e}")
+        finally:
+            await emergency_close.close()
+
+    else:
+        # Full emergency close mode
+        print("\n" + "="*80)
+        print("🚨 BINANCE EMERGENCY CLOSE SCRIPT 🚨")
+        print("="*80)
+        print(f"Testnet Mode: {'YES' if is_testnet else 'NO'}")
+        print(f"Include Spot Sales: {'YES' if include_spot_sales else 'NO'}")
+        print("\nThis script will:")
+        print("1. Close ALL open futures positions")
+        print("2. Cancel ALL open futures orders")
+        print("3. Cancel ALL open spot orders")
+        if include_spot_sales:
+            print("4. Sell ALL spot assets for USDT")
+        print("\n⚠️  WARNING: This action cannot be undone! ⚠️")
+        print("="*80)
+
+        # Get user confirmation
+        if is_testnet:
+            print("\n✅ Testnet mode detected - proceeding automatically")
         else:
-            logger.info("✅ No open orders remaining")
+            confirm = input("\nType 'EMERGENCY' to confirm: ")
+            if confirm != 'EMERGENCY':
+                print("Operation cancelled.")
+                return
 
-    except Exception as e:
-        logger.error(f"Emergency close failed: {e}")
-    finally:
-        await emergency_close.close()
+        try:
+            await emergency_close.initialize()
+            results = await emergency_close.emergency_close_all(include_spot_sales)
+
+            # Final verification
+            logger.info("\n" + "="*60)
+            logger.info("FINAL VERIFICATION")
+            logger.info("="*60)
+
+            # Check remaining positions
+            remaining_positions = await emergency_close.get_all_open_futures_positions()
+            if remaining_positions:
+                logger.warning(f"⚠️  {len(remaining_positions)} positions still open!")
+                for pos in remaining_positions:
+                    logger.warning(f"  - {pos['symbol']}: {pos['positionAmt']}")
+            else:
+                logger.info("✅ No open futures positions remaining")
+
+            # Check remaining orders
+            remaining_futures_orders = await emergency_close.get_all_open_futures_orders()
+            remaining_spot_orders = await emergency_close.get_all_open_spot_orders()
+
+            if remaining_futures_orders or remaining_spot_orders:
+                logger.warning(f"⚠️  {len(remaining_futures_orders)} futures orders and {len(remaining_spot_orders)} spot orders still open!")
+            else:
+                logger.info("✅ No open orders remaining")
+
+        except Exception as e:
+            logger.error(f"Emergency close failed: {e}")
+        finally:
+            await emergency_close.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

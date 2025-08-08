@@ -158,6 +158,16 @@ class BinanceExchange:
             return response
         except BinanceAPIException as e:
             logger.error(f"Binance API Error on order creation: {e}")
+
+            # Handle specific PERCENT_PRICE filter error
+            if e.code == -4131:
+                logger.warning(f"PERCENT_PRICE filter violation for {pair}. Price {price} may be too far from market price.")
+                return {
+                    'error': f"APIError(code=-4131): The counterparty's best price does not meet the PERCENT_PRICE filter limit.",
+                    'code': -4131,
+                    'details': f"Price {price} may be too far from current market price for {pair}"
+                }
+
             return {'error': str(e), 'code': e.code}
         except Exception as e:
             logger.error(f"Unexpected error on order creation: {e}")
@@ -694,6 +704,162 @@ class BinanceExchange:
         except Exception as e:
             logger.error(f"Failed to get exchange info: {e}")
             return None
+
+    async def get_order_history(self, symbol: str = "", limit: int = 500,
+                               start_time: int = 0, end_time: int = 0) -> List[Dict]:
+        """
+        Get order history from Binance.
+
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            limit: Number of orders to retrieve (max 500)
+            start_time: Start time in milliseconds
+            end_time: End time in milliseconds
+
+        Returns:
+            List of order history records
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            params = {}
+            if symbol:
+                params['symbol'] = symbol
+            if limit:
+                params['limit'] = limit
+            if start_time:
+                params['startTime'] = start_time
+            if end_time:
+                params['endTime'] = end_time
+
+            # Get all orders (open + closed)
+            orders = await self.client.futures_get_all_orders(**params)
+            return orders if isinstance(orders, list) else [orders]
+
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get order history: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching order history: {e}")
+            return []
+
+    async def get_deposit_history(self, start_time: int = 0, end_time: int = 0,
+                                 coin: str = "", status: Optional[int] = None) -> List[Dict]:
+        """
+        Get deposit history from Binance.
+
+        Args:
+            start_time: Start time in milliseconds
+            end_time: End time in milliseconds
+            coin: Coin name (e.g., 'BTC')
+            status: Deposit status (0=pending, 1=success, 6=credited but cannot withdraw)
+
+        Returns:
+            List of deposit records
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            params = {}
+            if start_time:
+                params['startTime'] = start_time
+            if end_time:
+                params['endTime'] = end_time
+            if coin:
+                params['coin'] = coin
+            if status is not None:
+                params['status'] = int(status)
+
+            deposits = await self.client.get_deposit_history(**params)
+            return deposits if isinstance(deposits, list) else [deposits]
+
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get deposit history: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching deposit history: {e}")
+            return []
+
+    async def get_withdrawal_history(self, start_time: int = 0, end_time: int = 0,
+                                    coin: str = "", status: Optional[int] = None) -> List[Dict]:
+        """
+        Get withdrawal history from Binance.
+
+        Args:
+            start_time: Start time in milliseconds
+            end_time: End time in milliseconds
+            coin: Coin name (e.g., 'BTC')
+            status: Withdrawal status (1=submitted, 2=approved, 3=rejected, 4=processing, 5=failure, 6=completed)
+
+        Returns:
+            List of withdrawal records
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            params = {}
+            if start_time:
+                params['startTime'] = start_time
+            if end_time:
+                params['endTime'] = end_time
+            if coin:
+                params['coin'] = coin
+            if status is not None:
+                params['status'] = int(status)
+
+            withdrawals = await self.client.get_withdraw_history(**params)
+            return withdrawals if isinstance(withdrawals, list) else [withdrawals]
+
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get withdrawal history: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching withdrawal history: {e}")
+            return []
+
+    async def get_income_history(self, symbol: str = "", income_type: str = "",
+                                start_time: int = 0, end_time: int = 0, limit: int = 1000) -> List[Dict]:
+        """
+        Get income history from Binance (fees, funding, etc.).
+
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            income_type: Income type (TRANSFER, WELCOME_BONUS, REALIZED_PNL, FUNDING_FEE, COMMISSION, INSURANCE_CLEAR)
+            start_time: Start time in milliseconds
+            end_time: End time in milliseconds
+            limit: Number of records to retrieve (max 1000)
+
+        Returns:
+            List of income records
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            params = {}
+            if symbol:
+                params['symbol'] = symbol
+            if income_type:
+                params['incomeType'] = income_type
+            if start_time:
+                params['startTime'] = start_time
+            if end_time:
+                params['endTime'] = end_time
+            if limit:
+                params['limit'] = limit
+
+            income = await self.client.futures_income_history(**params)
+            return income if isinstance(income, list) else [income]
+
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get income history: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching income history: {e}")
+            return []
 
     async def close(self):
         """Close the exchange connection."""

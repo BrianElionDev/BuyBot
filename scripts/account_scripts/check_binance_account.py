@@ -29,8 +29,8 @@ async def check_binance_account():
     is_testnet = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
 
     # --- Supabase Credentials ---
-    url: str = os.environ.get("SUPABASE_URL")
-    key: str = os.environ.get("SUPABASE_KEY")
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
 
     if not api_key or not api_secret:
         logging.error("Binance API Key or Secret not found in .env file.")
@@ -57,7 +57,7 @@ async def check_binance_account():
         print(" " * 28 + "OPEN FUTURES POSITIONS")
         print("="*80)
         try:
-            positions = client.futures_position_information()
+            positions = await client.futures_position_information()
             open_positions = [p for p in positions if float(p.get('positionAmt', '0')) != 0]
 
             if not open_positions:
@@ -99,7 +99,7 @@ async def check_binance_account():
             print(" " * 25 + "ORDER CORRELATION AND ALERT HISTORY")
             print("="*95)
 
-            for order in open_orders:
+            for order in await open_orders:
                 order_id = str(order['orderId'])
                 print(f"\n--- Analyzing Order ID: {order_id} ({order['symbol']}) ---")
 
