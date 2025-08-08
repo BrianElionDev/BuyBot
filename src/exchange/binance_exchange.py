@@ -76,9 +76,11 @@ class BinanceExchange:
 
     async def create_futures_order(self, pair: str, side: str, order_type_market: str, amount: float,
                                  price: Optional[float] = None, stop_price: Optional[float] = None,
-                                 client_order_id: Optional[str] = None, reduce_only: bool = False) -> Dict:
+                                 client_order_id: Optional[str] = None, reduce_only: bool = False,
+                                 close_position: bool = False) -> Dict:
         await self._init_client()
         assert self.client is not None
+        print(f"Creating futures order with params: {client_order_id}")  # Debugging line
 
         # --- Enhanced Precision Handling ---
         try:
@@ -120,20 +122,31 @@ class BinanceExchange:
         params = {
             'symbol': pair,
             'side': side,
-            'type': order_type_market,
-            'quantity': f"{amount}"
+            'type': order_type_market
         }
+        
+        # Handle quantity vs closePosition
+        if close_position:
+            params['closePosition'] = 'true'
+            # When using closePosition, quantity should be 0 or not specified
+            if amount > 0:
+                logger.warning(f"closePosition=True but amount={amount} specified. Setting amount to 0.")
+        else:
+            params['quantity'] = f"{amount}"
+        
         if order_type_market == 'LIMIT' and price is not None:
             params['price'] = f"{price}"
             params['timeInForce'] = 'GTC'
         if stop_price:
             params['stopPrice'] = f"{stop_price}"
-            params['closePosition'] = 'true'
-        if reduce_only:
+            # Use GTC for stop orders to ensure they don't expire while waiting for alerts
+            params['timeInForce'] = 'GTC'
+        
+        # Always use reduceOnly for all orders (except when closePosition is True)
+        if reduce_only and not close_position:
             params['reduceOnly'] = 'true'
         if client_order_id:
             params['newClientOrderId'] = client_order_id
-
         try:
             response = await self.client.futures_create_order(**params)
             return response
@@ -159,14 +172,13 @@ class BinanceExchange:
         side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
         try:
             # For simplicity, we assume closing is always a MARKET order.
-            # We explicitly set reduce_only to False to handle cases where the
-            # position doesn't exist on the exchange (state mismatch).
+            # Use reduceOnly for consistent behavior
             response = await self.create_futures_order(
                 pair=pair,
                 side=side,
                 order_type_market=FUTURE_ORDER_TYPE_MARKET,
                 amount=amount,
-                reduce_only=False
+                reduce_only=True
             )
             return True, response
         except Exception as e:
@@ -182,14 +194,14 @@ class BinanceExchange:
             # 1. Cancel existing stop loss orders for the symbol
             await self.client.futures_cancel_all_open_orders(symbol=pair)
 
-            # 2. Create a new STOP_MARKET order. This must be reduceOnly.
+            # 2. Create a new STOP_MARKET order using reduceOnly for consistency
             response = await self.client.futures_create_order(
                 symbol=pair,
                 side=side,
                 type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                quantity=amount,
+                quantity=f"{amount}",
                 stopPrice=stop_price,
-                reduceOnly=True
+                reduceOnly='true'
             )
             return True, response
         except Exception as e:
@@ -408,6 +420,24 @@ class BinanceExchange:
         except Exception as e:
             logger.error(f"An unexpected error occurred while fetching position information: {e}")
             return []
+    async def has_open_futures_postion(self, pair: str) -> bool:
+        """
+        Retrieves information about futures positions.
+        """
+        await self._init_client()
+        assert self.client is not None
+        try:
+            positions = await self.client.futures_position_information()
+            for position in positions:
+                if position['symbol'] == pair and float(position['positionAmt']) != 0:
+                    logger.info(f"Open position found for {pair}")
+                    return True
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get futures position information: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching position information: {e}")
+            return False
 
     async def get_spot_symbol_filters(self, symbol: str) -> Optional[Dict]:
         """
@@ -428,7 +458,7 @@ class BinanceExchange:
 
     async def get_futures_symbol_filters(self, symbol: str) -> Optional[Dict]:
         """
-        Retrieves all filters for a given futures symbol.
+        Retrieves all filters for a given futures symbol, including precision values.
         """
         await self._init_client()
         assert self.client is not None
@@ -437,12 +467,16 @@ class BinanceExchange:
             for s in exchange_info['symbols']:
                 if s['symbol'] == symbol:
                     # Return a dictionary of filters keyed by filterType
-                    return {f['filterType']: f for f in s['filters']}
+                    return {
+                            **{f['filterType']: f for f in s['filters']},
+                            'quantityPrecision': s['quantityPrecision']
+                            }
             return None
         except Exception as e:
             logger.error(f"Could not retrieve precision filters for {symbol}: {e}")
             return None
 
+    
     async def is_futures_symbol_supported(self, symbol: str) -> bool:
         """
         Check if a symbol is supported for futures trading.
@@ -459,6 +493,96 @@ class BinanceExchange:
             logger.error(f"Error checking futures symbol support for {symbol}: {e}")
             return False
 
+    async def get_futures_mark_price(self, symbol: str) -> Optional[float]:
+        """
+        Retrieves the current Mark Price for a given futures symbol.
+        """
+        await self._init_client()
+        assert self.client is not None
+        try:
+            # The futures_mark_price() method can take a symbol argument
+            mark_price_info = await self.client.futures_mark_price(symbol=symbol)
+            if mark_price_info and 'markPrice' in mark_price_info:
+                return float(mark_price_info['markPrice'])
+            return None
+        except Exception as e:
+            logger.error(f"Could not retrieve mark price for {symbol}: {e}")
+            return None
+
+    async def calculate_min_max_market_order_quantity(self, symbol: str) -> Dict:
+        """
+        Calculate the minimum and maximum quantities for a market order on Binance.
+        
+        Args:
+            symbol (str): The trading pair symbol (e.g., 'BTCUSDT')
+            
+        Returns:
+            dict: Contains min_quantity, max_quantity, and other details
+        """
+        symbol_filters = await self.get_futures_symbol_filters(symbol)
+        if not symbol_filters:
+            raise ValueError(f"Could not retrieve filters for symbol {symbol}")
+        current_price = await self.get_futures_mark_price(symbol)
+        
+        min_notional_filter = symbol_filters.get('MIN_NOTIONAL')
+        lot_size_filter = symbol_filters.get('LOT_SIZE')
+        quantityPrecision = symbol_filters.get('quantityPrecision', 0)
+        if not min_notional_filter:
+            raise ValueError("MIN_NOTIONAL filter not found")
+        
+        if not lot_size_filter:
+            raise ValueError("LOT_SIZE filter not found")
+        
+        min_notional = 0
+        if 'notional' in min_notional_filter:
+            min_notional = float(min_notional_filter.get('notional', 0))
+        
+        min_qty_lot_size = float(lot_size_filter.get('minQty', 0))
+        step_size = float(lot_size_filter.get('stepSize', 0))
+        max_quantity = float(lot_size_filter.get('maxQty', 10000))
+        
+        if current_price and current_price > 0:
+            min_qty_from_notional = min_notional / current_price
+        else:
+            min_qty_from_notional = min_notional
+        
+        min_quantity = max(min_qty_lot_size, min_qty_from_notional)
+        min_quantity = round(min_quantity, quantityPrecision)
+        max_quantity = round(max_quantity, quantityPrecision)
+        
+        return {
+            'min_quantity': min_quantity,
+            'max_quantity': max_quantity,
+            'min_notional': min_notional,
+            'step_size': step_size,
+            'min_qty_lot_size': min_qty_lot_size,
+            'min_qty_from_notional': min_qty_from_notional,
+            'current_price': current_price
+        }
+
+    async def get_current_prices(self, symbols: List[str]) -> Dict[str, float]:
+        """
+        Get current prices for multiple symbols.
+        
+        Args:
+            symbols (list): List of symbol strings
+            
+        Returns:
+            dict: Dictionary mapping symbol to current price
+        """
+        prices = {}
+        
+        for symbol in symbols:
+            try:
+                price = await self.get_futures_mark_price(symbol)
+                if price:
+                    prices[symbol] = price
+                else:
+                    logger.warning(f"Could not get price for {symbol}")
+            except Exception as e:
+                logger.warning(f"Could not get price for {symbol}: {e}")
+        
+        return prices
     async def get_order_book(self, symbol: str, limit: int = 5) -> Optional[Dict]:
         """Get order book for a symbol"""
         await self._init_client()

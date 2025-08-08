@@ -108,7 +108,7 @@ async def process_alerts():
                 if action:
                     signal_payload["action"] = action
                     signal_payload["details"] = details
-                result = await bot.process_update_signal(signal_payload, alert_id=alert_id)
+                result = await bot.process_update_signal(signal_payload)
 
                 if result.get("status") == "success":
                     logging.info(f"✅ Successfully processed alert ID {alert_id}. Action: {action}. Message: {result.get('message')}")
