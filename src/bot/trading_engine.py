@@ -1103,51 +1103,61 @@ class TradingEngine:
             logger.error(f"Error updating stop loss: {e}", exc_info=True)
             return False, {"error": f"Stop loss update failed: {str(e)}"}
 
-    async def create_pending_tp_sl_orders(self, trade_data: Dict) -> Tuple[bool, List[Dict]]:
+    async def calculate_2_percent_stop_loss(self, coin_symbol: str, position_type: str) -> Optional[float]:
         """
-        Create TP/SL orders for a LIMIT order that has been filled.
-        This method is called when a LIMIT order status changes to FILLED.
+        Calculate a 2% stop loss price from the current market price.
+        
+        Args:
+            coin_symbol: The trading symbol (e.g., 'BTC')
+            position_type: The position type ('LONG' or 'SHORT')
+            
+        Returns:
+            The calculated stop loss price or None if calculation fails
+        """
+        return await self.calculate_percentage_stop_loss(coin_symbol, position_type, 2.0)
+
+    async def calculate_percentage_stop_loss(self, coin_symbol: str, position_type: str, percentage: float) -> Optional[float]:
+        """
+        Calculate a percentage-based stop loss price from the current market price.
+        
+        Args:
+            coin_symbol: The trading symbol (e.g., 'BTC')
+            position_type: The position type ('LONG' or 'SHORT')
+            percentage: The percentage for stop loss calculation (e.g., 2.0 for 2%)
+            
+        Returns:
+            The calculated stop loss price or None if calculation fails
         """
         try:
-            # Check if there are pending TP/SL parameters
-            binance_response = self._safe_parse_binance_response(trade_data.get('binance_response'))
-            pending_tp_sl = binance_response.get('pending_tp_sl') if binance_response else None
-            if not pending_tp_sl:
-                logger.info("No pending TP/SL parameters found for trade")
-                return True, []
-
-            # Extract parameters
-            trading_pair = pending_tp_sl.get('trading_pair')
-            position_type = pending_tp_sl.get('position_type')
-            position_size = float(pending_tp_sl.get('position_size', 0))
-            take_profits = pending_tp_sl.get('take_profits')
-            stop_loss = pending_tp_sl.get('stop_loss')
-
-            if not trading_pair or not position_type or position_size <= 0:
-                logger.error(f"Invalid pending TP/SL parameters: {pending_tp_sl}")
-                return False, []
-
-            logger.info(f"Creating TP/SL orders for filled LIMIT order: {trading_pair}")
-
-            # Create TP/SL orders
-            tp_sl_orders = await self._create_tp_sl_orders(
-                trading_pair=trading_pair,
-                position_type=position_type,
-                position_size=position_size,
-                take_profits=take_profits,
-                stop_loss=stop_loss
-            )
-
-            if tp_sl_orders:
-                logger.info(f"Successfully created {len(tp_sl_orders)} TP/SL orders for {trading_pair}")
-                return True, tp_sl_orders
+            # Validate percentage input
+            if percentage <= 0 or percentage > 50:  # Reasonable range: 0.1% to 50%
+                logger.error(f"Invalid stop loss percentage: {percentage}%. Must be between 0.1 and 50.")
+                return None
+            
+            trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
+            current_price = await self.binance_exchange.get_futures_mark_price(trading_pair)
+            precision = await self.binance_exchange.get_symbol_precision(trading_pair)
+            
+            if not current_price:
+                logger.error(f"Could not get current price for {trading_pair}")
+                return None
+            
+            # Calculate percentage-based stop loss from current price
+            if position_type.upper() == 'LONG':
+                stop_loss_price = current_price * (1 - percentage / 100)  # percentage below current price
+                logger.info(f"LONG position: Calculated {percentage}% stop loss. Current: {current_price}, SL: {stop_loss_price}")
+            elif position_type.upper() == 'SHORT':
+                stop_loss_price = current_price * (1 + percentage / 100)  # percentage above current price
+                logger.info(f"SHORT position: Calculated {percentage}% stop loss. Current: {current_price}, SL: {stop_loss_price}")
             else:
-                logger.warning(f"No TP/SL orders were created for {trading_pair}")
-                return True, []
-
+                logger.error(f"Unknown position type: {position_type}")
+                return None
+            rounded_stop_loss_price = round(stop_loss_price,precision )  
+            return rounded_stop_loss_price
+            
         except Exception as e:
-            logger.error(f"Error creating pending TP/SL orders: {e}", exc_info=True)
-            return False, []
+            logger.error(f"Error calculating {percentage}% stop loss for {coin_symbol}: {e}")
+            return None
 
     async def close(self):
         """Close all exchange connections."""

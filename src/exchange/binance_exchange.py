@@ -112,6 +112,12 @@ class BinanceExchange:
                     logger.info(f"Original price: {price}, Formatted price: {formatted_price} (Tick: {tick_size})")
                     price = float(formatted_price)
 
+                # Format stop_price according to tickSize
+                if stop_price is not None and tick_size:
+                    formatted_stop_price = format_value(stop_price, tick_size)
+                    logger.info(f"Original stop_price: {stop_price}, Formatted stop_price: {formatted_stop_price} (Tick: {tick_size})")
+                    stop_price = float(formatted_stop_price)
+
             else:
                 logger.warning(f"Could not retrieve precision filters for {pair}. Using original values.")
         except Exception as e:
@@ -660,6 +666,25 @@ class BinanceExchange:
             active_positions = [pos for pos in positions if float(pos.get('positionAmt', 0)) != 0]
             logger.info(f"Fetched {len(active_positions)} active positions")
             return active_positions
+        except Exception as e:
+            logger.error(f"Failed to get position risk: {e}")
+            return []
+
+    async def get_symbol_precision(self, symbol: str = "") -> List[Dict]:
+        """
+        Get position risk information from Binance Futures API
+        Args:
+            symbol: Trading pair symbol (optional, gets all if None)
+        Returns:
+            List of position dictionaries with entry prices and unrealized P&L
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            if symbol:
+                positions =  await self.get_futures_symbol_filters(symbol)
+            return positions.get('quantityPrecision', 0)
         except Exception as e:
             logger.error(f"Failed to get position risk: {e}")
             return []
