@@ -69,7 +69,7 @@ async def test_price_thresholds():
         return False
 
     binance_exchange = BinanceExchange(api_key, api_secret, is_testnet)
-    hasOpenPosition =await binance_exchange.has_open_futures_postion("ETHUSDT")
+    hasOpenPosition =await binance_exchange.get_all_open_futures_orders()
     
     print("🔍Has open postion for token pair: \n",hasOpenPosition )
     return True
