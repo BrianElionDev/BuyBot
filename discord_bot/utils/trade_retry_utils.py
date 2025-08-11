@@ -1,3 +1,13 @@
+"""
+Trade Retry Utilities for Discord Bot
+
+BUSINESS LOGIC: This module ONLY processes trades and alerts from trader "@Johnny".
+All database queries are filtered to exclude trades from other traders.
+
+This ensures that when switching between testnet/mainnet accounts, only the
+authorized trader's data is processed and synced.
+"""
+
 import asyncio
 import logging
 import os
@@ -15,6 +25,13 @@ from discord_bot.database import (
 # --- Setup ---
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Business logic: Only process trades from specific trader
+ALLOWED_TRADER = "@Johnny"
+
+def get_trader_filter():
+    """Get the trader filter for database queries."""
+    return {"trader": ALLOWED_TRADER}
 
 def get_24hr_cutoff_iso():
   now = datetime.now(timezone.utc)
@@ -104,9 +121,9 @@ async def process_pending_trades(bot: DiscordBot, supabase: Client):
     logging.info("--- Processing pending trades ---")
     try:
         cutoff = get_24hr_cutoff_iso()
-        response = supabase.from_("trades").select("*").eq("status", "pending").gte("timestamp", cutoff).execute()
+        response = supabase.from_("trades").select("*").eq("status", "pending").eq("trader", ALLOWED_TRADER).gte("timestamp", cutoff).execute()
         trades = response.data or []
-        logging.info(f"Found {len(trades)} pending trades.")
+        logging.info(f"Found {len(trades)} pending trades from {ALLOWED_TRADER}.")
     except Exception as e:
         logging.error(f"Error fetching pending trades: {e}")
         return
@@ -125,9 +142,9 @@ async def process_cooldown_trades(bot: DiscordBot, supabase: Client):
     cooldown_pattern = "Trade cooldown active for%"
     try:
         cutoff = get_24hr_cutoff_iso()
-        response = supabase.from_("trades").select("*").like("binance_response", cooldown_pattern).gte("timestamp", cutoff).execute()
+        response = supabase.from_("trades").select("*").like("binance_response", cooldown_pattern).eq("trader", ALLOWED_TRADER).gte("timestamp", cutoff).execute()
         trades = response.data or []
-        logging.info(f"Found {len(trades)} cooldown trades.")
+        logging.info(f"Found {len(trades)} cooldown trades from {ALLOWED_TRADER}.")
     except Exception as e:
         logging.error(f"Error fetching cooldown trades: {e}")
         return
@@ -140,14 +157,14 @@ async def process_cooldown_trades(bot: DiscordBot, supabase: Client):
 
 async def process_empty_binance_response_trades(bot: DiscordBot, supabase: Client):
     """
-    Find all trades with empty binance_response and timestamp >= '2025-07-14T00:00:00.000Z', then retry them.
+    Find all trades with empty binance_response from @Johnny and timestamp >= '2025-07-14T00:00:00.000Z', then retry them.
     """
-    logging.info("--- Processing trades with empty binance_response ---")
+    logging.info("--- Processing trades with empty binance_response from @Johnny ---")
     try:
         cutoff = get_24hr_cutoff_iso()
-        response = supabase.from_("trades").select("*").filter("binance_response", "eq", "").gte("timestamp", cutoff).execute()
+        response = supabase.from_("trades").select("*").filter("binance_response", "eq", "").eq("trader", ALLOWED_TRADER).gte("timestamp", cutoff).execute()
         trades = response.data or []
-        logging.info(f"Found {len(trades)} trades with empty binance_response.")
+        logging.info(f"Found {len(trades)} trades with empty binance_response from {ALLOWED_TRADER}.")
     except Exception as e:
         logging.error(f"Error fetching trades with empty binance_response: {e}")
         return
@@ -160,18 +177,18 @@ async def process_empty_binance_response_trades(bot: DiscordBot, supabase: Clien
 
 async def process_margin_insufficient_trades(bot: DiscordBot, supabase: Client):
     """
-    Find all trades with binance_response containing APIError(code=-2019) (margin insufficient) in the last 24 hours and retry them.
+    Find all trades with binance_response containing APIError(code=-2019) (margin insufficient) from @Johnny in the last 24 hours and retry them.
     """
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=24)
     cutoff_iso = cutoff.isoformat()
-    logging.info("--- Processing margin insufficient trades ---")
+    logging.info("--- Processing margin insufficient trades from @Johnny ---")
     pattern = '%APIError(code=-2019)%'
     try:
-        response = supabase.from_("trades").select("*").like("binance_response", pattern).gte("timestamp", cutoff_iso).execute()
+        response = supabase.from_("trades").select("*").like("binance_response", pattern).eq("trader", ALLOWED_TRADER).gte("timestamp", cutoff_iso).execute()
         trades = response.data or []
-        logging.info(f"Found {len(trades)} margin insufficient trades.")
+        logging.info(f"Found {len(trades)} margin insufficient trades from {ALLOWED_TRADER}.")
     except Exception as e:
         logging.error(f"Error fetching margin insufficient trades: {e}")
         return
