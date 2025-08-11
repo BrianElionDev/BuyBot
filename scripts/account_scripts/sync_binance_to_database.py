@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 import os
-from dotenv import load_dotenv
+from config import settings
 import sys
 
 # Add the src directory to the path
@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 class BinanceDatabaseSync:
     def __init__(self):
-        load_dotenv()
         self.binance_exchange = None
         self.supabase = None
 
@@ -37,9 +36,9 @@ class BinanceDatabaseSync:
         """Initialize connections to Binance and Supabase"""
         try:
             # Initialize Binance
-            api_key = os.getenv('BINANCE_API_KEY')
-            api_secret = os.getenv('BINANCE_API_SECRET')
-            is_testnet = os.getenv('BINANCE_TESTNET', 'True').lower() == 'true'
+            api_key = settings.BINANCE_API_KEY
+            api_secret = settings.BINANCE_API_SECRET
+            is_testnet = settings.BINANCE_TESTNET
 
             if not api_key or not api_secret:
                 logger.error("Binance API credentials not found!")
@@ -49,8 +48,8 @@ class BinanceDatabaseSync:
             await self.binance_exchange._init_client()
 
             # Initialize Supabase
-            supabase_url = os.getenv('SUPABASE_URL')
-            supabase_key = os.getenv('SUPABASE_KEY')
+            supabase_url = settings.SUPABASE_URL
+            supabase_key = settings.SUPABASE_KEY
 
             if not supabase_url or not supabase_key:
                 logger.error("Supabase credentials not found!")

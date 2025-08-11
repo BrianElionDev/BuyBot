@@ -279,11 +279,11 @@ class BinanceWebSocketManager:
 
     async def _manage_market_data_stream(self):
         """Manage market data stream connection."""
-        # Subscribe to relevant market data streams
+        # Subscribe to relevant market data streams (reduced to avoid rate limits)
         streams = [
             "btcusdt@ticker",
-            "ethusdt@ticker",
-            "!ticker@arr"  # All market tickers
+            "ethusdt@ticker"
+            # Removed "!ticker@arr" to reduce message volume
         ]
 
         while self.running:
@@ -327,9 +327,10 @@ class BinanceWebSocketManager:
     async def _handle_message(self, message: Union[str, bytes], stream_type: str):
         """Handle incoming WebSocket message."""
         try:
-            # Rate limiting check
+            # Rate limiting check with throttling
             if not self._check_rate_limits():
-                logger.warning("Rate limit exceeded, skipping message")
+                # Add small delay when rate limited instead of just skipping
+                await asyncio.sleep(0.1)
                 return
 
             # Convert bytes to string if needed

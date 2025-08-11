@@ -22,6 +22,7 @@ from supabase import create_client, Client
 from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
 from discord_bot.websocket_manager import DiscordBotWebSocketManager
+from config import settings
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -32,16 +33,16 @@ class DiscordBot:
         load_dotenv()
 
         # --- Binance API Initialization ---
-        api_key = os.getenv("BINANCE_API_KEY")
-        api_secret = os.getenv("BINANCE_API_SECRET")
-        is_testnet = os.getenv("BINANCE_TESTNET", "False").lower() == 'true'
+        api_key = settings.BINANCE_API_KEY
+        api_secret = settings.BINANCE_API_SECRET
+        is_testnet = settings.BINANCE_TESTNET
         if not api_key or not api_secret:
             logger.critical("Binance API key/secret not set. Cannot start Trading Engine.")
             raise ValueError("Binance API key/secret not set.")
 
         # --- Supabase Initialization ---
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
+        supabase_url = settings.SUPABASE_URL
+        supabase_key = settings.SUPABASE_KEY
         if not supabase_url or not supabase_key:
             logger.critical("Supabase URL or Key not set. Cannot connect to the database.")
             raise ValueError("Supabase URL or Key not set.")

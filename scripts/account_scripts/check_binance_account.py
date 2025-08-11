@@ -2,13 +2,14 @@ import os
 import sys
 import asyncio
 import logging
-from dotenv import load_dotenv
-from supabase import create_client, Client
 
 # Add the project root to Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(script_dir))
 sys.path.insert(0, project_root)
+
+from supabase import create_client, Client
+from config import settings
 
 from src.exchange.binance_exchange import BinanceExchange
 
@@ -21,17 +22,15 @@ async def check_binance_account():
     then correlates them with database records.
     """
     exchange = None
-    # --- Load Environment Variables ---
-    load_dotenv()
 
     # --- Binance Credentials ---
-    api_key = os.getenv("BINANCE_API_KEY")
-    api_secret = os.getenv("BINANCE_API_SECRET")
-    is_testnet = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
+    api_key = settings.BINANCE_API_KEY
+    api_secret = settings.BINANCE_API_SECRET
+    is_testnet = settings.BINANCE_TESTNET
 
     # --- Supabase Credentials ---
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
+    url = settings.SUPABASE_URL
+    key = settings.SUPABASE_KEY
 
     if not api_key or not api_secret:
         logging.error("Binance API Key or Secret not found in .env file.")

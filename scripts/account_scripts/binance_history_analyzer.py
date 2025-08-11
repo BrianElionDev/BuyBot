@@ -15,18 +15,16 @@ import argparse
 import json
 import logging
 from datetime import datetime, timezone, timedelta
-import os
-from typing import Dict, List, Any, Optional
-import pandas as pd
+from typing import Dict, List, Any
 from pathlib import Path
 
+from config import settings
 # Add the project root to the path
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.exchange.binance_exchange import BinanceExchange
 from discord_bot.utils.trade_retry_utils import initialize_clients, safe_parse_binance_response
-
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -389,9 +387,9 @@ async def main():
 
     # Initialize backfiller
     backfiller = BinanceHistoryBackfiller(
-        api_key=os.getenv("BINANCE_API_KEY", ""),
-        api_secret=os.getenv("BINANCE_API_SECRET", ""),
-        testnet=os.getenv("BINANCE_TESTNET", "false") == "true"
+        api_key=settings.BINANCE_API_KEY or "",
+        api_secret=settings.BINANCE_API_SECRET or "",
+        testnet=settings.BINANCE_TESTNET
     )
 
     try:

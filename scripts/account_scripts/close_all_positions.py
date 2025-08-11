@@ -23,10 +23,9 @@ import os
 import sys
 import json
 from typing import Dict, List, Tuple
-from decimal import Decimal
-from dotenv import load_dotenv
+from config import settings
 from datetime import datetime, timezone
-from supabase import create_client, Client
+from supabase import create_client
 
 # Add the project root to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -51,8 +50,8 @@ class BinanceEmergencyClose:
         self.is_testnet = is_testnet
 
         # Initialize Supabase client
-        url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_KEY")
+        url = settings.SUPABASE_URL
+        key = settings.SUPABASE_KEY
         if url and key:
             self.supabase = create_client(url, key)
             logger.info("Successfully connected to Supabase.")
@@ -682,13 +681,10 @@ class BinanceEmergencyClose:
 
 async def main():
     """Main function"""
-    # Load environment variables
-    load_dotenv()
-
     # Get credentials
-    api_key = os.getenv("BINANCE_API_KEY")
-    api_secret = os.getenv("BINANCE_API_SECRET")
-    is_testnet = os.getenv("BINANCE_TESTNET", "False").lower() == 'true'
+    api_key = settings.BINANCE_API_KEY
+    api_secret = settings.BINANCE_API_SECRET
+    is_testnet = settings.BINANCE_TESTNET
 
     if not api_key or not api_secret:
         logger.error("BINANCE_API_KEY and BINANCE_API_SECRET must be set in environment variables")

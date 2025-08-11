@@ -10,12 +10,12 @@ import logging
 import os
 import sys
 from datetime import datetime
-from dotenv import load_dotenv
+from config import settings
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'websocket'))
 
-from binance_websocket_manager import BinanceWebSocketManager
+from src.websocket.binance_websocket_manager import BinanceWebSocketManager
 
 # Configure logging
 logging.basicConfig(
@@ -28,12 +28,10 @@ class WebSocketTester:
     """Test class for WebSocket functionality."""
 
     def __init__(self):
-        load_dotenv()
-
         # Get credentials
-        self.api_key = os.getenv('BINANCE_API_KEY')
-        self.api_secret = os.getenv('BINANCE_API_SECRET')
-        self.is_testnet = os.getenv('BINANCE_TESTNET', 'True').lower() == 'true'
+        self.api_key = settings.BINANCE_API_KEY
+        self.api_secret = settings.BINANCE_API_SECRET
+        self.is_testnet = settings.BINANCE_TESTNET
 
         if not self.api_key or not self.api_secret:
             raise ValueError("BINANCE_API_KEY and BINANCE_API_SECRET must be set")

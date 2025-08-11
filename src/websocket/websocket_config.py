@@ -20,13 +20,13 @@ class WebSocketConfig:
     FUTURES_REST_TESTNET: str = "https://testnet.binancefuture.com"
 
     # Connection settings
-    PING_INTERVAL: int = 180  # 3 minutes (Binance sends ping every 3 minutes)
-    PONG_TIMEOUT: int = 580# 10 minutes (must respond within 10 minutes)
+    PING_INTERVAL: int = 300  # 5 minutes (reduced ping frequency)
+    PONG_TIMEOUT: int = 600   # 10 minutes (must respond within 10 minutes)
     CONNECTION_TIMEOUT: int = 24 * 60 * 60  # 24 hours (connection expires)
 
-    # Rate limiting (from Binance docs)
-    MAX_MESSAGES_PER_SECOND: int = 9
-    MAX_PING_PONG_PER_SECOND: int = 4
+    # Rate limiting (conservative limits to avoid hitting Binance limits)
+    MAX_MESSAGES_PER_SECOND: int = 6  # Reduced from 9 to be more conservative
+    MAX_PING_PONG_PER_SECOND: int = 2  # Reduced from 4 to be more conservative
     MAX_STREAMS_PER_CONNECTION: int = 1024
     MAX_CONNECTIONS_PER_5MIN: int = 290
 
@@ -44,7 +44,7 @@ class WebSocketConfig:
 
     # Logging
     LOG_LEVEL: str = "INFO"
-    LOG_WEBSOCKET_MESSAGES: bool = True # Set to True for debugging
+    LOG_WEBSOCKET_MESSAGES: bool = False # Set to False to reduce logging overhead
 
     def __init__(self, is_testnet: bool = False):
         """Initialize configuration with testnet flag."""

@@ -9,17 +9,16 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from dotenv import load_dotenv
 from supabase import create_client, Client
 from discord_bot.discord_bot import DiscordBot
+from config import settings
 
 # --- Setup ---
-load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Supabase Client ---
-url = os.environ.get("SUPABASE_URL")
-key = os.environ.get("SUPABASE_KEY")
+url = settings.SUPABASE_URL
+key = settings.SUPABASE_KEY
 if not url or not key:
     logging.error("Supabase URL or Key not found. Please set SUPABASE_URL and SUPABASE_KEY in your .env file.")
     sys.exit(1)
@@ -36,8 +35,8 @@ async def process_pending_trades_for_july_9_and_10():
 
     try:
         # 1. Fetch all trades with 'pending' status for July 9th and 10th
-        start_date = "2025-07-14T00:00:00.000Z"
-        end_date = "2025-07-15T23:59:59.999Z"
+        start_date = "2025-08-10T00:00:00.000Z"
+        end_date = "2025-08-11T23:59:59.999Z"
 
         # binance_response is a text field, I want to process if empty
         response = (

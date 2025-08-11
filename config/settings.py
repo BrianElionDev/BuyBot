@@ -10,7 +10,8 @@ def reload_env():
     global BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET
     global TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE
     global TARGET_GROUP_ID, NOTIFICATION_GROUP_ID
-
+    global SUPABASE_URL, SUPABASE_KEY
+    global OPENAI_API_KEY
     # Reload all environment variables
     BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
     BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
@@ -21,6 +22,10 @@ def reload_env():
     TELEGRAM_PHONE = os.getenv("TELEGRAM_PHONE")
     TARGET_GROUP_ID = int(os.getenv("TARGET_GROUP_ID", "0"))
     NOTIFICATION_GROUP_ID = int(os.getenv("NOTIFICATION_GROUP_ID", "0"))
+
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
     logging.info("Environment variables reloaded successfully")
     if BINANCE_API_KEY:
@@ -43,6 +48,13 @@ NOTIFICATION_GROUP_ID = int(os.getenv("NOTIFICATION_GROUP_ID", "0"))
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
+
+# Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# OpenAI
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
 # Trading Parameters

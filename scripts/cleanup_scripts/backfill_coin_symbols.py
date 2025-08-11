@@ -9,7 +9,7 @@ import sys
 import json
 import logging
 from typing import List, Dict, Optional
-from dotenv import load_dotenv
+from config import settings
 
 # Add the project root to Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -25,10 +25,8 @@ logger = logging.getLogger(__name__)
 def initialize_supabase() -> Optional[Client]:
     """Initialize Supabase client."""
     try:
-        load_dotenv()
-
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
+        supabase_url = settings.SUPABASE_URL
+        supabase_key = settings.SUPABASE_KEY
 
         if not supabase_url or not supabase_key:
             logger.error("Missing Supabase credentials")

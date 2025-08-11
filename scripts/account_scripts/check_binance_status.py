@@ -9,12 +9,12 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
-import os
-from dotenv import load_dotenv
+from config import settings
+from pathlib import Path
 
 # Add the src directory to the path
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.exchange.binance_exchange import BinanceExchange
 
@@ -27,16 +27,15 @@ logger = logging.getLogger(__name__)
 
 class BinanceStatusChecker:
     def __init__(self):
-        load_dotenv()
         self.binance_exchange = None
 
     async def initialize(self):
         """Initialize the Binance exchange connection"""
         try:
             # Get credentials from environment variables
-            api_key = os.getenv('BINANCE_API_KEY')
-            api_secret = os.getenv('BINANCE_API_SECRET')
-            is_testnet = os.getenv('BINANCE_TESTNET', 'True').lower() == 'true'
+            api_key = settings.BINANCE_API_KEY
+            api_secret = settings.BINANCE_API_SECRET
+            is_testnet = settings.BINANCE_TESTNET
 
             if not api_key or not api_secret:
                 logger.error("Binance API credentials not found in environment variables!")

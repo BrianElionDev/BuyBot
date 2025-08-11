@@ -8,12 +8,12 @@ import sys
 import logging
 import os
 from datetime import datetime
-from dotenv import load_dotenv
+from config import settings
 from typing import Dict, Any, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from binance_websocket_manager import BinanceWebSocketManager
+from src.websocket.binance_websocket_manager import BinanceWebSocketManager
 
 logger = logging.getLogger(__name__)
 
@@ -31,15 +31,13 @@ class WebSocketIntegrationExample:
             db_manager: Database manager instance
             binance_exchange: Binance exchange instance
         """
-        load_dotenv()
-
         self.db_manager = db_manager
         self.binance_exchange = binance_exchange
 
         # Get credentials
-        api_key = os.getenv('BINANCE_API_KEY')
-        api_secret = os.getenv('BINANCE_API_SECRET')
-        is_testnet = os.getenv('BINANCE_TESTNET', 'True').lower() == 'true'
+        api_key = settings.BINANCE_API_KEY
+        api_secret = settings.BINANCE_API_SECRET
+        is_testnet = settings.BINANCE_TESTNET
 
         if not api_key or not api_secret:
             raise ValueError("BINANCE_API_KEY and BINANCE_API_SECRET must be set")
