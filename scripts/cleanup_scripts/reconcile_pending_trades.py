@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import sys
-from dotenv import load_dotenv
+from config import settings
 from supabase import create_client, Client
 
 # Add project root to the Python path
@@ -11,24 +11,23 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.exchange.binance_exchange import BinanceExchange
 
 # --- Setup ---
-load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Initialize Clients ---
 def initialize_clients():
     """Initializes and returns Supabase and Binance clients."""
     # Supabase
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
+    url = settings.SUPABASE_URL
+    key = settings.SUPABASE_KEY
     if not url or not key:
         logging.error("Supabase URL or Key not found in .env file.")
         raise ValueError("Supabase credentials not found.")
     supabase: Client = create_client(url, key)
 
     # Binance
-    api_key = os.getenv("BINANCE_API_KEY")
-    api_secret = os.getenv("BINANCE_API_SECRET")
-    is_testnet = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
+    api_key = settings.BINANCE_API_KEY
+    api_secret = settings.BINANCE_API_SECRET
+    is_testnet = settings.BINANCE_TESTNET
     if not api_key or not api_secret:
         logging.error("Binance API Key or Secret not found in .env file.")
         raise ValueError("Binance credentials not found.")

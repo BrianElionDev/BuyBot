@@ -8,7 +8,7 @@ import os
 import sys
 import asyncio
 import logging
-from dotenv import load_dotenv
+from config import settings
 
 # Add the project root to Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,11 +24,9 @@ async def test_precision_and_validation():
     """Test precision handling and symbol validation."""
     try:
         # Load environment variables
-        load_dotenv()
-
-        api_key = os.getenv('BINANCE_API_KEY')
-        api_secret = os.getenv('BINANCE_API_SECRET')
-        is_testnet = os.getenv('BINANCE_TESTNET', 'True').lower() == 'true'
+        api_key = settings.BINANCE_API_KEY
+        api_secret = settings.BINANCE_API_SECRET
+        is_testnet = settings.BINANCE_TESTNET
 
         if not api_key or not api_secret:
             logging.error("BINANCE_API_KEY and BINANCE_API_SECRET must be set")

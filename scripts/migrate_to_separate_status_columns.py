@@ -17,6 +17,7 @@ sys.path.insert(0, project_root)
 
 from supabase import create_client, Client
 from discord_bot.status_constants import map_binance_order_status, determine_position_status_from_order
+from config import settings
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,10 +26,8 @@ logger = logging.getLogger(__name__)
 def initialize_supabase() -> Client:
     """Initialize Supabase client."""
     try:
-        load_dotenv()
-
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
+        supabase_url = settings.SUPABASE_URL
+        supabase_key = settings.SUPABASE_KEY
 
         if not supabase_url or not supabase_key:
             logger.error("Missing Supabase credentials")

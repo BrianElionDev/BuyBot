@@ -2,14 +2,14 @@ import os
 import sys
 import asyncio
 import logging
-from dotenv import load_dotenv
+
 
 # Add the project root to Python path
 # This script is two levels deep (scripts/account_scripts), so we go up two directories from the script's location.
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(script_dir))
 sys.path.insert(0, project_root)
-
+from config import settings
 from src.exchange.binance_exchange import BinanceExchange
 
 # --- Setup ---
@@ -20,12 +20,9 @@ async def check_balance():
     Connects to Binance using the BinanceExchange class (same as main implementation)
     and displays the account balance, including zero balances to determine if testnet has funds.
     """
-    # --- Load Environment Variables ---
-    load_dotenv()
-
-    api_key = os.getenv("BINANCE_API_KEY")
-    api_secret = os.getenv("BINANCE_API_SECRET")
-    is_testnet = False # Set to True for testnet, False for mainnet
+    api_key = settings.BINANCE_API_KEY
+    api_secret = settings.BINANCE_API_SECRET
+    is_testnet = settings.BINANCE_TESTNET
 
     if not api_key or not api_secret:
         logging.error("API Key or Secret not found in .env file.")
@@ -50,8 +47,12 @@ async def check_balance():
         await binance_exchange._init_client()
         client = binance_exchange.client
 
+        if is_testnet:
+            TESTNET = "TESTNET"
+        else:
+            TESTNET = "MAINNET"
         print("\n" + "="*70)
-        print("          DETAILED BINANCE TESTNET ACCOUNT CHECK")
+        print(f"          DETAILED BINANCE {TESTNET} ACCOUNT CHECK")
         print("="*70)
 
         # Get futures account information
@@ -61,8 +62,20 @@ async def check_balance():
             if client is None:
                 raise Exception("Client not initialized")
 
-            # Get futures account information
-            futures_account = await client.futures_account()
+            # Get futures account information with retry logic
+            max_retries = 3
+            futures_account = None
+            for attempt in range(max_retries):
+                try:
+                    futures_account = await client.futures_account()
+                    break
+                except Exception as e:
+                    if "rate limit" in str(e).lower() and attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) + 1  # Exponential backoff: 2s, 3s, 5s
+                        logging.warning(f"Rate limit hit, waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        raise e
 
             if not futures_account or not futures_account.get('assets'):
                 print("❌ TESTNET ACCOUNT IS COMPLETELY EMPTY OR BALANCE IS NOT VISIBLE TO API KEY")
@@ -94,12 +107,29 @@ async def check_balance():
         except Exception as e:
             logging.error(f"Failed to get detailed futures account: {e}")
 
+        # Add delay between API calls to respect rate limits
+        await asyncio.sleep(1)  # 1 second delay
+
         # Also try to get spot account information
         try:
             print("\n📊 SPOT ACCOUNT BALANCES:")
             if client is None:
                 raise Exception("Client not initialized")
-            spot_account = await client.get_account()
+
+            # Get spot account information with retry logic
+            max_retries = 3
+            spot_account = None
+            for attempt in range(max_retries):
+                try:
+                    spot_account = await client.get_account()
+                    break
+                except Exception as e:
+                    if "rate limit" in str(e).lower() and attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) + 1  # Exponential backoff: 2s, 3s, 5s
+                        logging.warning(f"Rate limit hit, waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        raise e
 
             if spot_account and spot_account.get('balances'):
                 print(f"{'Asset':<8} {'Free':<18} {'Locked':<18}")
@@ -126,6 +156,9 @@ async def check_balance():
 
         except Exception as e:
             logging.error(f"Failed to get spot account: {e}")
+
+        # Add delay before closing to ensure all requests are processed
+        await asyncio.sleep(0.5)
 
         print("="*70 + "\n")
 

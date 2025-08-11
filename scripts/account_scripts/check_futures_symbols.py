@@ -7,7 +7,7 @@ This helps identify valid trading pairs and symbol formatting.
 import os
 import sys
 import logging
-from dotenv import load_dotenv
+from config import settings
 
 # Add the project root to Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,11 +24,9 @@ def check_futures_symbols():
     """Check available futures symbols on Binance testnet."""
     try:
         # Load environment variables
-        load_dotenv()
-
-        api_key = os.getenv("BINANCE_API_KEY")
-        api_secret = os.getenv("BINANCE_API_SECRET")
-        is_testnet = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
+        api_key = settings.BINANCE_API_KEY
+        api_secret = settings.BINANCE_API_SECRET
+        is_testnet = settings.BINANCE_TESTNET
 
         if not api_key or not api_secret:
             print("❌ No API credentials found")

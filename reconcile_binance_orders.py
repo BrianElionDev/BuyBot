@@ -6,16 +6,17 @@ from supabase import create_client, Client
 from discord_bot.discord_bot import DiscordBot
 from src.exchange.binance_exchange import BinanceExchange
 import json
+from config import settings
 
 # --- Setup ---
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
-BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
-BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+BINANCE_API_KEY = settings.BINANCE_API_KEY
+BINANCE_API_SECRET = settings.BINANCE_API_SECRET
+BINANCE_TESTNET = settings.BINANCE_TESTNET
+SUPABASE_URL = settings.SUPABASE_URL
+SUPABASE_KEY = settings.SUPABASE_KEY
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 bot = DiscordBot()

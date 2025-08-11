@@ -2,14 +2,10 @@ import logging
 import re
 from typing import Dict, List, Optional, Tuple
 import json
-import os
 import openai
-from dotenv import load_dotenv
+from config import settings
 
 logger = logging.getLogger(__name__)
-
-# Load environment variables
-load_dotenv()
 
 def extract_quantity_from_signal(signal_content: str) -> tuple:
     """
@@ -53,7 +49,7 @@ def extract_quantity_from_signal(signal_content: str) -> tuple:
 
 # --- OpenAI setup ---
 # It's good practice to handle the case where the key might be missing.
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = settings.OPENAI_API_KEY
 if not api_key:
     logger.warning("OPENAI_API_KEY not found. AI parsing disabled.")
     client = None

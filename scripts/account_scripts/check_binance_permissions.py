@@ -3,6 +3,7 @@ import logging
 from dotenv import load_dotenv
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
+from config import settings
 
 # --- Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -12,12 +13,9 @@ def check_permissions():
     Connects to Binance using API credentials from the .env file
     and checks the permissions of the key.
     """
-    # --- Load Environment Variables ---
-    load_dotenv()
-
-    api_key = os.getenv("BINANCE_API_KEY")
-    api_secret = os.getenv("BINANCE_API_SECRET")
-    is_testnet = True
+    api_key = settings.BINANCE_API_KEY
+    api_secret = settings.BINANCE_API_SECRET
+    is_testnet = settings.BINANCE_TESTNET
 
     if not api_key or not api_secret:
         logging.error("API Key or Secret not found in .env file.")
