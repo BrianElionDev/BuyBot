@@ -178,8 +178,14 @@ class DatabaseSyncHandler:
                         'exit_price': str(avg_price),
                         'binance_exit_price': str(avg_price),
                         'pnl_usd': str(realized_pnl),
+                        'realized_pnl': str(realized_pnl),
                         'position_size': str(executed_qty)
                     })
+
+                    if avg_price > 0:
+                        updates['binance_entry_price'] = str(avg_price)
+                        logger.info(f"Updated binance_entry_price to actual execution price: {avg_price}")
+
                     logger.info(f"Trade {trade_id} FILLED at {avg_price} - PnL: {realized_pnl}")
 
             elif status == 'PARTIALLY_FILLED':
@@ -188,6 +194,12 @@ class DatabaseSyncHandler:
                     'binance_exit_price': str(avg_price),
                     'position_size': str(executed_qty)
                 })
+
+
+                if avg_price > 0:
+                    updates['binance_entry_price'] = str(avg_price)
+                    logger.info(f"Updated binance_entry_price to actual execution price: {avg_price}")
+
                 logger.info(f"Trade {trade_id} PARTIALLY_FILLED at {avg_price}")
 
             elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:

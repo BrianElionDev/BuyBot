@@ -378,6 +378,12 @@ class BinanceEmergencyClose:
 
             logger.info(f"Closing {symbol} position: {position_amt} ({close_side})")
 
+
+            logger.info(f"Canceling all TP/SL orders for {symbol} before closing position")
+            cancel_result = await self.exchange.cancel_all_futures_orders(symbol)
+            if not cancel_result:
+                logger.warning(f"Failed to cancel TP/SL orders for {symbol} - proceeding with position close")
+
             # Create market order to close position
             response = await self.exchange.create_futures_order(
                 pair=symbol,

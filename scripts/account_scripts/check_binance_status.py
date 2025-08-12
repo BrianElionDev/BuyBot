@@ -9,13 +9,15 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
-from config import settings
-from pathlib import Path
 
-# Add the src directory to the path
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import os
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(script_dir))
+sys.path.insert(0, project_root)
+
+from config import settings
 from src.exchange.binance_exchange import BinanceExchange
 
 # Configure logging

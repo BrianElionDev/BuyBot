@@ -333,6 +333,10 @@ class BinanceWebSocketManager:
                 await asyncio.sleep(0.1)
                 return
 
+            # Log all user data stream messages for debugging
+            if stream_type == 'user_data':
+                logger.info(f"WebSocket {stream_type}: Received message: {message[:200]}...")
+
             # Convert bytes to string if needed
             if isinstance(message, bytes):
                 message_str = message.decode('utf-8')
