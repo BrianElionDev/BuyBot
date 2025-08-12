@@ -389,7 +389,7 @@ class BinanceDatabaseSync:
             if symbol in db_trades_by_symbol:
                 for db_trade in db_trades_by_symbol[symbol]:
                     try:
-                        # Update position information
+                        # CRITICAL: Update position information with all required fields
                         update_data = {
                             'position_size': abs(position_amt),
                             'binance_exit_price': mark_price,
@@ -400,6 +400,27 @@ class BinanceDatabaseSync:
                             'sync_issues': [],
                             'manual_verification_needed': False
                         }
+
+                        # CRITICAL: Ensure entry_price is set if missing
+                        if not db_trade.get('entry_price') or float(db_trade.get('entry_price', 0)) == 0:
+                            # Try to get from parsed_signal
+                            try:
+                                parsed_signal = db_trade.get('parsed_signal')
+                                if parsed_signal and isinstance(parsed_signal, str):
+                                    import json
+                                    parsed_data = json.loads(parsed_signal)
+                                    entry_prices = parsed_data.get('entry_prices', [])
+                                    if entry_prices and entry_prices[0]:
+                                        update_data['entry_price'] = float(entry_prices[0])
+                                        logger.info(f"Set missing entry_price from parsed_signal: {entry_prices[0]}")
+                            except Exception as e:
+                                logger.warning(f"Could not extract entry_price from parsed_signal: {e}")
+
+                        # CRITICAL: Ensure binance_entry_price is set if missing
+                        if not db_trade.get('binance_entry_price') or float(db_trade.get('binance_entry_price', 0)) == 0:
+                            # Use current mark_price as fallback for binance_entry_price
+                            update_data['binance_entry_price'] = mark_price
+                            logger.info(f"Set missing binance_entry_price to current mark_price: {mark_price}")
 
                         # If position is closed (zero size), update position status
                         if position_amt == 0:
