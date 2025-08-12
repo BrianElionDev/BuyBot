@@ -106,8 +106,9 @@ class DiscordBot:
         """
         content_lower = content.lower()
 
-        # Safely extract coin symbol with fallback
-        coin_symbol = 'UNKNOWN'
+        # Extract coin symbol from content
+        coin_symbol = self._extract_coin_symbol_from_content(content)
+
         # Determine action type and details
         stop_loss_regex = r"stoploss moved to ([-+]?\d*\.?\d+)"
         stops_to_be_regex= r"\b(stop|sl)\b.*\bbe\b"
@@ -122,7 +123,8 @@ class DiscordBot:
                 "action_description": f"TP1 hit and stop loss moved to break even for {coin_symbol}",
                 "binance_action": "PARTIAL_SELL_AND_UPDATE_STOP_ORDER",
                 "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP1 hit and risk management - move to break even"
+                "reason": "TP1 hit and risk management - move to break even",
+                "coin_symbol": coin_symbol
             }
 
         if "stopped out" in content_lower or "stop loss" in content_lower or "closed be" in content_lower or  "stopped be" in content_lower or "closed in profits" in content_lower or  "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
@@ -134,7 +136,8 @@ class DiscordBot:
                 "stop_loss": None,
                 "take_profit":None,
                 "position_status": "CLOSED",
-                "reason": "Stop loss triggered"
+                "reason": "Stop loss triggered",
+                "coin_symbol": coin_symbol
             }
         elif "limit order cancelled" in content_lower:
             return {
@@ -144,7 +147,8 @@ class DiscordBot:
                 "position_status": "CLOSED",
                 "stop_loss": None,
                 "take_profit":None,
-                "reason": "Cancel limit order"
+                "reason": "Cancel limit order",
+                "coin_symbol": coin_symbol
             }
         elif "move stops to 1H" in content_lower or "updated stoploss" in content_lower or "move stops to " in content_lower or "updated stop loss " in content_lower:
             return {
@@ -154,7 +158,8 @@ class DiscordBot:
                 "position_status": "OPEN",
                 "stop_loss": 2,
                 "take_profit":None,
-                "reason": "Cancel SL order and create new one +-2%"
+                "reason": "Cancel SL order and create new one +-2%",
+                "coin_symbol": coin_symbol
             }
         elif "tp1 taken" in content_lower:
             return {
@@ -162,7 +167,8 @@ class DiscordBot:
                 "action_description": f"Take Profit 2 hit for {coin_symbol}",
                 "binance_action": "PARTIAL_SELL",
                 "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP2 target reached"
+                "reason": "TP2 target reached",
+                "coin_symbol": coin_symbol
             }
         elif "tp1" in content_lower:
             return {
@@ -170,7 +176,8 @@ class DiscordBot:
                 "action_description": f"Take Profit 1 hit for {coin_symbol}",
                 "binance_action": "PARTIAL_SELL",
                 "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP1 target reached"
+                "reason": "TP1 target reached",
+                "coin_symbol": coin_symbol
             }
         elif "tp2" in content_lower:
             return {
@@ -178,7 +185,8 @@ class DiscordBot:
                 "action_description": f"Take Profit 2 hit for {coin_symbol}",
                 "binance_action": "PARTIAL_SELL",
                 "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP2 target reached"
+                "reason": "TP2 target reached",
+                "coin_symbol": coin_symbol
             }
         elif "tp1 taken" in content_lower:
             return {
@@ -186,7 +194,8 @@ class DiscordBot:
                 "action_description": f"Take Profit 2 hit for {coin_symbol}",
                 "binance_action": "PARTIAL_SELL",
                 "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP2 target reached"
+                "reason": "TP2 target reached",
+                "coin_symbol": coin_symbol
             }
         if re.search(stops_to_be_regex, content_lower):
             return {
@@ -196,7 +205,8 @@ class DiscordBot:
                 "position_status": "OPEN",
                 "stop_loss": "BE",
                 "take_profit": None,
-                "reason": "Risk management - move to break even"
+                "reason": "Risk management - move to break even",
+                "coin_symbol": coin_symbol
             }
         elif re.search(stops_to_x_regex, content_lower):
             match = re.search(stops_to_x_regex, content_lower)
@@ -209,7 +219,8 @@ class DiscordBot:
                 "position_status": "OPEN",
                 "stop_loss": entry_value,
                 "take_profit": None,
-                "reason": "Stop loss adjusted to specific value"
+                "reason": "Stop loss adjusted to specific value",
+                "coin_symbol": coin_symbol
                 }
         elif re.search(dca_to_entry_regex, content_lower):
             match = re.search(dca_to_entry_regex, content_lower)
@@ -222,7 +233,8 @@ class DiscordBot:
                 "position_status": "OPEN",
                 "entry": entry_value,
                 "take_profit": None,
-                "reason": "Stop loss adjusted to specific value"
+                "reason": "Stop loss adjusted to specific value",
+                "coin_symbol": coin_symbol
                 }
         else:
             return {
@@ -230,8 +242,38 @@ class DiscordBot:
                 "action_description": f"Update for {coin_symbol}: {content}",
                 "binance_action": "NO_ACTION",
                 "position_status": "UNKNOWN",
-                "reason": "Unrecognized alert type"
+                "reason": "Unrecognized alert type",
+                "coin_symbol": coin_symbol
             }
+
+    def _extract_coin_symbol_from_content(self, content: str) -> str:
+        """
+        Extract coin symbol from alert content using regex patterns.
+        """
+        import re
+
+        # Common coin symbols pattern - look for uppercase letters at start of content
+        # Pattern: " COIN 🚀｜trades" or "COIN 🚀｜trades" or "COIN:"
+        coin_patterns = [
+            r'^\s*([A-Z0-9]{2,10})\s*[🚀📈📉]',  # COIN 🚀 at start
+            r'^\s*([A-Z0-9]{2,10}):',  # COIN: at start
+            r'^\s*([A-Z0-9]{2,10})\s+',  # COIN followed by space
+            r'\s+([A-Z0-9]{2,10})\s*[🚀📈📉]',  # COIN 🚀 anywhere
+            r'\s+([A-Z0-9]{2,10}):',  # COIN: anywhere
+        ]
+
+        for pattern in coin_patterns:
+            match = re.search(pattern, content)
+            if match:
+                coin_symbol = match.group(1).strip()
+                # Validate it's a reasonable coin symbol (2-10 chars, alphanumeric)
+                if 2 <= len(coin_symbol) <= 10 and coin_symbol.isalnum():
+                    logger.info(f"Extracted coin symbol '{coin_symbol}' from content: '{content[:50]}...'")
+                    return coin_symbol
+
+        # Fallback: try to extract from the original trade's parsed_signal
+        logger.warning(f"Could not extract coin symbol from content: '{content[:50]}...'")
+        return "UNKNOWN"
 
     async def process_initial_signal(self, signal_data: Dict[str, Any]) -> Dict[str, str]:
         """
@@ -533,6 +575,12 @@ class DiscordBot:
             # Parse the alert content to determine action(s)
             parsed_action = self.parse_alert_content(signal.content, trade_row)
 
+            # Ensure parsed_action is not None
+            if parsed_action is None:
+                error_msg = f"Failed to parse alert content: {signal.content}"
+                logger.error(error_msg)
+                return {"status": "error", "message": error_msg}
+
             # Handle multiple actions
             if parsed_action.get("multiple_actions"):
                 logger.info(f"Processing multiple actions: {len(parsed_action['actions'])} actions")
@@ -544,7 +592,7 @@ class DiscordBot:
                     logger.info(f"Executing action {i+1}/{len(parsed_action['actions'])}: {action['action_type']}")
 
                     # Execute each action using the existing logic
-                    action_successful, binance_response_log = await self.execute_single_action(action, trade_row, signal)
+                    action_successful, binance_response_log = await self._execute_single_action(action, trade_row, signal)
 
                     if not action_successful:
                         logger.error(f"Action {i+1} failed: {action['action_type']}")
@@ -973,39 +1021,6 @@ class DiscordBot:
             logger.error(error_msg, exc_info=True)
             return {"status": "error", "message": error_msg}
 
-    def _validate_required_fields(self, updates: Dict[str, Any], trade_id: int) -> None:
-        """
-        CRITICAL: Validate that all required fields are populated to prevent fraud.
-        """
-        try:
-            required_fields = {
-                'entry_price': 'Entry price from signal',
-                'binance_entry_price': 'Binance entry price for accurate PnL',
-                'coin_symbol': 'Coin symbol for trade identification',
-                'signal_type': 'Position type (LONG/SHORT) for PnL calculation'
-            }
-
-            missing_fields = []
-
-            for field, description in required_fields.items():
-                if field not in updates or not updates[field]:
-                    missing_fields.append(f"{field}: {description}")
-
-            if missing_fields:
-                logger.error(f"CRITICAL: Trade {trade_id} missing required fields: {missing_fields}")
-                logger.critical(f"FRAUD RISK: Trade {trade_id} has missing critical fields")
-
-                # Add validation issues to updates
-                if 'sync_issues' not in updates:
-                    updates['sync_issues'] = []
-                updates['sync_issues'].extend(missing_fields)
-                updates['manual_verification_needed'] = True
-            else:
-                logger.info(f"✅ Trade {trade_id} has all required fields populated")
-
-        except Exception as e:
-            logger.error(f"Error validating required fields for trade {trade_id}: {e}")
-
     def _calculate_pnl(self, position_type: str, entry_price: float, exit_price: float, position_size: float) -> float:
         """Calculate PnL in USD for a position, considering LONG or SHORT."""
         if entry_price <= 0 or exit_price <= 0 or position_size <= 0:
@@ -1086,6 +1101,40 @@ class DiscordBot:
                 'initialized': False,
                 'error': 'WebSocket manager not available'
             }
+
+    async def _execute_single_action(self, action: Dict[str, Any], trade_row: Dict[str, Any], signal) -> Tuple[bool, Any]:
+        """
+        Execute a single action from the parsed alert content.
+        """
+        try:
+            action_type = action.get('action_type')
+            if not action_type:
+                logger.error(f"No action_type found in action: {action}")
+                return False, {"error": "No action_type found"}
+
+            # Execute the action based on type
+            if action_type == "stop_loss_hit" or action_type == "position_closed":
+                return await self.trading_engine.close_position_at_market(trade_row, reason=action_type)
+            elif action_type == "take_profit_1":
+                return await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_1", close_percentage=50.0)
+            elif action_type == "take_profit_2":
+                return await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_2", close_percentage=100.0)
+            elif action_type == "limit_order_cancelled":
+                return await self.trading_engine.cancel_order(trade_row)
+            elif action_type == "stop_loss_update":
+                stop_loss = action.get('stop_loss')
+                if stop_loss and stop_loss != "BE":
+                    return await self.trading_engine.update_stop_loss(trade_row, float(stop_loss))
+                else:
+                    # Handle break-even stop loss
+                    return await self.trading_engine.update_stop_loss(trade_row, "BE")
+            else:
+                logger.warning(f"Unknown action_type: {action_type}")
+                return False, {"error": f"Unknown action_type: {action_type}"}
+
+        except Exception as e:
+            logger.error(f"Error executing action {action.get('action_type', 'unknown')}: {e}")
+            return False, {"error": str(e)}
 
 # Global bot instance
 discord_bot = DiscordBot()
