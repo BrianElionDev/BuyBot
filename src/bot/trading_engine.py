@@ -600,6 +600,13 @@ class TradingEngine:
         # Standard close (market)
         if action in ['take_profit', 'stop_loss_hit', 'position_closed']:
             logger.info(f"Closing position for {coin_symbol} at market. Reason: {action}")
+
+
+            logger.info(f"Canceling all TP/SL orders for {trading_pair} before closing position")
+            cancel_result = await self.cancel_tp_sl_orders(trading_pair)
+            if not cancel_result:
+                logger.warning(f"Failed to cancel TP/SL orders for {trading_pair} - proceeding with position close")
+
             close_side = 'SELL' if position_type and position_type.upper() == 'LONG' else 'BUY'
             close_order = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
@@ -649,6 +656,7 @@ class TradingEngine:
     async def close_position_at_market(self, active_trade: Dict, reason: str = "manual_close", close_percentage: float = 100.0) -> Tuple[bool, Dict]:
         """
         Closes a percentage of an open futures position at the current market price.
+        CRITICAL: Cancels all TP/SL orders before closing position to prevent unwanted executions.
         """
         try:
             parsed_signal = self._parse_parsed_signal(active_trade.get("parsed_signal"))
@@ -669,6 +677,12 @@ class TradingEngine:
             is_futures = position_type in ['LONG', 'SHORT']
 
             if is_futures:
+
+                logger.info(f"Canceling all TP/SL orders for {trading_pair} before closing position")
+                cancel_result = await self.cancel_tp_sl_orders(trading_pair)
+                if not cancel_result:
+                    logger.warning(f"Failed to cancel TP/SL orders for {trading_pair} - proceeding with position close")
+
                 close_side = SIDE_SELL if position_type == 'LONG' else SIDE_BUY
                 close_order = await self.binance_exchange.create_futures_order(
                     pair=trading_pair,
