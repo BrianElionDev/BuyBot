@@ -238,19 +238,23 @@ class DatabaseManager:
                 if "orderId" in original_response:
                     updates["exchange_order_id"] = str(original_response.get("orderId", ""))
 
-                # Extract and store position_size from the successful order response
+                # CRITICAL: Extract and store position_size from the successful order response
                 if isinstance(original_response, dict):
+                    position_size_set = False
+
                     # Try to get position size from executedQty (most reliable)
                     executed_qty = original_response.get('executedQty')
                     if executed_qty and float(executed_qty) > 0:
                         updates["position_size"] = float(executed_qty)
                         logger.info(f"Stored position_size from executedQty: {executed_qty} for trade {trade_id}")
+                        position_size_set = True
                     else:
                         # Fallback to origQty if executedQty is not available
                         orig_qty = original_response.get('origQty')
                         if orig_qty and float(orig_qty) > 0:
                             updates["position_size"] = float(orig_qty)
                             logger.info(f"Stored position_size from origQty: {orig_qty} for trade {trade_id}")
+                            position_size_set = True
                         else:
                             # Final fallback: calculate from fills array
                             fills = original_response.get('fills', [])
@@ -259,10 +263,13 @@ class DatabaseManager:
                                 if total_filled_qty > 0:
                                     updates["position_size"] = total_filled_qty
                                     logger.info(f"Stored position_size from fills array: {total_filled_qty} for trade {trade_id}")
-                                else:
-                                    logger.warning(f"Could not extract position_size from fills array for trade {trade_id}")
-                            else:
-                                logger.warning(f"Could not extract position_size from order response for trade {trade_id}")
+                                    position_size_set = True
+
+                    # CRITICAL: If position_size is still not set, mark for manual verification
+                    if not position_size_set:
+                        logger.error(f"CRITICAL: Could not extract position_size from order response for trade {trade_id}")
+                        updates["sync_issues"] = ["Missing position_size - manual verification required"]
+                        updates["manual_verification_needed"] = True
 
                 # Store TP/SL order information if present
                 if "tp_sl_orders" in original_response:

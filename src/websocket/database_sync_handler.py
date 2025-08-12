@@ -174,6 +174,7 @@ class DatabaseSyncHandler:
             # Add additional data based on order status
             if status == 'FILLED':
                 if executed_qty > 0:
+                    # CRITICAL: Update exit price and PnL for filled orders
                     updates.update({
                         'exit_price': str(avg_price),
                         'binance_exit_price': str(avg_price),
@@ -182,39 +183,97 @@ class DatabaseSyncHandler:
                         'position_size': str(executed_qty)
                     })
 
-                    if avg_price > 0:
-                        updates['binance_entry_price'] = str(avg_price)
-                        logger.info(f"Updated binance_entry_price to actual execution price: {avg_price}")
+                    # CRITICAL: Only update binance_entry_price if it's missing or for market orders
+                    # This prevents overwriting correct entry prices with exit prices
+                    current_binance_entry_price = trade.get('binance_entry_price')
+                    if not current_binance_entry_price or float(current_binance_entry_price) == 0:
+                        if avg_price > 0:
+                            updates['binance_entry_price'] = str(avg_price)
+                            logger.info(f"Updated missing binance_entry_price to execution price: {avg_price}")
 
                     logger.info(f"Trade {trade_id} FILLED at {avg_price} - PnL: {realized_pnl}")
 
             elif status == 'PARTIALLY_FILLED':
+                # CRITICAL: Update position size and exit price for partial fills
                 updates.update({
                     'exit_price': str(avg_price),
                     'binance_exit_price': str(avg_price),
                     'position_size': str(executed_qty)
                 })
 
-
-                if avg_price > 0:
-                    updates['binance_entry_price'] = str(avg_price)
-                    logger.info(f"Updated binance_entry_price to actual execution price: {avg_price}")
+                # CRITICAL: Only update binance_entry_price if it's missing
+                current_binance_entry_price = trade.get('binance_entry_price')
+                if not current_binance_entry_price or float(current_binance_entry_price) == 0:
+                    if avg_price > 0:
+                        updates['binance_entry_price'] = str(avg_price)
+                        logger.info(f"Updated missing binance_entry_price to execution price: {avg_price}")
 
                 logger.info(f"Trade {trade_id} PARTIALLY_FILLED at {avg_price}")
 
+            elif status == 'NEW':
+                # CRITICAL: Update position size for new orders
+                if executed_qty > 0:
+                    updates['position_size'] = str(executed_qty)
+                logger.info(f"Trade {trade_id} order created")
+
             elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
                 logger.warning(f"Trade {trade_id} {status} - {execution_data}")
-
-            elif status == 'NEW':
-                logger.info(f"Trade {trade_id} order created")
             else:
                 logger.warning(f"Skipping trade update - status is {status} for order {trade_id}")
+
+            # CRITICAL: Validate that all required fields are populated
+            self._validate_critical_fields(trade_id, updates, trade)
 
             # Update the database
             await self.db_manager.update_existing_trade(trade_id, updates)
 
         except Exception as e:
             logger.error(f"Error updating trade status for {trade_id}: {e}")
+
+    def _validate_critical_fields(self, trade_id: int, updates: Dict[str, Any], original_trade: Dict[str, Any]):
+        """
+        CRITICAL: Validate that all required fields are populated to prevent fraud.
+        """
+        try:
+            critical_fields = {
+                'position_size': 'Position size is required for accurate PnL calculation',
+                'entry_price': 'Entry price is required for accurate PnL calculation',
+                'binance_entry_price': 'Binance entry price is required for accurate PnL calculation',
+                'binance_exit_price': 'Binance exit price is required for accurate PnL calculation',
+                'pnl_usd': 'PnL is required for accurate financial reporting'
+            }
+
+            missing_fields = []
+            validation_issues = []
+
+            # Check current trade data and updates
+            for field, description in critical_fields.items():
+                current_value = original_trade.get(field)
+                updated_value = updates.get(field)
+
+                # Use updated value if available, otherwise use current value
+                final_value = updated_value if updated_value is not None else current_value
+
+                if not final_value or (isinstance(final_value, (int, float)) and final_value == 0):
+                    missing_fields.append(field)
+                    validation_issues.append(f"Missing {field}: {description}")
+
+            if missing_fields:
+                logger.error(f"CRITICAL: Trade {trade_id} missing required fields: {missing_fields}")
+                logger.error(f"Validation issues: {validation_issues}")
+
+                # Mark for manual verification
+                updates['sync_issues'] = validation_issues
+                updates['manual_verification_needed'] = True
+                updates['sync_error_count'] = (original_trade.get('sync_error_count', 0) or 0) + 1
+
+                # Log critical warning
+                logger.critical(f"FRAUD RISK: Trade {trade_id} has missing critical fields that could lead to inaccurate financial reporting")
+            else:
+                logger.info(f"✅ Trade {trade_id} has all critical fields populated")
+
+        except Exception as e:
+            logger.error(f"Error validating critical fields for trade {trade_id}: {e}")
 
     async def _update_trade_order_id(self, trade_id: int, order_id: str):
         """
