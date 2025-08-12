@@ -81,7 +81,7 @@ async def receive_update_signal(signal: DiscordUpdateSignal, background_tasks: B
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/discord/signal/update/test", summary="Receive a trade update signal")
-async def receive_update_signal(signal: DiscordUpdateSignal):
+async def receive_update_signal_test(signal: DiscordUpdateSignal):
     """
     Receives a follow-up signal to update an existing trade.
 
