@@ -34,7 +34,7 @@ async def process_initial_signal_background(signal: InitialDiscordSignal):
 async def process_update_signal_background(signal: DiscordUpdateSignal):
     """Process an update signal in the background."""
     try:
-        result = await discord_bot.process_update_signal(signal.model_dump(), None)
+        result = await discord_bot.process_update_signal(signal.model_dump())
         if result.get("status") != "success":
             logger.error(f"Failed to process update signal: {result.get('message')}")
         else:
@@ -81,7 +81,7 @@ async def receive_update_signal(signal: DiscordUpdateSignal, background_tasks: B
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/discord/signal/update/test", summary="Receive a trade update signal")
-async def receive_update_signal(signal: DiscordUpdateSignal):
+async def receive_update_signal_test(signal: DiscordUpdateSignal):
     """
     Receives a follow-up signal to update an existing trade.
 
