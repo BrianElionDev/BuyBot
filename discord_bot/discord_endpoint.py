@@ -34,7 +34,7 @@ async def process_initial_signal_background(signal: InitialDiscordSignal):
 async def process_update_signal_background(signal: DiscordUpdateSignal):
     """Process an update signal in the background."""
     try:
-        result = await discord_bot.process_update_signal(signal.model_dump(), None)
+        result = await discord_bot.process_update_signal(signal.model_dump())
         if result.get("status") != "success":
             logger.error(f"Failed to process update signal: {result.get('message')}")
         else:
