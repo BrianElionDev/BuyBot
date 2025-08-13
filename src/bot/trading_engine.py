@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from discord_bot.database import DatabaseManager
 from src.exchange.binance_exchange import BinanceExchange
 from src.services.price_service import PriceService
+from src.exchange.fee_calculator import BinanceFuturesFeeCalculator
 
 from config import settings as config
 import json
@@ -33,6 +34,7 @@ class TradingEngine:
         self.binance_exchange = binance_exchange
         self.db_manager = db_manager
         self.trade_cooldowns = {}
+        self.fee_calculator = BinanceFuturesFeeCalculator()
         logger.info("TradingEngine initialized.")
 
     def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
@@ -174,6 +176,36 @@ class TradingEngine:
                 trade_amount *= quantity_multiplier
                 logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
 
+            # --- Fee Calculation and Adjustment ---
+            if is_futures:
+                # Calculate fees for the trade
+                fee_analysis = self.fee_calculator.calculate_comprehensive_fees(
+                    margin=usdt_amount,
+                    leverage=1.0,  # Default leverage, will be updated with actual leverage
+                    entry_price=current_price,
+                    is_maker=(order_type.upper() == 'LIMIT'),
+                    use_bnb=False  # Can be made configurable
+                )
+
+                # Log fee information
+                logger.info(f"Fee Analysis for {trading_pair}:")
+                logger.info(f"  Single Trade Fee: ${fee_analysis['single_trade_fee']} USDT")
+                logger.info(f"  Total Fees (Entry + Exit): ${fee_analysis['total_fees']} USDT")
+                logger.info(f"  Breakeven Price: ${fee_analysis['breakeven_price']}")
+                logger.info(f"  Fee % of Margin: {fee_analysis['fee_percentage_of_margin']:.4f}%")
+
+                # Store fee information for later use
+                fee_info = {
+                    'single_trade_fee': float(fee_analysis['single_trade_fee']),
+                    'total_fees': float(fee_analysis['total_fees']),
+                    'breakeven_price': float(fee_analysis['breakeven_price']),
+                    'fee_percentage_of_margin': float(fee_analysis['fee_percentage_of_margin']),
+                    'fee_type': fee_analysis['fee_type'],
+                    'effective_fee_rate': float(fee_analysis['effective_fee_rate'])
+                }
+            else:
+                fee_info = None
+
             # Get symbol filters for precision formatting
             # Commented out for now as it's handled elsewhere
             # symbol_filters = await self.binance_exchange.get_futures_symbol_filters(trading_pair)
@@ -218,10 +250,13 @@ class TradingEngine:
                 # Get current positions for this symbol
                 positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
                 current_position_size = 0.0
+                actual_leverage = 1.0  # Default leverage
 
                 for position in positions:
                     if position.get('symbol') == trading_pair:
                         current_position_size = abs(float(position.get('positionAmt', 0)))
+                        # Get actual leverage from position
+                        actual_leverage = float(position.get('leverage', 1.0))
                         break
 
                 # Calculate new total position size
@@ -242,6 +277,30 @@ class TradingEngine:
                         return False, {"error": f"Would exceed max position size for {trading_pair}, order skipped."}
 
                     logger.info(f"Position validation passed for {trading_pair}. Current: {current_position_size}, New: {new_total_size}, Max: {max_position_size}")
+
+                    # Update fee calculation with actual leverage
+                    if fee_info:
+                        updated_fee_analysis = self.fee_calculator.calculate_comprehensive_fees(
+                            margin=usdt_amount,
+                            leverage=actual_leverage,
+                            entry_price=current_price,
+                            is_maker=(order_type.upper() == 'LIMIT'),
+                            use_bnb=False
+                        )
+
+                        # Update fee info with actual leverage
+                        fee_info.update({
+                            'single_trade_fee': float(updated_fee_analysis['single_trade_fee']),
+                            'total_fees': float(updated_fee_analysis['total_fees']),
+                            'breakeven_price': float(updated_fee_analysis['breakeven_price']),
+                            'fee_percentage_of_margin': float(updated_fee_analysis['fee_percentage_of_margin']),
+                            'actual_leverage': actual_leverage
+                        })
+
+                        logger.info(f"Updated fee analysis with actual leverage {actual_leverage}:")
+                        logger.info(f"  Single Trade Fee: ${fee_info['single_trade_fee']} USDT")
+                        logger.info(f"  Total Fees: ${fee_info['total_fees']} USDT")
+                        logger.info(f"  Breakeven Price: ${fee_info['breakeven_price']}")
                 else:
                     logger.warning("Binance client not available for position validation. Proceeding with order.")
 
@@ -284,6 +343,11 @@ class TradingEngine:
                 if 'orderId' in order_result:
                     logger.info(f"Order created successfully: {order_result['orderId']}")
 
+                    # Add fee information to order result
+                    if fee_info:
+                        order_result['fee_analysis'] = fee_info
+                        logger.info(f"Fee analysis added to order result: {fee_info}")
+
                     # Create TP/SL orders as separate orders after position opening
                     # Convert origQty to float since it comes as string from Binance API
                     position_size = float(order_result.get('origQty', trade_amount))
@@ -299,7 +363,7 @@ class TradingEngine:
                     if tp_sl_orders:
                         order_result['tp_sl_orders'] = tp_sl_orders
                         logger.info(f"Created {len(tp_sl_orders)} TP/SL orders for {trading_pair}")
-                    
+
                     # Store stop loss order ID for database update
                     if stop_loss_order_id:
                         order_result['stop_loss_order_id'] = stop_loss_order_id
@@ -354,6 +418,82 @@ class TradingEngine:
         logger.error(f"Unexpected execution flow for {trading_pair} - order placement should have returned")
         return False, {"error": "Unexpected execution flow"}
 
+    async def calculate_position_breakeven_price(
+        self,
+        trading_pair: str,
+        entry_price: float,
+        position_type: str,
+        order_type: str = "MARKET",
+        use_bnb: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Calculate breakeven price for a position including all fees.
+
+        Args:
+            trading_pair: Trading pair (e.g., 'BTCUSDT')
+            entry_price: Entry price of the position
+            position_type: 'LONG' or 'SHORT'
+            order_type: 'MARKET' or 'LIMIT'
+            use_bnb: Whether to apply BNB discount
+
+        Returns:
+            Dictionary with breakeven analysis
+        """
+        try:
+            # Get current position information
+            positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
+            actual_leverage = 1.0
+            position_size = 0.0
+
+            for position in positions:
+                if position.get('symbol') == trading_pair:
+                    position_size = abs(float(position.get('positionAmt', 0)))
+                    actual_leverage = float(position.get('leverage', 1.0))
+                    break
+
+            if position_size == 0:
+                return {
+                    'error': f'No position found for {trading_pair}',
+                    'breakeven_price': None,
+                    'fee_analysis': None
+                }
+
+            # Calculate notional value
+            notional_value = position_size * entry_price
+
+            # Calculate breakeven price
+            breakeven_analysis = self.fee_calculator.calculate_comprehensive_fees(
+                margin=notional_value / actual_leverage,  # Convert notional to margin
+                leverage=actual_leverage,
+                entry_price=entry_price,
+                is_maker=(order_type.upper() == 'LIMIT'),
+                use_bnb=use_bnb
+            )
+
+            return {
+                'trading_pair': trading_pair,
+                'entry_price': entry_price,
+                'position_size': position_size,
+                'actual_leverage': actual_leverage,
+                'notional_value': notional_value,
+                'breakeven_price': float(breakeven_analysis['breakeven_price']),
+                'fee_analysis': {
+                    'single_trade_fee': float(breakeven_analysis['single_trade_fee']),
+                    'total_fees': float(breakeven_analysis['total_fees']),
+                    'fee_percentage_of_margin': float(breakeven_analysis['fee_percentage_of_margin']),
+                    'fee_type': breakeven_analysis['fee_type'],
+                    'effective_fee_rate': float(breakeven_analysis['effective_fee_rate'])
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating breakeven price for {trading_pair}: {e}")
+            return {
+                'error': f'Failed to calculate breakeven price: {str(e)}',
+                'breakeven_price': None,
+                'fee_analysis': None
+            }
+
     async def _create_tp_sl_orders(self, trading_pair: str, position_type: str, position_size: float,
                                  take_profits: Optional[List[float]] = None, stop_loss: Optional[Union[float, str]] = None) -> Tuple[List[Dict], Optional[str]]:
         """
@@ -380,12 +520,12 @@ class TradingEngine:
                 # Get current position to set TP/SL on it
                 positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
                 current_position = None
-                
+
                 for position in positions:
                     if position.get('symbol') == trading_pair:
                         current_position = position
                         break
-                
+
                 if not current_position:
                     logger.warning(f"No position found for {trading_pair}, falling back to separate orders")
                     return await self._create_separate_tp_sl_orders(trading_pair, position_type, position_size, take_profits, stop_loss)
@@ -394,7 +534,7 @@ class TradingEngine:
                 if self.binance_exchange.client:
                     # Prepare TP/SL parameters
                     tp_sl_params = {}
-                    
+
                     # Set take profit if provided
                     if take_profits and isinstance(take_profits, list) and len(take_profits) > 0:
                         # For position-based TP/SL, we can only set one TP level
@@ -402,13 +542,13 @@ class TradingEngine:
                         tp_price = float(take_profits[0])
                         tp_sl_params['takeProfitPrice'] = f"{tp_price}"
                         logger.info(f"Setting position-based TP at {tp_price} for {trading_pair}")
-                    
+
                     # Set stop loss if provided
                     if stop_loss:
                         sl_price = float(stop_loss)
                         tp_sl_params['stopLossPrice'] = f"{sl_price}"
                         logger.info(f"Setting position-based SL at {sl_price} for {trading_pair}")
-                    
+
                     # Only proceed if we have TP or SL to set
                     if tp_sl_params:
                         # Set TP/SL on the position
@@ -416,7 +556,7 @@ class TradingEngine:
                             symbol=trading_pair,
                             dualSidePosition='false'  # Single position mode
                         )
-                        
+
                         if response and response.get('status') == 'OK':
                             # Now set the TP/SL prices
                             tp_sl_response = await self.binance_exchange.client.futures_change_position_tpsl_mode(
@@ -424,10 +564,10 @@ class TradingEngine:
                                 dualSidePosition='false',
                                 **tp_sl_params
                             )
-                            
+
                             if tp_sl_response and tp_sl_response.get('status') == 'OK':
                                 logger.info(f"Successfully set position-based TP/SL for {trading_pair}")
-                                
+
                                 # Create mock order responses for consistency
                                 if 'takeProfitPrice' in tp_sl_params:
                                     tp_order = {
@@ -442,7 +582,7 @@ class TradingEngine:
                                         'tp_level': 1
                                     }
                                     tp_sl_orders.append(tp_order)
-                                
+
                                 if 'stopLossPrice' in tp_sl_params:
                                     sl_order = {
                                         'orderId': f"pos_sl_{trading_pair}_{int(time.time())}",
@@ -456,17 +596,17 @@ class TradingEngine:
                                     }
                                     tp_sl_orders.append(sl_order)
                                     stop_loss_order_id = sl_order['orderId']
-                                
+
                                 return tp_sl_orders, stop_loss_order_id
                             else:
                                 logger.warning(f"Failed to set position-based TP/SL: {tp_sl_response}")
                         else:
                             logger.warning(f"Failed to enable TP/SL mode: {response}")
-                
+
                 # Fall back to separate orders if position-based TP/SL fails
                 logger.info(f"Falling back to separate TP/SL orders for {trading_pair}")
                 return await self._create_separate_tp_sl_orders(trading_pair, position_type, position_size, take_profits, stop_loss)
-                
+
             except Exception as e:
                 logger.error(f"Error setting position-based TP/SL for {trading_pair}: {e}")
                 # Fall back to separate orders
@@ -500,7 +640,7 @@ class TradingEngine:
                 for i, tp_price in enumerate(take_profits):
                     try:
                         tp_price_float = float(tp_price)
-                        
+
                         # For take profits, use reduceOnly with specific amount to handle partial positions correctly
                         tp_order = await self.binance_exchange.create_futures_order(
                             pair=trading_pair,
@@ -525,7 +665,7 @@ class TradingEngine:
             if stop_loss:
                 try:
                     sl_price_float = float(stop_loss)
-                    
+
                     # For stop loss, use reduceOnly with specific amount to handle partial positions correctly
                     sl_order = await self.binance_exchange.create_futures_order(
                         pair=trading_pair,
@@ -609,7 +749,7 @@ class TradingEngine:
         """
         try:
             cancelled_count = 0
-            
+
             # If we have an active trade with stored order IDs, use those
             if active_trade:
                 # Cancel stop loss order if we have its ID
@@ -625,7 +765,7 @@ class TradingEngine:
                             logger.warning(f"Failed to cancel stop loss order {stop_loss_order_id} - may not exist")
                     except Exception as e:
                         logger.warning(f"Error cancelling stop loss order {stop_loss_order_id}: {e}")
-                
+
                 # Cancel take profit orders if we have their IDs
                 binance_response = active_trade.get('binance_response')
                 if isinstance(binance_response, str):
@@ -634,7 +774,7 @@ class TradingEngine:
                         binance_response = json.loads(binance_response)
                     except Exception:
                         binance_response = {}
-                
+
                 tp_sl_orders = binance_response.get('tp_sl_orders', [])
                 for tp_sl_order in tp_sl_orders:
                     if isinstance(tp_sl_order, dict) and 'orderId' in tp_sl_order:
@@ -650,14 +790,14 @@ class TradingEngine:
                                 logger.warning(f"Failed to cancel {order_type} order {order_id} - may not exist")
                         except Exception as e:
                             logger.warning(f"Error cancelling {order_type} order {order_id}: {e}")
-            
+
             # Fallback: if no active_trade provided or no stored order IDs, try to find and cancel TP/SL orders
             if cancelled_count == 0:
                 logger.info(f"No stored order IDs found, attempting to find and cancel TP/SL orders for {trading_pair}")
                 open_orders = await self.binance_exchange.get_all_open_futures_orders()
-                
+
                 for order in open_orders:
-                    if (order['symbol'] == trading_pair and 
+                    if (order['symbol'] == trading_pair and
                         order['type'] in ['STOP_MARKET', 'STOP', 'TAKE_PROFIT_MARKET', 'TAKE_PROFIT'] and
                         order.get('reduceOnly', False)):
                         try:
@@ -670,10 +810,10 @@ class TradingEngine:
                                 logger.warning(f"Failed to cancel TP/SL order {order['orderId']}")
                         except Exception as e:
                             logger.error(f"Error cancelling TP/SL order {order['orderId']}: {e}")
-            
+
             logger.info(f"Successfully cancelled {cancelled_count} TP/SL orders for {trading_pair}")
             return cancelled_count > 0
-            
+
         except Exception as e:
             logger.error(f"Error canceling TP/SL orders for {trading_pair}: {e}")
             return False
@@ -821,7 +961,7 @@ class TradingEngine:
                 logger.error(f"Invalid new stop price for update: {new_stop_price}")
                 return False, {"error": f"Invalid new stop price for update: {new_stop_price}"}
             logger.info(f"Updating stop loss for {coin_symbol} to {new_stop_price}")
-            
+
             # Try to use position-based TP/SL first (appears in TP/SL column)
             try:
                 if self.binance_exchange.client:
@@ -831,10 +971,10 @@ class TradingEngine:
                         dualSidePosition='false',
                         stopLossPrice=f"{new_stop_price}"
                     )
-                    
+
                     if response and response.get('status') == 'OK':
                         logger.info(f"Successfully updated position-based stop loss to {new_stop_price} for {trading_pair}")
-                        
+
                         # Create mock response for consistency
                         mock_response = {
                             'orderId': f"pos_sl_{trading_pair}_{int(time.time())}",
@@ -855,7 +995,7 @@ class TradingEngine:
 
             # Fall back to separate stop loss order (appears in Open Orders)
             logger.info(f"Falling back to separate stop loss order for {trading_pair}")
-            
+
             # Cancel old SL order if exists
             if stop_loss_order_id:
                 await self.binance_exchange.cancel_futures_order(trading_pair, stop_loss_order_id)
@@ -912,7 +1052,7 @@ class TradingEngine:
                     # For now, we'll keep TP/SL orders active for partial closes
                     # but we should update them with the new position size
                     logger.info(f"Partial close ({close_percentage}%) - keeping TP/SL orders active")
-                    
+
                     # TODO: Update TP/SL orders with new position size after partial close
                     # This would require recalculating the remaining position size
 
@@ -941,11 +1081,11 @@ class TradingEngine:
 
             if close_order and 'orderId' in close_order:
                 logger.info(f"Successfully placed close order for {coin_symbol}: {close_order}")
-                
+
                 # Calculate fill price and executed quantity for PnL calculation
                 fill_price = 0.0
                 executed_qty = 0.0
-                
+
                 if isinstance(close_order, dict):
                     # Try to get fill information from the order response
                     fills = close_order.get('fills', [])
@@ -959,7 +1099,7 @@ class TradingEngine:
                         # Fallback to executedQty and avgPrice if available
                         executed_qty = float(close_order.get('executedQty', amount_to_close))
                         fill_price = float(close_order.get('avgPrice', 0))
-                
+
                 # Prepare response with fill information
                 response_data = {
                     **close_order,
@@ -968,7 +1108,7 @@ class TradingEngine:
                     'close_percentage': close_percentage,
                     'reason': reason
                 }
-                
+
                 # Update trade status based on close percentage
                 try:
                     trade_id = active_trade.get('id')
@@ -977,7 +1117,7 @@ class TradingEngine:
                             status = "CLOSED"
                         else:
                             status = "PARTIALLY_CLOSED"
-                            
+
                         await self.db_manager.update_existing_trade(
                             trade_id=trade_id,
                             updates={
@@ -988,7 +1128,7 @@ class TradingEngine:
                         logger.info(f"Updated trade {trade_id} status to {status}")
                 except Exception as e:
                     logger.warning(f"Could not update trade status: {e}")
-                
+
                 return True, response_data
             else:
                 return False, {"error": f"Failed to place close order. Response: {close_order}"}
@@ -1012,12 +1152,12 @@ class TradingEngine:
                 initial_response = active_trade.get("binance_response")
                 if isinstance(initial_response, dict):
                     position_size = float(initial_response.get('origQty') or 0.0)
-                
+
                 # If still 0, fetch current position from Binance
                 if position_size <= 0:
                     trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
                     positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
-                    
+
                     for position in positions:
                         if position.get('symbol') == trading_pair:
                             position_size = abs(float(position.get('positionAmt', 0)))
@@ -1049,10 +1189,10 @@ class TradingEngine:
                         dualSidePosition='false',
                         stopLossPrice=f"{new_sl_price}"
                     )
-                    
+
                     if response and response.get('status') == 'OK':
                         logger.info(f"Successfully updated position-based stop loss to {new_sl_price} for {trading_pair}")
-                        
+
                         # Create mock response for consistency
                         mock_response = {
                             'orderId': f"pos_sl_{trading_pair}_{int(time.time())}",
@@ -1074,7 +1214,7 @@ class TradingEngine:
 
             # Fall back to separate stop loss order (appears in Open Orders)
             logger.info(f"Falling back to separate stop loss order for {trading_pair}")
-            
+
             # Cancel existing stop loss order before creating new one
             if old_sl_order_id:
                 try:
@@ -1094,7 +1234,7 @@ class TradingEngine:
             new_sl_side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
             logger.info(f"Creating new stop loss order: {trading_pair} {new_sl_side} STOP_MARKET {position_size} @ {new_sl_price}")
             logger.info(f"Order parameters: pair={trading_pair}, side={new_sl_side}, type={FUTURE_ORDER_TYPE_STOP_MARKET}, stop_price={new_sl_price}, amount={position_size}, reduce_only=True")
-            
+
             new_sl_order_result = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=new_sl_side,
@@ -1120,11 +1260,11 @@ class TradingEngine:
     async def calculate_2_percent_stop_loss(self, coin_symbol: str, position_type: str) -> Optional[float]:
         """
         Calculate a 2% stop loss price from the current market price.
-        
+
         Args:
             coin_symbol: The trading symbol (e.g., 'BTC')
             position_type: The position type ('LONG' or 'SHORT')
-            
+
         Returns:
             The calculated stop loss price or None if calculation fails
         """
@@ -1133,12 +1273,12 @@ class TradingEngine:
     async def calculate_percentage_stop_loss(self, coin_symbol: str, position_type: str, percentage: float) -> Optional[float]:
         """
         Calculate a percentage-based stop loss price from the current market price.
-        
+
         Args:
             coin_symbol: The trading symbol (e.g., 'BTC')
             position_type: The position type ('LONG' or 'SHORT')
             percentage: The percentage for stop loss calculation (e.g., 2.0 for 2%)
-            
+
         Returns:
             The calculated stop loss price or None if calculation fails
         """
@@ -1147,15 +1287,15 @@ class TradingEngine:
             if percentage <= 0 or percentage > 50:  # Reasonable range: 0.1% to 50%
                 logger.error(f"Invalid stop loss percentage: {percentage}%. Must be between 0.1 and 50.")
                 return None
-            
+
             trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
             current_price = await self.binance_exchange.get_futures_mark_price(trading_pair)
             precision = await self.binance_exchange.get_symbol_precision(trading_pair)
-            
+
             if not current_price:
                 logger.error(f"Could not get current price for {trading_pair}")
                 return None
-            
+
             # Calculate percentage-based stop loss from current price
             if position_type.upper() == 'LONG':
                 stop_loss_price = current_price * (1 - percentage / 100)  # percentage below current price
@@ -1166,9 +1306,9 @@ class TradingEngine:
             else:
                 logger.error(f"Unknown position type: {position_type}")
                 return None
-            rounded_stop_loss_price = round(stop_loss_price,precision )  
+            rounded_stop_loss_price = round(stop_loss_price,precision )
             return rounded_stop_loss_price
-            
+
         except Exception as e:
             logger.error(f"Error calculating {percentage}% stop loss for {coin_symbol}: {e}")
             return None
