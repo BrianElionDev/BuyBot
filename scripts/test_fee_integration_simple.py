@@ -50,7 +50,7 @@ def test_fee_integration_simple():
     # Calculate comprehensive fees (as in trading engine)
     fee_analysis = fee_calculator.calculate_comprehensive_fees(
         margin=usdt_amount,
-        leverage=1.0,  # Default leverage, would be updated with actual leverage
+        leverage=1.0,  # Test leverage, would be updated with actual leverage in real trading
         entry_price=signal_price,
         is_maker=(order_type.upper() == 'LIMIT'),
         use_bnb=False

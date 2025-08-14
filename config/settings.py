@@ -76,6 +76,13 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 # Minimum ETH balance to maintain for gas fees
 MIN_ETH_BALANCE = float(os.getenv("MIN_ETH_BALANCE", "0.01"))
 
+# Fee Calculator Configuration
+USE_FIXED_FEE_CALCULATOR = True  # Use simplified fixed fee cap instead of complex formulas
+FIXED_FEE_RATE = 0.0002  # 0.02% fixed fee cap (can be 0.0002 or 0.0005)
+
+# Trading Leverage Configuration
+DEFAULT_LEVERAGE = float(os.getenv("LEVERAGE", "1"))  # Default leverage from .env, defaults to 1 if not found
+
 # Setup logging
 def setup_logging():
     logging.basicConfig(

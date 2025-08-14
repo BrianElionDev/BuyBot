@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from discord_bot.database import DatabaseManager
 from src.exchange.binance_exchange import BinanceExchange
 from src.services.price_service import PriceService
-from src.exchange.fee_calculator import BinanceFuturesFeeCalculator
+from src.exchange.fee_calculator import FixedFeeCalculator, BinanceFuturesFeeCalculator
 
 from config import settings as config
 import json
@@ -34,7 +34,13 @@ class TradingEngine:
         self.binance_exchange = binance_exchange
         self.db_manager = db_manager
         self.trade_cooldowns = {}
-        self.fee_calculator = BinanceFuturesFeeCalculator()
+        # Choose fee calculator based on configuration
+        if config.USE_FIXED_FEE_CALCULATOR:
+            self.fee_calculator = FixedFeeCalculator(fee_rate=config.FIXED_FEE_RATE)
+            logger.info(f"Using FixedFeeCalculator with {config.FIXED_FEE_RATE * 100}% fee cap")
+        else:
+            self.fee_calculator = BinanceFuturesFeeCalculator()
+            logger.info("Using BinanceFuturesFeeCalculator with complex fee formulas")
         logger.info("TradingEngine initialized.")
 
     def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
@@ -178,13 +184,11 @@ class TradingEngine:
 
             # --- Fee Calculation and Adjustment ---
             if is_futures:
-                # Calculate fees for the trade
+                # Calculate fees for the trade using fixed fee cap
                 fee_analysis = self.fee_calculator.calculate_comprehensive_fees(
                     margin=usdt_amount,
-                    leverage=1.0,  # Default leverage, will be updated with actual leverage
-                    entry_price=current_price,
-                    is_maker=(order_type.upper() == 'LIMIT'),
-                    use_bnb=False  # Can be made configurable
+                    leverage=config.DEFAULT_LEVERAGE,  # Use leverage from settings
+                    entry_price=current_price
                 )
 
                 # Log fee information
@@ -250,13 +254,13 @@ class TradingEngine:
                 # Get current positions for this symbol
                 positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
                 current_position_size = 0.0
-                actual_leverage = 1.0  # Default leverage
+                actual_leverage = config.DEFAULT_LEVERAGE  # Use leverage from settings
 
                 for position in positions:
                     if position.get('symbol') == trading_pair:
                         current_position_size = abs(float(position.get('positionAmt', 0)))
                         # Get actual leverage from position
-                        actual_leverage = float(position.get('leverage', 1.0))
+                        actual_leverage = float(position.get('leverage', config.DEFAULT_LEVERAGE))
                         break
 
                 # Calculate new total position size
@@ -283,9 +287,7 @@ class TradingEngine:
                         updated_fee_analysis = self.fee_calculator.calculate_comprehensive_fees(
                             margin=usdt_amount,
                             leverage=actual_leverage,
-                            entry_price=current_price,
-                            is_maker=(order_type.upper() == 'LIMIT'),
-                            use_bnb=False
+                            entry_price=current_price
                         )
 
                         # Update fee info with actual leverage
@@ -442,13 +444,13 @@ class TradingEngine:
         try:
             # Get current position information
             positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
-            actual_leverage = 1.0
+            actual_leverage = config.DEFAULT_LEVERAGE
             position_size = 0.0
 
             for position in positions:
                 if position.get('symbol') == trading_pair:
                     position_size = abs(float(position.get('positionAmt', 0)))
-                    actual_leverage = float(position.get('leverage', 1.0))
+                    actual_leverage = float(position.get('leverage', config.DEFAULT_LEVERAGE))
                     break
 
             if position_size == 0:
@@ -461,13 +463,11 @@ class TradingEngine:
             # Calculate notional value
             notional_value = position_size * entry_price
 
-            # Calculate breakeven price
+            # Calculate breakeven price using fixed fee cap
             breakeven_analysis = self.fee_calculator.calculate_comprehensive_fees(
                 margin=notional_value / actual_leverage,  # Convert notional to margin
                 leverage=actual_leverage,
-                entry_price=entry_price,
-                is_maker=(order_type.upper() == 'LIMIT'),
-                use_bnb=use_bnb
+                entry_price=entry_price
             )
 
             return {
