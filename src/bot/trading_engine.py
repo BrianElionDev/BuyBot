@@ -75,6 +75,98 @@ class TradingEngine:
         else:
             return {}
 
+    def _handle_price_range_logic(
+        self,
+        entry_prices: Optional[List[float]],
+        order_type: str,
+        position_type: str,
+        current_price: float
+    ) -> Tuple[float, str]:
+        """
+        Handle price range logic for different order types.
+
+        Args:
+            entry_prices: List of entry prices (can be a range)
+            order_type: MARKET or LIMIT
+            position_type: LONG or SHORT
+            current_price: Current market price
+
+        Returns:
+            Tuple of (effective_price, decision_reason)
+        """
+        if not entry_prices or len(entry_prices) == 0:
+            return current_price, "No entry prices provided, using current market price"
+
+        # Single price (no range)
+        if len(entry_prices) == 1:
+            return entry_prices[0], "Single entry price provided"
+
+        # Price range detected
+        if len(entry_prices) == 2:
+            lower_bound = min(entry_prices)
+            upper_bound = max(entry_prices)
+
+            if order_type.upper() == "MARKET":
+                # Market orders execute immediately at current price
+                return current_price, f"Market order - executing at current price ${current_price:.8f}"
+
+            elif order_type.upper() == "LIMIT":
+                if position_type.upper() == "LONG":
+                    # For long positions, place limit at lower bound (best buy price)
+                    effective_price = lower_bound
+                    reason = f"Long limit order - placing at lower bound ${lower_bound:.8f} (range: ${lower_bound:.8f}-${upper_bound:.8f})"
+
+                    # Optional: Only place if current price is above the range (waiting for price to drop)
+                    if current_price > upper_bound:
+                        reason += f" - Current price ${current_price:.8f} above range, waiting for entry"
+                    elif current_price < lower_bound:
+                        reason += f" - Current price ${current_price:.8f} below range, order may fill immediately"
+                    else:
+                        reason += f" - Current price ${current_price:.8f} within range"
+
+                elif position_type.upper() == "SHORT":
+                    # For short positions, place limit at upper bound (best sell price)
+                    effective_price = upper_bound
+                    reason = f"Short limit order - placing at upper bound ${upper_bound:.8f} (range: ${lower_bound:.8f}-${upper_bound:.8f})"
+
+                    # Optional: Only place if current price is below the range (waiting for price to rise)
+                    if current_price < lower_bound:
+                        reason += f" - Current price ${current_price:.8f} below range, waiting for entry"
+                    elif current_price > upper_bound:
+                        reason += f" - Current price ${current_price:.8f} above range, order may fill immediately"
+                    else:
+                        reason += f" - Current price ${current_price:.8f} within range"
+                else:
+                    # Default to first price for unknown position types
+                    effective_price = entry_prices[0]
+                    reason = f"Unknown position type '{position_type}' - using first price ${effective_price:.8f}"
+
+                return effective_price, reason
+            else:
+                # Unknown order type
+                return entry_prices[0], f"Unknown order type '{order_type}' - using first price ${entry_prices[0]:.8f}"
+
+        # More than 2 prices (complex range or multiple entry points)
+        if len(entry_prices) > 2:
+            if order_type.upper() == "MARKET":
+                return current_price, f"Market order with multiple prices - executing at current price ${current_price:.8f}"
+            else:
+                # For limit orders, use the most favorable price based on position type
+                if position_type.upper() == "LONG":
+                    effective_price = min(entry_prices)  # Best buy price
+                    reason = f"Long limit order with multiple prices - using lowest price ${effective_price:.8f}"
+                elif position_type.upper() == "SHORT":
+                    effective_price = max(entry_prices)  # Best sell price
+                    reason = f"Short limit order with multiple prices - using highest price ${effective_price:.8f}"
+                else:
+                    effective_price = entry_prices[0]
+                    reason = f"Unknown position type with multiple prices - using first price ${effective_price:.8f}"
+
+                return effective_price, reason
+
+        # Fallback
+        return current_price, "Fallback to current market price"
+
     async def process_signal(
         self,
         coin_symbol: str,
@@ -86,7 +178,8 @@ class TradingEngine:
         dca_range: Optional[List[float]] = None,
         client_order_id: Optional[str] = None,
         price_threshold_override: Optional[float] = None,
-        quantity_multiplier: Optional[int] = None
+        quantity_multiplier: Optional[int] = None,
+        entry_prices: Optional[List[float]] = None
     ) -> Tuple[bool, Union[Dict, str]]:
         """
         Processes a CEX (Binance) signal.
@@ -332,12 +425,24 @@ class TradingEngine:
                         logger.error(f"Final validation failed: quantity {trade_amount} above maximum {max_qty}")
                         return False, {"error": f"Quantity {trade_amount} above maximum {max_qty}"}
 
+                # Handle price range logic
+                if entry_prices is None:
+                    entry_prices = [signal_price]  # Fallback to signal_price if no entry_prices provided
+
+                effective_price, reason = self._handle_price_range_logic(
+                    entry_prices=entry_prices,
+                    order_type=order_type,
+                    position_type=position_type,
+                    current_price=current_price
+                )
+                logger.info(f"Effective price for {trading_pair}: {effective_price} ({reason})")
+
                 order_result = await self.binance_exchange.create_futures_order(
                     pair=trading_pair,
                     side=entry_side,
                     order_type_market=order_type,
                     amount=trade_amount,
-                    price=signal_price if order_type == 'LIMIT' else None,
+                    price=effective_price if order_type == 'LIMIT' else None,
                     client_order_id=client_order_id
                 )
 
