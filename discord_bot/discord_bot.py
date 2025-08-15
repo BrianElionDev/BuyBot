@@ -111,7 +111,7 @@ class DiscordBot:
 
         # Determine action type and details
         stop_loss_regex = r"stoploss moved to ([-+]?\d*\.?\d+)"
-        stops_to_be_regex= r"\b(stop|sl)\b.*\bbe\b"
+        stops_to_be_regex= r"\b(stops?|sl)\b.*\bbe\b"
         stops_to_x_regex = r"\b(stop\w*|sl)\b.*\bto\b\s*(-?\d+(\.\d+)?)"
         dca_to_entry_regex = r"\bdca\b.*\bentry\b.*?(\d+\.\d+)(?:\s|$)"
 
@@ -127,16 +127,16 @@ class DiscordBot:
                 "coin_symbol": coin_symbol
             }
 
-        if "stopped out" in content_lower or "stop loss" in content_lower or "closed be" in content_lower or  "stopped be" in content_lower or "closed in profits" in content_lower or  "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
-            # Distinguish between a SL update (move to BE) and a SL being hit
+        # Handle position closure scenarios
+        if "stopped out" in content_lower or "closed in profits" in content_lower or "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
             return {
                 "action_type": "stop_loss_hit",
-                "action_description": f"Stop loss hit for {coin_symbol}",
+                "action_description": f"Position closed for {coin_symbol}",
                 "binance_action": "MARKET_SELL",
                 "stop_loss": None,
-                "take_profit":None,
+                "take_profit": None,
                 "position_status": "CLOSED",
-                "reason": "Stop loss triggered",
+                "reason": "Position closed",
                 "coin_symbol": coin_symbol
             }
         elif "limit order cancelled" in content_lower:
@@ -150,7 +150,7 @@ class DiscordBot:
                 "reason": "Cancel limit order",
                 "coin_symbol": coin_symbol
             }
-        elif "move stops to 1H" in content_lower or "updated stoploss" in content_lower or "move stops to " in content_lower or "updated stop loss " in content_lower:
+        elif "move stops to 1H" in content_lower or "updated stoploss" in content_lower or "updated stop loss " in content_lower:
             return {
                 "action_type": "cancelled_stoploss_order_and_create_new",
                 "action_description": f"Limit order cancelld for {coin_symbol}",
@@ -188,13 +188,13 @@ class DiscordBot:
                 "reason": "TP2 target reached",
                 "coin_symbol": coin_symbol
             }
-        elif "tp1 taken" in content_lower:
+        elif "limit order filled" in content_lower:
             return {
-                "action_type": "take_profit_taken_hit",
-                "action_description": f"Take Profit 2 hit for {coin_symbol}",
-                "binance_action": "PARTIAL_SELL",
-                "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP2 target reached",
+                "action_type": "limit_order_filled",
+                "action_description": f"Limit order filled for {coin_symbol}",
+                "binance_action": "NO_ACTION",  # Order already filled, just update status
+                "position_status": "OPEN",
+                "reason": "Limit order filled - position now open",
                 "coin_symbol": coin_symbol
             }
         if re.search(stops_to_be_regex, content_lower):
@@ -1129,6 +1129,14 @@ class DiscordBot:
                 else:
                     # Handle break-even stop loss
                     return await self.trading_engine.update_stop_loss(trade_row, "BE")
+            elif action_type == "limit_order_filled":
+                # Order already filled, just log and return success
+                logger.info(f"Limit order already filled for trade {trade_row.get('id')}")
+                return True, {"message": "Limit order already filled"}
+            elif action_type == "unknown_update":
+                # Log unknown updates but don't fail - they might be informational
+                logger.info(f"Unknown update type for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
+                return True, {"message": "Unknown update type - informational only"}
             else:
                 logger.warning(f"Unknown action_type: {action_type}")
                 return False, {"error": f"Unknown action_type: {action_type}"}
