@@ -34,8 +34,8 @@ class TestPriceRangeLogic:
         assert effective_price == 100.0
         assert "Single entry price provided" in reason
 
-    def test_market_order_with_range(self):
-        """Test market order with price range - should execute at current price"""
+    def test_market_order_with_range_within_bounds(self):
+        """Test market order with price range - should execute when within bounds"""
         entry_prices = [100.0, 110.0]  # Range: 100-110
         order_type = "MARKET"
         position_type = "LONG"
@@ -47,6 +47,37 @@ class TestPriceRangeLogic:
 
         assert effective_price == 105.0  # Current market price
         assert "Market order - executing at current price" in reason
+        assert "within range" in reason
+
+    def test_market_order_with_range_above_bounds_long(self):
+        """Test market order for long when current price is above range - should reject"""
+        entry_prices = [100.0, 110.0]  # Range: 100-110
+        order_type = "MARKET"
+        position_type = "LONG"
+        current_price = 115.0  # Above range
+
+        effective_price, reason = self.trading_engine._handle_price_range_logic(
+            entry_prices, order_type, position_type, current_price
+        )
+
+        assert effective_price is None  # Order rejected
+        assert "Market order REJECTED" in reason
+        assert "above range" in reason
+
+    def test_market_order_with_range_below_bounds_short(self):
+        """Test market order for short when current price is below range - should reject"""
+        entry_prices = [100.0, 110.0]  # Range: 100-110
+        order_type = "MARKET"
+        position_type = "SHORT"
+        current_price = 95.0  # Below range
+
+        effective_price, reason = self.trading_engine._handle_price_range_logic(
+            entry_prices, order_type, position_type, current_price
+        )
+
+        assert effective_price is None  # Order rejected
+        assert "Market order REJECTED" in reason
+        assert "below range" in reason
 
     def test_limit_order_long_with_range(self):
         """Test limit order for long position with price range"""
@@ -285,7 +316,7 @@ class TestPriceRangeIntegration:
         # Test the core logic with various scenarios
         test_cases = [
             # (entry_prices, order_type, position_type, expected_price, expected_behavior)
-            ([100.0, 110.0], "MARKET", "LONG", None, "market_execution"),
+            ([100.0, 110.0], "MARKET", "LONG", 105.0, "market_execution"),  # Within range
             ([100.0, 110.0], "LIMIT", "LONG", 100.0, "lower_bound"),
             ([100.0, 110.0], "LIMIT", "SHORT", 110.0, "upper_bound"),
             ([110.0, 100.0], "LIMIT", "LONG", 100.0, "reversed_range"),

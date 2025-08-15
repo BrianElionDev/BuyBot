@@ -81,7 +81,7 @@ class TradingEngine:
         order_type: str,
         position_type: str,
         current_price: float
-    ) -> Tuple[float, str]:
+    ) -> Tuple[Optional[float], str]:
         """
         Handle price range logic for different order types.
 
@@ -107,8 +107,22 @@ class TradingEngine:
             upper_bound = max(entry_prices)
 
             if order_type.upper() == "MARKET":
-                # Market orders execute immediately at current price
-                return current_price, f"Market order - executing at current price ${current_price:.8f}"
+                # Market orders should only execute if current price is within the specified range
+                if position_type.upper() == "LONG":
+                    # For long positions, only execute if current price is at or below the upper bound
+                    if current_price <= upper_bound:
+                        return current_price, f"Market order - executing at current price ${current_price:.8f} (within range ${lower_bound:.8f}-${upper_bound:.8f})"
+                    else:
+                        return None, f"Market order REJECTED - current price ${current_price:.8f} above range ${lower_bound:.8f}-${upper_bound:.8f}"
+                elif position_type.upper() == "SHORT":
+                    # For short positions, only execute if current price is at or above the lower bound
+                    if current_price >= lower_bound:
+                        return current_price, f"Market order - executing at current price ${current_price:.8f} (within range ${lower_bound:.8f}-${upper_bound:.8f})"
+                    else:
+                        return None, f"Market order REJECTED - current price ${current_price:.8f} below range ${lower_bound:.8f}-${upper_bound:.8f}"
+                else:
+                    # Unknown position type - execute at current price
+                    return current_price, f"Market order - executing at current price ${current_price:.8f} (unknown position type)"
 
             elif order_type.upper() == "LIMIT":
                 if position_type.upper() == "LONG":
@@ -436,6 +450,11 @@ class TradingEngine:
                     current_price=current_price
                 )
                 logger.info(f"Effective price for {trading_pair}: {effective_price} ({reason})")
+
+                # Check if price range validation rejected the order
+                if effective_price is None:
+                    logger.warning(f"Order rejected due to price range validation: {reason}")
+                    return False, {"error": reason}
 
                 order_result = await self.binance_exchange.create_futures_order(
                     pair=trading_pair,
