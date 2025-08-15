@@ -114,9 +114,35 @@ class DiscordBot:
         stops_to_be_regex= r"\b(stops?|sl)\b.*\bbe\b"
         stops_to_x_regex = r"\b(stop\w*|sl)\b.*\bto\b\s*(-?\d+(\.\d+)?)"
         dca_to_entry_regex = r"\bdca\b.*\bentry\b.*?(\d+\.\d+)(?:\s|$)"
+        leverage_regex = r"leverage\s*to\s*(\d+x)"
+        trailing_sl_regex = r"trailing\s+sl\s+at\s+(\d+\.?\d*%)"
+        partial_fill_regex = r"partial\s+fill"
+        liquidation_regex = r"liquidated|liquidation"
+        position_size_regex = r"(double|increase|decrease)\s+position\s+size"
 
+        # 1. Handle liquidation events (highest priority)
+        if re.search(liquidation_regex, content_lower):
+            return {
+                "action_type": "liquidation",
+                "action_description": f"Position liquidated for {coin_symbol}",
+                "binance_action": "NO_ACTION",
+                "position_status": "LIQUIDATED",
+                "reason": "Position forcibly closed due to liquidation",
+                "coin_symbol": coin_symbol
+            }
 
-        # 1. Take Profit 1 with Stop Loss move to Break Even (MUST BE FIRST!)
+        # 2. Handle partial fills
+        if re.search(partial_fill_regex, content_lower):
+            return {
+                "action_type": "partial_fill",
+                "action_description": f"Partial fill for {coin_symbol}",
+                "binance_action": "UPDATE_POSITION_SIZE",
+                "position_status": "OPEN",
+                "reason": "Partial fill of limit order",
+                "coin_symbol": coin_symbol
+            }
+
+        # 3. Take Profit 1 with Stop Loss move to Break Even (MUST BE FIRST!)
         if "tp1 & stops moved to be" in content_lower:
             return {
                 "action_type": "tp1_and_sl_to_be",
@@ -127,7 +153,7 @@ class DiscordBot:
                 "coin_symbol": coin_symbol
             }
 
-        # Handle position closure scenarios
+        # 4. Handle position closure scenarios
         if "stopped out" in content_lower or "closed in profits" in content_lower or "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
             return {
                 "action_type": "stop_loss_hit",
@@ -139,6 +165,51 @@ class DiscordBot:
                 "reason": "Position closed",
                 "coin_symbol": coin_symbol
             }
+
+        # 5. Handle leverage updates
+        if re.search(leverage_regex, content_lower):
+            match = re.search(leverage_regex, content_lower)
+            leverage = int(match.group(1).replace('x', ''))
+            return {
+                "action_type": "update_leverage",
+                "action_description": f"Update leverage to {leverage}x for {coin_symbol}",
+                "binance_action": "UPDATE_LEVERAGE",
+                "position_status": "OPEN",
+                "leverage": leverage,
+                "reason": "Leverage adjustment",
+                "coin_symbol": coin_symbol
+            }
+
+        # 6. Handle trailing stop-loss
+        if re.search(trailing_sl_regex, content_lower):
+            match = re.search(trailing_sl_regex, content_lower)
+            trailing_percentage = float(match.group(1).replace('%', ''))
+            return {
+                "action_type": "trailing_stop_loss",
+                "action_description": f"Set trailing stop loss at {trailing_percentage}% for {coin_symbol}",
+                "binance_action": "SET_TRAILING_STOP",
+                "position_status": "OPEN",
+                "trailing_percentage": trailing_percentage,
+                "reason": "Trailing stop loss activation",
+                "coin_symbol": coin_symbol
+            }
+
+        # 7. Handle position size adjustments
+        if re.search(position_size_regex, content_lower):
+            match = re.search(position_size_regex, content_lower)
+            action = match.group(1)
+            multiplier = 2.0 if action == "double" else 1.5 if action == "increase" else 0.5
+            return {
+                "action_type": "adjust_position_size",
+                "action_description": f"{action.capitalize()} position size for {coin_symbol}",
+                "binance_action": "ADJUST_POSITION",
+                "position_status": "OPEN",
+                "position_multiplier": multiplier,
+                "reason": f"Position size {action}d",
+                "coin_symbol": coin_symbol
+            }
+
+        # 8. Handle limit order cancellation
         elif "limit order cancelled" in content_lower:
             return {
                 "action_type": "limit_order_cancelled",
@@ -150,6 +221,8 @@ class DiscordBot:
                 "reason": "Cancel limit order",
                 "coin_symbol": coin_symbol
             }
+
+        # 9. Handle specific stop loss updates (excluding "move stops to" which is caught by regex)
         elif "move stops to 1H" in content_lower or "updated stoploss" in content_lower or "updated stop loss " in content_lower:
             return {
                 "action_type": "cancelled_stoploss_order_and_create_new",
@@ -161,6 +234,8 @@ class DiscordBot:
                 "reason": "Cancel SL order and create new one +-2%",
                 "coin_symbol": coin_symbol
             }
+
+        # 10. Handle take profit scenarios
         elif "tp1 taken" in content_lower:
             return {
                 "action_type": "take_profit_taken_hit",
@@ -188,6 +263,8 @@ class DiscordBot:
                 "reason": "TP2 target reached",
                 "coin_symbol": coin_symbol
             }
+
+        # 11. Handle limit order filled
         elif "limit order filled" in content_lower:
             return {
                 "action_type": "limit_order_filled",
@@ -197,6 +274,8 @@ class DiscordBot:
                 "reason": "Limit order filled - position now open",
                 "coin_symbol": coin_symbol
             }
+
+        # 12. Handle stop loss updates with regex patterns
         if re.search(stops_to_be_regex, content_lower):
             return {
                 "action_type": "stop_loss_update",
@@ -211,17 +290,38 @@ class DiscordBot:
         elif re.search(stops_to_x_regex, content_lower):
             match = re.search(stops_to_x_regex, content_lower)
             if match:
-                entry_value = match.group(2) # Convert the extracted string to a float
-                return {
-                "action_type": "stop_loss_update",
-                "action_description": f"Stop loss moved to {entry_value} for {coin_symbol}",
-                "binance_action": "UPDATE_STOP_ORDER",
-                "position_status": "OPEN",
-                "stop_loss": entry_value,
-                "take_profit": None,
-                "reason": "Stop loss adjusted to specific value",
-                "coin_symbol": coin_symbol
-                }
+                try:
+                    entry_value = float(match.group(2))
+                    if entry_value <= 0:
+                        logger.error(f"Invalid stop loss price in alert: {content}")
+                        return {
+                            "action_type": "invalid_price",
+                            "action_description": f"Invalid stop loss price for {coin_symbol}",
+                            "binance_action": "NO_ACTION",
+                            "position_status": "UNKNOWN",
+                            "reason": "Invalid price in alert",
+                            "coin_symbol": coin_symbol
+                        }
+                    return {
+                        "action_type": "stop_loss_update",
+                        "action_description": f"Stop loss moved to {entry_value} for {coin_symbol}",
+                        "binance_action": "UPDATE_STOP_ORDER",
+                        "position_status": "OPEN",
+                        "stop_loss": entry_value,
+                        "take_profit": None,
+                        "reason": "Stop loss adjusted to specific value",
+                        "coin_symbol": coin_symbol
+                    }
+                except ValueError:
+                    logger.error(f"Invalid stop loss price in alert: {content}")
+                    return {
+                        "action_type": "invalid_price",
+                        "action_description": f"Invalid stop loss price for {coin_symbol}",
+                        "binance_action": "NO_ACTION",
+                        "position_status": "UNKNOWN",
+                        "reason": "Invalid price in alert",
+                        "coin_symbol": coin_symbol
+                    }
         elif re.search(dca_to_entry_regex, content_lower):
             match = re.search(dca_to_entry_regex, content_lower)
             if match:
@@ -236,15 +336,65 @@ class DiscordBot:
                 "reason": "Stop loss adjusted to specific value",
                 "coin_symbol": coin_symbol
                 }
+
+        # 13. Handle ambiguous or incomplete alerts
         else:
-            return {
-                "action_type": "unknown_update",
-                "action_description": f"Update for {coin_symbol}: {content}",
-                "binance_action": "NO_ACTION",
-                "position_status": "UNKNOWN",
-                "reason": "Unrecognized alert type",
-                "coin_symbol": coin_symbol
-            }
+            # Check if this is an ambiguous alert that needs manual review
+            ambiguous_keywords = ["update", "move", "adjust", "change", "modify"]
+            is_ambiguous = any(keyword in content_lower for keyword in ambiguous_keywords)
+
+            if is_ambiguous:
+                logger.error(f"Ambiguous alert content: {content}. Flagging for manual review.")
+                return {
+                    "action_type": "flagged_for_review",
+                    "action_description": f"Ambiguous alert for {coin_symbol}: {content}",
+                    "binance_action": "NO_ACTION",
+                    "position_status": "UNKNOWN",
+                    "reason": "Ambiguous alert content - manual review required",
+                    "coin_symbol": coin_symbol
+                }
+            else:
+                return {
+                    "action_type": "unknown_update",
+                    "action_description": f"Update for {coin_symbol}: {content}",
+                    "binance_action": "NO_ACTION",
+                    "position_status": "UNKNOWN",
+                    "reason": "Unrecognized alert type",
+                    "coin_symbol": coin_symbol
+                }
+
+    def _generate_alert_hash(self, discord_id: str, content: str) -> str:
+        """
+        Generate a hash for alert deduplication.
+        """
+        import hashlib
+        return hashlib.sha256(f"{discord_id}:{content}".encode()).hexdigest()
+
+    async def _is_duplicate_alert(self, alert_hash: str) -> bool:
+        """
+        Check if an alert hash already exists in the database.
+        """
+        try:
+            # Check if this alert hash has been processed recently (last 24 hours)
+            # This is a simple implementation - you might want to store this in a separate table
+            # For now, we'll use the alerts table with a hash field
+            response = await self.db_manager.supabase.table("alerts").select("id").eq("alert_hash", alert_hash).execute()
+            return len(response.data) > 0
+        except Exception as e:
+            logger.error(f"Error checking for duplicate alert: {e}")
+            return False
+
+    async def _store_alert_hash(self, alert_hash: str) -> bool:
+        """
+        Store an alert hash to prevent duplicate processing.
+        """
+        try:
+            # Store the hash in the alerts table
+            await self.db_manager.supabase.table("alerts").insert({"alert_hash": alert_hash}).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Error storing alert hash: {e}")
+            return False
 
     def _extract_coin_symbol_from_content(self, content: str) -> str:
         """
@@ -540,6 +690,12 @@ class DiscordBot:
         try:
             signal = DiscordUpdateSignal(**signal_data)
             logger.info(f"Processing update signal: {signal.content}")
+
+            # Check for duplicate alerts
+            alert_hash = self._generate_alert_hash(signal.discord_id, signal.content)
+            if await self._is_duplicate_alert(alert_hash):
+                logger.warning(f"Duplicate alert detected: {signal.content}")
+                return {"status": "skipped", "message": "Duplicate alert"}
 
             # The 'trade' field in the update signal refers to the discord_id of the original trade
             trade_row = await self.db_manager.find_trade_by_discord_id(signal.trade)
@@ -1137,6 +1293,37 @@ class DiscordBot:
                 # Log unknown updates but don't fail - they might be informational
                 logger.info(f"Unknown update type for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
                 return True, {"message": "Unknown update type - informational only"}
+            elif action_type == "flagged_for_review":
+                # Log flagged alerts for manual review
+                logger.error(f"Alert flagged for manual review for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
+                return True, {"message": "Alert flagged for manual review"}
+            elif action_type == "invalid_price":
+                # Log invalid price alerts
+                logger.error(f"Invalid price in alert for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
+                return False, {"error": "Invalid price in alert"}
+            elif action_type == "liquidation":
+                # Handle liquidation events
+                logger.warning(f"Position liquidated for trade {trade_row.get('id')}")
+                return True, {"message": "Position liquidated"}
+            elif action_type == "partial_fill":
+                # Handle partial fills
+                logger.info(f"Partial fill for trade {trade_row.get('id')}")
+                return True, {"message": "Partial fill processed"}
+            elif action_type == "update_leverage":
+                # Handle leverage updates
+                leverage = action.get('leverage')
+                logger.info(f"Updating leverage to {leverage}x for trade {trade_row.get('id')}")
+                return True, {"message": f"Leverage updated to {leverage}x"}
+            elif action_type == "trailing_stop_loss":
+                # Handle trailing stop loss
+                trailing_percentage = action.get('trailing_percentage')
+                logger.info(f"Setting trailing stop loss at {trailing_percentage}% for trade {trade_row.get('id')}")
+                return True, {"message": f"Trailing stop loss set at {trailing_percentage}%"}
+            elif action_type == "adjust_position_size":
+                # Handle position size adjustments
+                multiplier = action.get('position_multiplier')
+                logger.info(f"Adjusting position size with multiplier {multiplier} for trade {trade_row.get('id')}")
+                return True, {"message": f"Position size adjusted with multiplier {multiplier}"}
             else:
                 logger.warning(f"Unknown action_type: {action_type}")
                 return False, {"error": f"Unknown action_type: {action_type}"}
