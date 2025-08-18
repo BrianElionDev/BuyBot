@@ -126,9 +126,9 @@ class TradingEngine:
 
             elif order_type.upper() == "LIMIT":
                 if position_type.upper() == "LONG":
-                    # For long positions, place limit at lower bound (best buy price)
-                    effective_price = lower_bound
-                    reason = f"Long limit order - placing at lower bound ${lower_bound:.8f} (range: ${lower_bound:.8f}-${upper_bound:.8f})"
+                    # For long positions, place limit at upper bound (best buy price)
+                    effective_price = upper_bound
+                    reason = f"Long limit order - placing at upper bound ${upper_bound:.8f} (range: ${lower_bound:.8f}-${upper_bound:.8f})"
 
                     # Optional: Only place if current price is above the range (waiting for price to drop)
                     if current_price > upper_bound:
@@ -139,9 +139,9 @@ class TradingEngine:
                         reason += f" - Current price ${current_price:.8f} within range"
 
                 elif position_type.upper() == "SHORT":
-                    # For short positions, place limit at upper bound (best sell price)
-                    effective_price = upper_bound
-                    reason = f"Short limit order - placing at upper bound ${upper_bound:.8f} (range: ${lower_bound:.8f}-${upper_bound:.8f})"
+                    # For short positions, place limit at lower bound (best sell price)
+                    effective_price = lower_bound
+                    reason = f"Short limit order - placing at lower bound ${lower_bound:.8f} (range: ${lower_bound:.8f}-${upper_bound:.8f})"
 
                     # Optional: Only place if current price is below the range (waiting for price to rise)
                     if current_price < lower_bound:

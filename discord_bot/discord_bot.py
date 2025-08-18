@@ -717,7 +717,8 @@ class DiscordBot:
                         "trader": signal.trader,
                         "note": "Skipped: original trade is FAILED or UNFILLED. No open position to update."
                     },
-                    "binance_response": None
+                    "binance_response": None,
+                    "status": "SKIPPED"
                 }
                 trade_val = getattr(signal, 'trade', None)
                 if not isinstance(trade_val, str):
@@ -1140,7 +1141,8 @@ class DiscordBot:
                     "coin_symbol": parsed_action.get('coin_symbol', self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')),
                     "trader": signal.trader
                 },
-                "binance_response": binance_response_log # This will be None if no action was taken, or the dict from Binance
+                "binance_response": binance_response_log, # This will be None if no action was taken, or the dict from Binance
+                "status": "SUCCESS" if action_successful else "ERROR"
             }
 
             # Always fetch the alert row by discord_id before updating
@@ -1176,6 +1178,20 @@ class DiscordBot:
         except Exception as e:
             error_msg = f"Error processing update signal: {str(e)}"
             logger.error(error_msg, exc_info=True)
+
+            # Update alert status to ERROR if we can find the alert
+            try:
+                if 'signal' in locals():
+                    alert_response = self.db_manager.supabase.from_("alerts").select("*").eq("discord_id", signal.discord_id).limit(1).execute()
+                    if alert_response.data and len(alert_response.data) > 0:
+                        alert_row = alert_response.data[0]
+                        await self.db_manager.update_existing_alert(alert_row['id'], {
+                            "status": "ERROR",
+                            "binance_response": {"error": error_msg}
+                        })
+            except Exception as alert_error:
+                logger.error(f"Could not update alert status: {alert_error}")
+
             return {"status": "error", "message": error_msg}
 
     def _calculate_pnl(self, position_type: str, entry_price: float, exit_price: float, position_size: float) -> float:

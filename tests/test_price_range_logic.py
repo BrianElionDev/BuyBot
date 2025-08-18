@@ -90,8 +90,8 @@ class TestPriceRangeLogic:
             entry_prices, order_type, position_type, current_price
         )
 
-        assert effective_price == 100.0  # Lower bound (best buy price)
-        assert "Long limit order - placing at lower bound" in reason
+        assert effective_price == 110.0  # Upper bound (best buy price)
+        assert "Long limit order - placing at upper bound" in reason
         assert "100.00000000-$110.00000000" in reason
 
     def test_limit_order_short_with_range(self):
@@ -105,8 +105,8 @@ class TestPriceRangeLogic:
             entry_prices, order_type, position_type, current_price
         )
 
-        assert effective_price == 110.0  # Upper bound (best sell price)
-        assert "Short limit order - placing at upper bound" in reason
+        assert effective_price == 100.0  # Lower bound (best sell price)
+        assert "Short limit order - placing at lower bound" in reason
         assert "100.00000000-$110.00000000" in reason
 
     def test_limit_order_long_current_price_above_range(self):
@@ -120,7 +120,7 @@ class TestPriceRangeLogic:
             entry_prices, order_type, position_type, current_price
         )
 
-        assert effective_price == 100.0
+        assert effective_price == 110.0
         assert "waiting for entry" in reason
         assert "above range" in reason
 
@@ -135,13 +135,13 @@ class TestPriceRangeLogic:
             entry_prices, order_type, position_type, current_price
         )
 
-        assert effective_price == 100.0
+        assert effective_price == 110.0
         assert "order may fill immediately" in reason
         assert "below range" in reason
 
     def test_limit_order_short_current_price_below_range(self):
         """Test limit order for short when current price is below range"""
-        entry_prices = [100.0, 110.0]  # Range: 100-110
+        entry_prices = [100.0, 110.0]  # Range: 110-100
         order_type = "LIMIT"
         position_type = "SHORT"
         current_price = 95.0  # Below range
@@ -150,7 +150,7 @@ class TestPriceRangeLogic:
             entry_prices, order_type, position_type, current_price
         )
 
-        assert effective_price == 110.0
+        assert effective_price == 100.0
         assert "waiting for entry" in reason
         assert "below range" in reason
 
@@ -165,7 +165,7 @@ class TestPriceRangeLogic:
             entry_prices, order_type, position_type, current_price
         )
 
-        assert effective_price == 110.0
+        assert effective_price == 100.0
         assert "order may fill immediately" in reason
         assert "above range" in reason
 
@@ -280,7 +280,7 @@ class TestPriceRangeLogic:
             entry_prices, order_type, position_type, current_price
         )
 
-        assert effective_price == 100.0  # Should still use lower bound
+        assert effective_price == 110.0  # Should use upper bound for LONG
         assert "100.00000000-$110.00000000" in reason
 
     def test_identical_prices(self):
@@ -317,9 +317,9 @@ class TestPriceRangeIntegration:
         test_cases = [
             # (entry_prices, order_type, position_type, expected_price, expected_behavior)
             ([100.0, 110.0], "MARKET", "LONG", 105.0, "market_execution"),  # Within range
-            ([100.0, 110.0], "LIMIT", "LONG", 100.0, "lower_bound"),
-            ([100.0, 110.0], "LIMIT", "SHORT", 110.0, "upper_bound"),
-            ([110.0, 100.0], "LIMIT", "LONG", 100.0, "reversed_range"),
+            ([100.0, 110.0], "LIMIT", "LONG", 110.0, "upper_bound"),
+            ([100.0, 110.0], "LIMIT", "SHORT", 100.0, "lower_bound"),
+            ([110.0, 100.0], "LIMIT", "LONG", 110.0, "reversed_range"),
             ([100.0], "LIMIT", "LONG", 100.0, "single_price"),
         ]
 
@@ -339,7 +339,7 @@ class TestPriceRangeIntegration:
             elif behavior == "upper_bound":
                 assert "upper bound" in reason
             elif behavior == "reversed_range":
-                assert "lower bound" in reason
+                assert "upper bound" in reason
             elif behavior == "single_price":
                 assert "Single entry price" in reason
 
