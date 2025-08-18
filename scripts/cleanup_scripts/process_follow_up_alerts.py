@@ -112,8 +112,24 @@ async def process_alerts():
 
                 if result.get("status") == "success":
                     logging.info(f"✅ Successfully processed alert ID {alert_id}. Action: {action}. Message: {result.get('message')}")
+                    # Update alert status to SUCCESS
+                    try:
+                        supabase.table("alerts").update({
+                            "status": "SUCCESS",
+                            "binance_response": {"message": result.get('message')}
+                        }).eq("id", alert_id).execute()
+                    except Exception as e:
+                        logging.error(f"Could not update alert status: {e}")
                 else:
                     logging.error(f"❌ Failed to process alert ID {alert_id}. Action: {action}. Reason: {result.get('message')}")
+                    # Update alert status to ERROR
+                    try:
+                        supabase.table("alerts").update({
+                            "status": "ERROR",
+                            "binance_response": {"error": result.get('message')}
+                        }).eq("id", alert_id).execute()
+                    except Exception as e:
+                        logging.error(f"Could not update alert status: {e}")
 
             except Exception as e:
                 logging.error(f"An unexpected error occurred while processing alert ID {alert.get('id')}: {e}", exc_info=True)
@@ -122,7 +138,8 @@ async def process_alerts():
                         error_info = {"success": False, "reason": f"script_error: {str(e)}"}
                         supabase.table("alerts").update({
                             "parsed_alert": error_info,
-                            "binance_response": {"error": f"Script error: {str(e)}"}
+                            "binance_response": {"error": f"Script error: {str(e)}"},
+                            "status": "ERROR"
                         }).eq("id", alert_id).execute()
                     except Exception as db_e:
                         logging.error(f"Could not even log the error to the database for alert {alert_id}: {db_e}")

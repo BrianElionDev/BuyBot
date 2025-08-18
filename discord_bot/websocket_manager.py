@@ -93,6 +93,11 @@ class DiscordBotWebSocketManager:
                     realized_pnl = float(data.get('Y', 0))
                     logger.info(f"WebSocket: ORDER FILLED - {symbol} at {avg_price} - PnL: {realized_pnl}")
 
+                # CRITICAL: Call database sync handler to update database
+                if self.ws_manager and self.ws_manager.db_sync_handler:
+                    await self.ws_manager.db_sync_handler.handle_execution_report(data)
+                    logger.info(f"Database sync called for order {order_id}")
+
             except Exception as e:
                 logger.error(f"Error in execution report handler: {e}")
                 self.sync_stats['errors'] += 1
@@ -113,6 +118,11 @@ class DiscordBotWebSocketManager:
                     if float(free) > 0 or float(locked) > 0:
                         logger.info(f"WebSocket: Balance - {asset}: Free={free}, Locked={locked}")
 
+                # CRITICAL: Call database sync handler to update database
+                if self.ws_manager and self.ws_manager.db_sync_handler:
+                    await self.ws_manager.db_sync_handler.handle_account_position(data)
+                    logger.info("Database sync called for account position update")
+
             except Exception as e:
                 logger.error(f"Error in account position handler: {e}")
                 self.sync_stats['errors'] += 1
@@ -128,6 +138,10 @@ class DiscordBotWebSocketManager:
                 # Log every 100th ticker to avoid spam
                 if self.sync_stats['pnl_updates'] % 100 == 0:
                     logger.info(f"WebSocket: Ticker update #{self.sync_stats['pnl_updates']} - {symbol}: {price}")
+
+                # CRITICAL: Call database sync handler to update database
+                if self.ws_manager and self.ws_manager.db_sync_handler:
+                    await self.ws_manager.db_sync_handler.handle_ticker(data)
 
             except Exception as e:
                 logger.error(f"Error in ticker handler: {e}")
