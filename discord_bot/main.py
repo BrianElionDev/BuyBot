@@ -4,6 +4,7 @@ import logging
 import sys
 import os
 import asyncio
+import time
 from contextlib import asynccontextmanager
 
 # Add parent directory to path for imports
@@ -82,25 +83,60 @@ def create_app() -> FastAPI:
     return app
 
 async def trade_retry_scheduler():
-    """Reduced frequency scheduler for maintenance tasks (WebSocket handles real-time updates)."""
+    """Centralized scheduler for all maintenance tasks and auto-scripts."""
     bot, supabase = initialize_clients()
     if not bot or not supabase:
         logger.error("Failed to initialize clients for trade retry scheduler.")
         return
 
+    # Initialize task timers
+    last_daily_sync = 0
+    last_transaction_sync = 0
+    last_weekly_backfill = 0
+    
+    # Task intervals (in seconds)
+    DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
+    TRANSACTION_SYNC_INTERVAL = 6 * 60 * 60  # 6 hours
+    WEEKLY_BACKFILL_INTERVAL = 7 * 24 * 60 * 60  # 7 days
+    
+    logger.info("[Scheduler] Starting centralized maintenance scheduler...")
+
     while True:
         try:
-            logger.info("[Scheduler] Starting maintenance tasks (WebSocket handles real-time updates)...")
-
-            # Reduced frequency: Run every 24 hours instead of 2 hours
-            # WebSocket handles real-time order/position/PnL updates
-
-            # Daily validation and cleanup (once per day)
-            await sync_trade_statuses_with_binance(bot, supabase)
-            await asyncio.sleep(24 * 60 * 60)  # 24 hours
-
-            # Weekly historical backfill (once per week)
-            # This is now handled by the sync script with reduced frequency
+            current_time = time.time()
+            
+            # Daily sync tasks (every 24 hours)
+            if current_time - last_daily_sync >= DAILY_SYNC_INTERVAL:
+                logger.info("[Scheduler] Running daily sync tasks...")
+                try:
+                    await sync_trade_statuses_with_binance(bot, supabase)
+                    last_daily_sync = current_time
+                    logger.info("[Scheduler] Daily sync completed successfully")
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in daily sync: {e}")
+            
+            # Transaction history autofill (every 6 hours)
+            if current_time - last_transaction_sync >= TRANSACTION_SYNC_INTERVAL:
+                logger.info("[Scheduler] Running transaction history autofill...")
+                try:
+                    await auto_fill_transaction_history(bot, supabase)
+                    last_transaction_sync = current_time
+                    logger.info("[Scheduler] Transaction history autofill completed successfully")
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in transaction history autofill: {e}")
+            
+            # Weekly historical backfill (every 7 days)
+            if current_time - last_weekly_backfill >= WEEKLY_BACKFILL_INTERVAL:
+                logger.info("[Scheduler] Running weekly historical backfill...")
+                try:
+                    await weekly_historical_backfill(bot, supabase)
+                    last_weekly_backfill = current_time
+                    logger.info("[Scheduler] Weekly historical backfill completed successfully")
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in weekly historical backfill: {e}")
+            
+            # Sleep for 1 hour before next check
+            await asyncio.sleep(60 * 60)  # 1 hour
 
         except Exception as e:
             logger.error(f"Error in trade retry scheduler: {e}")
@@ -120,6 +156,72 @@ async def check_api_permissions(bot):
     except Exception as e:
         logger.error(f"API permissions check failed: {e}")
         return False
+
+
+async def auto_fill_transaction_history(bot, supabase):
+    """Auto-fill transaction history from Binance income endpoint."""
+    try:
+        from scripts.manual_transaction_history_fill import TransactionHistoryFiller
+        from discord_bot.database import DatabaseManager
+        
+        filler = TransactionHistoryFiller()
+        filler.bot = bot  # Use the existing bot instance
+        filler.db_manager = DatabaseManager(supabase)  # Use the existing supabase instance
+        
+        # Get all active symbols from recent trades
+        response = supabase.from_("trades").select("coin_symbol").not_.is_("coin_symbol", "null").limit(100).execute()
+        symbols = list(set([trade['coin_symbol'] for trade in response.data if trade.get('coin_symbol')]))
+        
+        if not symbols:
+            logger.info("[Scheduler] No symbols found for transaction history autofill")
+            return
+        
+        logger.info(f"[Scheduler] Auto-filling transaction history for {len(symbols)} symbols")
+        
+        total_inserted = 0
+        total_skipped = 0
+        
+        for symbol in symbols:
+            try:
+                # Use the existing fill method for last 24 hours
+                result = await filler.fill_transaction_history_manual(
+                    symbol=symbol,
+                    days=1,  # Last 24 hours
+                    income_type="",
+                    batch_size=100
+                )
+                
+                if result.get('success'):
+                    total_inserted += result.get('inserted', 0)
+                    total_skipped += result.get('skipped', 0)
+                
+                # Rate limiting between symbols
+                await asyncio.sleep(0.5)
+                
+            except Exception as e:
+                logger.error(f"[Scheduler] Error processing symbol {symbol}: {e}")
+                continue
+        
+        logger.info(f"[Scheduler] Transaction history autofill completed: {total_inserted} inserted, {total_skipped} skipped")
+        
+    except Exception as e:
+        logger.error(f"[Scheduler] Error in auto_fill_transaction_history: {e}")
+
+
+async def weekly_historical_backfill(bot, supabase):
+    """Weekly historical data backfill for comprehensive data sync."""
+    try:
+        logger.info("[Scheduler] Starting weekly historical backfill...")
+        
+        # This can include various historical data backfill tasks
+        # For now, we'll just log that it's running
+        # You can add specific backfill logic here as needed
+        
+        logger.info("[Scheduler] Weekly historical backfill completed")
+        
+    except Exception as e:
+        logger.error(f"[Scheduler] Error in weekly_historical_backfill: {e}")
+
 
 app = create_app()
 

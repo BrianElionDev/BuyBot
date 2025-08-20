@@ -84,7 +84,7 @@ class BinanceHistoryBackfiller:
             cutoff_iso = cutoff.isoformat()
 
             # Query for closed trades missing PnL or exit price data
-            response = self.supabase.from_("trades").select("*").eq("status", "CLOSED").gte("createdAt", cutoff_iso).execute()
+            response = self.supabase.from_("trades").select("*").eq("status", "CLOSED").gte("created_at", cutoff_iso).execute()
             trades = response.data or []
 
             # Filter for trades missing PnL or exit price

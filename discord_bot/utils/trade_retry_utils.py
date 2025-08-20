@@ -13,7 +13,7 @@ import logging
 import os
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from discord_bot.discord_bot import DiscordBot
@@ -286,7 +286,7 @@ async def sync_trade_statuses_with_binance(bot: DiscordBot, supabase: Client):
         # Get database trades from last 7 days (optimized for performance)
         cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         cutoff_iso = cutoff.isoformat()
-        response = supabase.from_("trades").select("*").gte("createdAt", cutoff_iso).execute()
+        response = supabase.from_("trades").select("*").gte("created_at", cutoff_iso).execute()
         db_trades = response.data or []
 
         logging.info(f"Found {len(binance_orders)} open orders on Binance")
@@ -969,10 +969,10 @@ async def sync_pnl_data_with_binance(bot, supabase):
 
 async def backfill_trades_from_binance_history(bot, supabase, days: int = 30, symbol: str = ""):
     """
-    Backfill trades table with PnL and exit price data from Binance history.
-    This function integrates with the existing sync logic.
+    Backfill trades table with PnL and exit price data from Binance history using order lifecycle matching.
+    This improved version uses the exact order lifecycle (created_at to modified_at) for accurate P&L tracking.
     """
-    logging.info(f"🔄 Starting trade backfill from Binance history for last {days} days")
+    logging.info(f"🔄 Starting enhanced trade backfill from Binance history for last {days} days")
 
     try:
         # Get trades needing backfill
@@ -980,18 +980,21 @@ async def backfill_trades_from_binance_history(bot, supabase, days: int = 30, sy
         cutoff_iso = cutoff.isoformat()
 
         # Query for closed trades missing PnL or exit price data
-        response = supabase.from_("trades").select("*").eq("status", "CLOSED").gte("createdAt", cutoff_iso).execute()
+        response = supabase.from_("trades").select("*").eq("status", "CLOSED").gte("created_at", cutoff_iso).execute()
         trades = response.data or []
 
-        # Filter for trades missing PnL or exit price
+        # Filter for trades missing PnL or exit price, or missing coin_symbol
         trades_needing_backfill = []
         for trade in trades:
             pnl = trade.get('pnl_usd')
             exit_price = trade.get('binance_exit_price')
-            order_id = trade.get('exchange_order_id')
-
-            # Include if missing PnL or exit price and has order ID
-            if order_id and (pnl is None or pnl == 0 or exit_price is None or exit_price == 0):
+            coin_symbol = trade.get('coin_symbol')
+            
+            # Include if missing PnL or exit price, or if missing coin_symbol but has data to extract it
+            missing_data = (pnl is None or pnl == 0 or exit_price is None or exit_price == 0)
+            missing_symbol = not coin_symbol and (trade.get('parsed_signal') or trade.get('binance_response'))
+            
+            if missing_data or missing_symbol:
                 trades_needing_backfill.append(trade)
 
         if not trades_needing_backfill:
@@ -1000,123 +1003,268 @@ async def backfill_trades_from_binance_history(bot, supabase, days: int = 30, sy
 
         logging.info(f"Found {len(trades_needing_backfill)} trades needing backfill")
 
-        # Fetch Binance data in 7-day chunks to comply with API limits
-        all_binance_trades = []
-        all_binance_orders = []
-
-        end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
-        start_time = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
-
-        # Fetch data in 7-day chunks
-        chunk_start = start_time
-        while chunk_start < end_time:
-            chunk_end = min(chunk_start + (7 * 24 * 60 * 60 * 1000), end_time)  # 7 days in milliseconds
-
-            logging.info(f"Fetching Binance data from {datetime.fromtimestamp(chunk_start/1000, tz=timezone.utc)} to {datetime.fromtimestamp(chunk_end/1000, tz=timezone.utc)}")
-
-            try:
-                # Get trades for this chunk
-                chunk_trades = await bot.binance_exchange.get_user_trades(
-                    symbol=f"{symbol}USDT" if symbol else "",
-                    start_time=chunk_start,
-                    end_time=chunk_end
-                )
-                all_binance_trades.extend(chunk_trades)
-
-                # Get orders for this chunk
-                chunk_orders = await bot.binance_exchange.get_order_history(
-                    symbol=f"{symbol}USDT" if symbol else "",
-                    start_time=chunk_start,
-                    end_time=chunk_end
-                )
-                all_binance_orders.extend(chunk_orders)
-
-                await asyncio.sleep(0.5)
-
-            except Exception as e:
-                logging.error(f"Error fetching chunk data: {e}")
-
-            chunk_start = chunk_end
-
-        logging.info(f"Retrieved {len(all_binance_trades)} Binance trades and {len(all_binance_orders)} orders")
-
-        # Process each trade
+        # Process each trade using order lifecycle matching
         trades_updated = 0
         for trade in trades_needing_backfill:
             try:
-                success = await backfill_single_trade_from_history(bot, supabase, trade, all_binance_trades, all_binance_orders)
+                success = await backfill_single_trade_with_lifecycle(bot, supabase, trade)
                 if success:
                     trades_updated += 1
                 await asyncio.sleep(0.1)  # Rate limiting
             except Exception as e:
                 logging.error(f"Error backfilling trade {trade.get('id')}: {e}")
 
-        logging.info(f"✅ Backfill completed: {trades_updated}/{len(trades_needing_backfill)} trades updated")
+        logging.info(f"✅ Enhanced backfill completed: {trades_updated}/{len(trades_needing_backfill)} trades updated")
 
     except Exception as e:
-        logging.error(f"Error in trade backfill: {e}", exc_info=True)
+        logging.error(f"Error in enhanced trade backfill: {e}", exc_info=True)
 
 
-async def backfill_single_trade_from_history(bot, supabase, trade: Dict, binance_trades: List[Dict], binance_orders: List[Dict]) -> bool:
-    """Backfill a single trade with PnL and exit price data from Binance history."""
+def get_order_lifecycle(db_trade: Dict) -> Tuple[Optional[int], Optional[int], Optional[int]]:
+    """Get order start, end, and duration in milliseconds using created_at to closed_at range."""
+    try:
+        # Get timestamps from database - prefer snake_case
+        created_at = db_trade.get('created_at') or db_trade.get('createdAt')
+        closed_at = db_trade.get('closed_at')
+        
+        if not created_at:
+            logging.warning(f"Trade {db_trade.get('id')} has no created_at timestamp")
+            return None, None, None
+        
+        # Parse start time (created_at)
+        if isinstance(created_at, str):
+            if 'T' in created_at:
+                dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                start_time = int(dt.timestamp() * 1000)
+            else:
+                start_time = int(float(created_at) * 1000)
+        else:
+            start_time = int(created_at.timestamp() * 1000)
+        
+        # Parse end time (closed_at)
+        if not closed_at:
+            # If no closed_at, use updated_at as fallback, then created_at
+            updated_at = db_trade.get('updated_at')
+            if updated_at:
+                if isinstance(updated_at, str):
+                    if 'T' in updated_at:
+                        dt = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+                        end_time = int(dt.timestamp() * 1000)
+                    else:
+                        end_time = int(float(updated_at) * 1000)
+                else:
+                    end_time = int(updated_at.timestamp() * 1000)
+                duration = end_time - start_time
+                logging.warning(f"Trade {db_trade.get('id')} has no closed_at - using updated_at as end time")
+            else:
+                # Fallback to created_at if no updated_at either
+                end_time = start_time
+                duration = 0
+                logging.warning(f"Trade {db_trade.get('id')} has no closed_at or updated_at - using created_at as end time")
+        else:
+            if isinstance(closed_at, str):
+                if 'T' in closed_at:
+                    dt = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+                    end_time = int(dt.timestamp() * 1000)
+                else:
+                    end_time = int(float(closed_at) * 1000)
+            else:
+                end_time = int(closed_at.timestamp() * 1000)
+            duration = end_time - start_time
+        
+        return start_time, end_time, duration
+        
+    except Exception as e:
+        logging.error(f"Error getting order lifecycle: {e}")
+        return None, None, None
+
+
+async def get_income_for_trade_period(
+    bot,
+    symbol: str,
+    start_time: int,
+    end_time: int,
+    *,
+    expand: bool = False,
+    buffer_before_ms: int = 0,
+    buffer_after_ms: int = 60000,  # Default 1 minute buffer after end time
+) -> List[Dict]:
+    """Get income history for a specific trade period.
+
+    By default this is STRICT: only records whose time lies within [start_time, end_time]
+    are returned. Set expand=True to allow a wider search window when nothing is found.
+    """
+    try:
+        logging.info(f"Fetching {symbol}USDT income from {start_time} to {end_time}")
+
+        async def fetch_window(window_start: int, window_end: int) -> List[Dict]:
+            all_incomes_local: List[Dict] = []
+            chunk_start_local = window_start
+            while chunk_start_local < window_end:
+                chunk_end_local = min(chunk_start_local + (7 * 24 * 60 * 60 * 1000), window_end)
+                try:
+                    chunk_incomes_local = await bot.binance_exchange.get_income_history(
+                        symbol=f"{symbol}USDT",
+                        start_time=chunk_start_local,
+                        end_time=chunk_end_local,
+                        limit=1000,
+                    )
+                    all_incomes_local.extend(chunk_incomes_local)
+                    await asyncio.sleep(0.5)  # Rate limiting
+                except Exception as e:
+                    logging.error(f"Error fetching chunk income: {e}")
+                chunk_start_local = chunk_end_local
+            return all_incomes_local
+
+        # Strict window by default; optional minimal buffer can be provided by caller
+        search_start = start_time - max(0, int(buffer_before_ms))
+        search_end = end_time + max(0, int(buffer_after_ms))
+
+        all_incomes = await fetch_window(search_start, search_end)
+
+        # Filter to trade period with buffer
+        # Include buffer in the filtering to catch final P&L records
+        filter_start = search_start
+        filter_end = search_end
+        
+        filtered_incomes = []
+        for income in all_incomes:
+            income_time = income.get('time')
+            if income_time and filter_start <= int(income_time) <= filter_end:
+                filtered_incomes.append(income)
+
+        if filtered_incomes or not expand:
+            logging.info(f"Found {len(filtered_incomes)} income records within trade period")
+            return filtered_incomes
+
+        # Optional fallback: expand forward/backward aggressively when requested
+        expand_before_ms = 6 * 60 * 60 * 1000  # 6 hours before
+        expand_after_ms = 3 * 24 * 60 * 60 * 1000  # 3 days after
+        expanded_start = start_time - expand_before_ms
+        expanded_end = max(end_time, start_time + expand_after_ms)
+        logging.warning(
+            f"No income found in strict window. Expanding search to {expanded_start} - {expanded_end}")
+
+        expanded_incomes = await fetch_window(expanded_start, expanded_end)
+
+        # Keep only incomes at/after start_time to avoid mixing with older positions
+        expanded_filtered = []
+        for income in expanded_incomes:
+            income_time = income.get('time')
+            if income_time and int(income_time) >= start_time:
+                expanded_filtered.append(income)
+
+        logging.info(f"Found {len(expanded_filtered)} income records in expanded window")
+        return expanded_filtered
+
+    except Exception as e:
+        logging.error(f"Error getting income for trade period: {e}")
+        return []
+
+
+async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bool:
+    """Backfill a single trade using order lifecycle matching with income history."""
     try:
         trade_id = trade.get('id')
-        order_id = trade.get('exchange_order_id')
-        symbol = trade.get('coin_symbol')
-
-        if not order_id or not symbol:
-            logging.warning(f"Trade {trade_id} missing order_id or symbol")
+        
+        # Use the enhanced symbol extraction function
+        symbol = extract_symbol_from_trade(trade)
+        
+        if not symbol:
+            logging.warning(f"Trade {trade_id} missing symbol - cannot backfill")
             return False
 
-        # Find matching Binance trades for this order
-        matching_trades = [t for t in binance_trades if str(t.get('orderId')) == str(order_id)]
+        # Get order lifecycle
+        start_time, end_time, duration = get_order_lifecycle(trade)
 
-        if not matching_trades:
-            logging.warning(f"No Binance trades found for order {order_id} (trade {trade_id})")
+        if not start_time:
+            logging.warning(f"Trade {trade_id} has no valid timestamps")
             return False
 
-        # Calculate exit price and PnL
+        # Get income records for this specific trade period
+        income_records = await get_income_for_trade_period(bot, symbol, start_time, end_time)
+        
+        if not income_records:
+            logging.info(f"Trade {trade_id} ({symbol}): No income records found during order lifecycle")
+            return False
+        
+        # Calculate P&L components from Binance income history
+        total_realized_pnl = 0.0
+        total_commission = 0.0
+        total_funding_fee = 0.0
         exit_price = 0.0
-        realized_pnl = 0.0
-
-        # Use Binance realized PnL if available
-        for binance_trade in matching_trades:
-            realized_pnl += float(binance_trade.get('realizedPnl', 0.0))
-            # Use the last trade's price as exit price
-            exit_price = float(binance_trade.get('price', 0.0))
-
-        # If no realized PnL from Binance, calculate it
-        if realized_pnl == 0.0 and exit_price > 0:
-            entry_price = trade.get('entry_price')
-            position_size = trade.get('position_size')
-            position_type = trade.get('signal_type', 'LONG')
-
-            # Handle None values properly
-            if entry_price is not None and position_size is not None and entry_price > 0 and position_size > 0:
-                realized_pnl = calculate_pnl(entry_price, exit_price, position_size, position_type)
+        
+        # Process all income records
+        for income in income_records:
+            if not isinstance(income, dict):
+                continue
+            
+            income_type = income.get('incomeType') or income.get('type')
+            income_value = float(income.get('income', 0.0))
+            
+            if income_type == 'REALIZED_PNL':
+                total_realized_pnl += income_value
+                # Track the latest price from realized P&L records
+                if income.get('price'):
+                    exit_price = float(income.get('price', 0.0))
+            elif income_type == 'COMMISSION':
+                total_commission += income_value
+            elif income_type == 'FUNDING_FEE':
+                total_funding_fee += income_value
+        
+        # Calculate NET P&L (including fees)
+        net_pnl = total_realized_pnl + total_commission + total_funding_fee
+        
+        # Count REALIZED_PNL records for logging
+        realized_pnl_records = [r for r in income_records if isinstance(r, dict) and (r.get('incomeType') or r.get('type')) == 'REALIZED_PNL']
+        
+        if not realized_pnl_records:
+            logging.info(f"Trade {trade_id} ({symbol}): No REALIZED_PNL records found")
+            return False
 
         # Prepare update data
         update_data = {
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
 
-        # Only update if we have valid data
+        # Only fix missing closed_at for historical trades (backfill scenario)
+        # Don't set closed_at during normal operation - let WebSocket handle it
+        if not trade.get('closed_at') and trade.get('status') == 'CLOSED':
+            # Import timestamp manager for historical fixes only
+            from discord_bot.utils.timestamp_manager import fix_historical_timestamps
+            await fix_historical_timestamps(supabase, trade_id)
+            logging.info(f"✅ Fixed historical closed_at for trade {trade_id}")
+        
+        # Update P&L if we have income records from Binance
+        if len(income_records) > 0:
+            # Store REALIZED_PNL only in pnl_usd
+            update_data['pnl_usd'] = str(total_realized_pnl)
+            # Store NET P&L (including fees) in net_pnl
+            update_data['net_pnl'] = str(net_pnl)
+            # Store individual components for reference
+            update_data['commission'] = str(total_commission)
+            update_data['funding_fee'] = str(total_funding_fee)
+            logging.info(f"✅ Updated trade {trade_id} - P&L: {total_realized_pnl:.6f} (REALIZED_PNL), NET P&L: {net_pnl:.6f} (from {len(realized_pnl_records)} batches)")
+        
+        # Update exit price if we have one from realized P&L records
         if exit_price > 0:
             update_data['binance_exit_price'] = str(exit_price)
-
-        if realized_pnl != 0:
-            update_data['pnl_usd'] = str(realized_pnl)
-            update_data['realized_pnl'] = str(realized_pnl)
-
-        # Update the trade in database
+            logging.info(f"✅ Updated trade {trade_id} - Exit Price: {exit_price:.6f}")
+        
+        # Also update coin_symbol if it was missing and we extracted it
+        if not trade.get('coin_symbol') and symbol:
+            update_data['coin_symbol'] = symbol
+            logging.info(f"✅ Updated trade {trade_id} - Added coin_symbol: {symbol}")
+        
+        # Update database
         if len(update_data) > 1:  # More than just updated_at
-            supabase.table("trades").update(update_data).eq("id", trade_id).execute()
-            logging.info(f"✅ Updated trade {trade_id} - Exit Price: {exit_price}, PnL: {realized_pnl}")
+            response = supabase.from_("trades").update(update_data).eq("id", trade_id).execute()
+            if response.data:
+                logging.info(f"✅ Successfully updated trade {trade_id}")
             return True
-        else:
-            logging.warning(f"No valid data to update for trade {trade_id}")
+        
             return False
 
     except Exception as e:
-        logging.error(f"Error backfilling trade {trade.get('id')}: {e}")
+        logging.error(f"Error backfilling trade {trade.get('id')} with lifecycle: {e}")
         return False

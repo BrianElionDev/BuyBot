@@ -1,0 +1,474 @@
+#!/usr/bin/env python3
+"""
+Manual script to fill transaction_history table with data from Binance /income endpoint.
+This script allows manual control over the data fetching and insertion process.
+"""
+
+import sys
+import asyncio
+import logging
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+from typing import List, Dict, Any, Optional
+
+sys.path.append(str(Path(__file__).parent.parent))
+
+from discord_bot.discord_bot import DiscordBot
+from discord_bot.database import DatabaseManager
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+class TransactionHistoryFiller:
+    def __init__(self):
+        self.bot = DiscordBot()
+        self.db_manager = DatabaseManager(self.bot.supabase)
+
+    async def fetch_income_data(self, symbol: str = "", start_time: int = 0, end_time: int = 0, 
+                               income_type: str = "", limit: int = 1000) -> List[Dict[str, Any]]:
+        """
+        Fetch income data from Binance API.
+        
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            start_time: Start time in milliseconds
+            end_time: End time in milliseconds
+            income_type: Income type filter
+            limit: Number of records to retrieve
+            
+        Returns:
+            List of income records
+        """
+        try:
+            # Initialize Binance client if needed
+            if not self.bot.binance_exchange.client:
+                await self.bot.binance_exchange._init_client()
+
+            income_records = await self.bot.binance_exchange.get_income_history(
+                symbol=symbol,
+                income_type=income_type,
+                start_time=start_time,
+                end_time=end_time,
+                limit=limit
+            )
+
+            logger.info(f"Fetched {len(income_records)} income records for {symbol}")
+            return income_records if isinstance(income_records, list) else [income_records]
+
+        except Exception as e:
+            logger.error(f"Error fetching income data: {e}")
+            return []
+
+    def transform_income_to_transaction(self, income_record: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Transform Binance income record to transaction_history format.
+        
+        Args:
+            income_record: Raw income record from Binance API
+            
+        Returns:
+            Transaction record in the required format
+        """
+        try:
+            # Extract fields from income record
+            time_ms = int(income_record.get('time', 0))
+            income_type = income_record.get('incomeType', income_record.get('type', ''))
+            amount = float(income_record.get('income', 0.0))
+            asset = income_record.get('asset', '')
+            symbol = income_record.get('symbol', '')
+
+            # Create transaction record
+            transaction = {
+                'time': time_ms,
+                'type': income_type,
+                'amount': amount,
+                'asset': asset,
+                'symbol': symbol
+            }
+
+            return transaction
+
+        except Exception as e:
+            logger.error(f"Error transforming income record: {e}")
+            return {}
+
+    async def insert_single_transaction(self, transaction: Dict[str, Any]) -> bool:
+        """
+        Insert a single transaction record with duplicate checking.
+        
+        Args:
+            transaction: Transaction record to insert
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Check if transaction already exists
+            exists = await self.db_manager.check_transaction_exists(
+                time=transaction['time'],
+                type=transaction['type'],
+                amount=transaction['amount'],
+                asset=transaction['asset'],
+                symbol=transaction['symbol']
+            )
+
+            if exists:
+                logger.debug(f"Transaction already exists, skipping: {transaction}")
+                return True
+
+            # Insert new transaction
+            result = await self.db_manager.insert_transaction_history(transaction)
+            return result is not None
+
+        except Exception as e:
+            logger.error(f"Error inserting transaction: {e}")
+            return False
+
+    async def fill_transaction_history_manual(self, symbol: str = "", days: int = 30, 
+                                            income_type: str = "", batch_size: int = 100) -> Dict[str, Any]:
+        """
+        Manually fill transaction_history table with income data.
+        
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            days: Number of days to look back
+            income_type: Income type filter (optional)
+            batch_size: Number of records to process in each batch
+            
+        Returns:
+            Summary of the operation
+        """
+        try:
+            # Calculate time range
+            end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
+            start_time = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
+
+            logger.info(f"Fetching income data for {symbol} from {datetime.fromtimestamp(start_time/1000, tz=timezone.utc)} to {datetime.fromtimestamp(end_time/1000, tz=timezone.utc)}")
+
+            # Fetch income data
+            income_records = await self.fetch_income_data(
+                symbol=symbol,
+                start_time=start_time,
+                end_time=end_time,
+                income_type=income_type,
+                limit=1000
+            )
+
+            if not income_records:
+                logger.warning("No income records found")
+                return {
+                    'success': False,
+                    'message': 'No income records found',
+                    'processed': 0,
+                    'inserted': 0,
+                    'skipped': 0
+                }
+
+            # Transform and insert records
+            processed = 0
+            inserted = 0
+            skipped = 0
+            batch = []
+
+            for income in income_records:
+                if not isinstance(income, dict):
+                    continue
+
+                transaction = self.transform_income_to_transaction(income)
+                if not transaction:
+                    skipped += 1
+                    continue
+
+                batch.append(transaction)
+                processed += 1
+
+                # Process batch when it reaches batch_size
+                if len(batch) >= batch_size:
+                    batch_inserted = await self.db_manager.insert_transaction_history_batch(batch)
+                    if batch_inserted:
+                        inserted += len(batch)
+                    else:
+                        skipped += len(batch)
+                    batch = []
+
+                    # Rate limiting
+                    await asyncio.sleep(0.1)
+
+            # Process remaining records
+            if batch:
+                batch_inserted = await self.db_manager.insert_transaction_history_batch(batch)
+                if batch_inserted:
+                    inserted += len(batch)
+                else:
+                    skipped += len(batch)
+
+            summary = {
+                'success': True,
+                'message': f'Processed {processed} income records',
+                'processed': processed,
+                'inserted': inserted,
+                'skipped': skipped,
+                'symbol': symbol,
+                'time_range': f"{datetime.fromtimestamp(start_time/1000, tz=timezone.utc)} to {datetime.fromtimestamp(end_time/1000, tz=timezone.utc)}"
+            }
+
+            logger.info(f"Transaction history fill completed: {summary}")
+            return summary
+
+        except Exception as e:
+            logger.error(f"Error in fill_transaction_history_manual: {e}")
+            return {
+                'success': False,
+                'message': f'Error: {str(e)}',
+                'processed': 0,
+                'inserted': 0,
+                'skipped': 0
+            }
+
+    async def fill_from_date(self, start_date: str, symbol: str = "", 
+                           income_type: str = "", batch_size: int = 100) -> Dict[str, Any]:
+        """
+        Fill transaction history from a specific date to now.
+        
+        Args:
+            start_date: Start date in format 'YYYY-MM-DD' (e.g., '2025-08-10')
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            income_type: Income type filter (optional)
+            batch_size: Number of records to process in each batch
+            
+        Returns:
+            Summary of the operation
+        """
+        try:
+            # Parse start date
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+            end_dt = datetime.now(timezone.utc)
+            
+            # Convert to milliseconds for Binance API
+            start_time = int(start_dt.timestamp() * 1000)
+            end_time = int(end_dt.timestamp() * 1000)
+            
+            logger.info(f"Filling transaction history from {start_date} to now")
+            logger.info(f"Time range: {start_dt} to {end_dt}")
+
+            # Fetch income data
+            income_records = await self.fetch_income_data(
+                symbol=symbol,
+                start_time=start_time,
+                end_time=end_time,
+                income_type=income_type,
+                limit=1000
+            )
+
+            if not income_records:
+                logger.warning("No income records found")
+                return {
+                    'success': False,
+                    'message': 'No income records found',
+                    'processed': 0,
+                    'inserted': 0,
+                    'skipped': 0
+                }
+
+            # Transform and insert records
+            processed = 0
+            inserted = 0
+            skipped = 0
+            batch = []
+
+            for income in income_records:
+                if not isinstance(income, dict):
+                    continue
+
+                transaction = self.transform_income_to_transaction(income)
+                if not transaction:
+                    skipped += 1
+                    continue
+
+                batch.append(transaction)
+                processed += 1
+
+                # Process batch when it reaches batch_size
+                if len(batch) >= batch_size:
+                    batch_inserted = await self.db_manager.insert_transaction_history_batch(batch)
+                    if batch_inserted:
+                        inserted += len(batch)
+                    else:
+                        skipped += len(batch)
+                    batch = []
+
+                    # Rate limiting
+                    await asyncio.sleep(0.1)
+
+            # Process remaining records
+            if batch:
+                batch_inserted = await self.db_manager.insert_transaction_history_batch(batch)
+                if batch_inserted:
+                    inserted += len(batch)
+                else:
+                    skipped += len(batch)
+
+            summary = {
+                'success': True,
+                'message': f'Successfully filled transaction history from {start_date}',
+                'processed': processed,
+                'inserted': inserted,
+                'skipped': skipped,
+                'symbol': symbol,
+                'start_date': start_date,
+                'end_date': end_dt.strftime('%Y-%m-%d'),
+                'time_range': f"{start_dt} to {end_dt}"
+            }
+
+            logger.info(f"Transaction history fill from date completed: {summary}")
+            return summary
+
+        except Exception as e:
+            logger.error(f"Error in fill_from_date: {e}")
+            return {
+                'success': False,
+                'message': f'Error: {str(e)}',
+                'processed': 0,
+                'inserted': 0,
+                'skipped': 0
+            }
+
+    async def fill_all_symbols_manual(self, days: int = 30, income_type: str = "") -> Dict[str, Any]:
+        """
+        Fill transaction history for all available symbols.
+        
+        Args:
+            days: Number of days to look back
+            income_type: Income type filter (optional)
+            
+        Returns:
+            Summary of the operation
+        """
+        try:
+            # Common trading symbols
+            symbols = [
+                'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'SOLUSDT',
+                'DOTUSDT', 'DOGEUSDT', 'AVAXUSDT', 'MATICUSDT', 'LINKUSDT',
+                'UNIUSDT', 'LTCUSDT', 'BCHUSDT', 'XLMUSDT', 'ATOMUSDT'
+            ]
+
+            total_processed = 0
+            total_inserted = 0
+            total_skipped = 0
+            results = []
+
+            for symbol in symbols:
+                logger.info(f"Processing symbol: {symbol}")
+                
+                result = await self.fill_transaction_history_manual(
+                    symbol=symbol,
+                    days=days,
+                    income_type=income_type
+                )
+
+                results.append(result)
+                total_processed += result.get('processed', 0)
+                total_inserted += result.get('inserted', 0)
+                total_skipped += result.get('skipped', 0)
+
+                # Rate limiting between symbols
+                await asyncio.sleep(1)
+
+            summary = {
+                'success': True,
+                'message': f'Processed {len(symbols)} symbols',
+                'total_processed': total_processed,
+                'total_inserted': total_inserted,
+                'total_skipped': total_skipped,
+                'symbol_results': results
+            }
+
+            logger.info(f"All symbols processing completed: {summary}")
+            return summary
+
+        except Exception as e:
+            logger.error(f"Error in fill_all_symbols_manual: {e}")
+            return {
+                'success': False,
+                'message': f'Error: {str(e)}',
+                'total_processed': 0,
+                'total_inserted': 0,
+                'total_skipped': 0
+            }
+
+
+async def main():
+    """Main function for manual transaction history filling."""
+    filler = TransactionHistoryFiller()
+
+    # Example usage - modify these parameters as needed
+    print("=== Manual Transaction History Filler ===")
+    print("1. Fill single symbol")
+    print("2. Fill all symbols")
+    print("3. Fill from specific date (e.g., 10th August)")
+    print("4. Custom parameters")
+    
+    choice = input("Enter your choice (1-4): ").strip()
+
+    if choice == "1":
+        symbol = input("Enter symbol (e.g., BTCUSDT): ").strip()
+        days = int(input("Enter number of days to look back (default 30): ") or "30")
+        income_type = input("Enter income type filter (optional, press Enter to skip): ").strip() or ""
+        
+        result = await filler.fill_transaction_history_manual(
+            symbol=symbol,
+            days=days,
+            income_type=income_type
+        )
+        
+    elif choice == "2":
+        days = int(input("Enter number of days to look back (default 30): ") or "30")
+        income_type = input("Enter income type filter (optional, press Enter to skip): ").strip() or ""
+        
+        result = await filler.fill_all_symbols_manual(
+            days=days,
+            income_type=income_type
+        )
+        
+    elif choice == "3":
+        start_date = input("Enter start date (YYYY-MM-DD, default 2025-08-10): ").strip() or "2025-08-10"
+        symbol = input("Enter symbol (optional, press Enter to skip): ").strip() or ""
+        income_type = input("Enter income type filter (optional, press Enter to skip): ").strip() or ""
+        
+        print(f"\nThis will fill transaction history from {start_date} to now.")
+        confirmation = input("Do you want to proceed? (y/N): ")
+        if confirmation.lower() != 'y':
+            print("Operation cancelled.")
+            return
+        
+        result = await filler.fill_from_date(
+            start_date=start_date,
+            symbol=symbol,
+            income_type=income_type
+        )
+        
+    elif choice == "4":
+        # Custom implementation
+        print("Custom implementation - modify the script as needed")
+        return
+        
+    else:
+        print("Invalid choice")
+        return
+
+    # Display results
+    print(f"\n=== Results ===")
+    print(f"Success: {result.get('success', False)}")
+    print(f"Message: {result.get('message', '')}")
+    print(f"Processed: {result.get('processed', result.get('total_processed', 0))}")
+    print(f"Inserted: {result.get('inserted', result.get('total_inserted', 0))}")
+    print(f"Skipped: {result.get('skipped', result.get('total_skipped', 0))}")
+    
+    if result.get('start_date'):
+        print(f"Date Range: {result.get('start_date')} to {result.get('end_date')}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

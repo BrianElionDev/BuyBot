@@ -81,8 +81,8 @@ class BinanceEmergencyClose:
 
             response = self.supabase.from_("trades").select("*") \
                 .eq("status", "OPEN") \
-                .gte("createdAt", july_start) \
-                .lt("createdAt", july_end) \
+                .gte("created_at", july_start) \
+                .lt("created_at", july_end) \
                 .execute()
 
             trades = response.data or []

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Import DatabaseManager type for type hints only
@@ -1122,7 +1122,7 @@ class TradingEngine:
                             trade_id=trade_id,
                             updates={
                                 "status": status,
-                                "updated_at": datetime.now().isoformat()
+                                "updated_at": datetime.now(timezone.utc).isoformat()
                             }
                         )
                         logger.info(f"Updated trade {trade_id} status to {status}")

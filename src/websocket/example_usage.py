@@ -7,7 +7,7 @@ import asyncio
 import sys
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from config import settings
 from typing import Dict, Any, Optional
 
@@ -58,12 +58,14 @@ class WebSocketIntegrationExample:
         async def handle_execution_report(data):
             """Handle order execution reports - update trade status in database."""
             try:
-                symbol = data.get('s')  # Symbol
-                order_id = data.get('i')  # Order ID
-                status = data.get('X')  # Order status
-                executed_qty = float(data.get('z', 0))  # Cumulative filled quantity
-                avg_price = float(data.get('ap', 0))  # Average price
-                realized_pnl = float(data.get('Y', 0))  # Realized PnL
+                # Extract data from ORDER_TRADE_UPDATE event structure
+                order_data = data.get('o', {})
+                symbol = order_data.get('s')  # Symbol
+                order_id = order_data.get('i')  # Order ID
+                status = order_data.get('X')  # Order status
+                executed_qty = float(order_data.get('z', 0))  # Cumulative filled quantity
+                avg_price = float(order_data.get('ap', 0))  # Average price
+                realized_pnl = float(order_data.get('Y', 0))  # Realized PnL
 
                 logger.info(f"Order Update: {symbol} {order_id} - {status}")
 
@@ -75,7 +77,7 @@ class WebSocketIntegrationExample:
 
                 # Update trade based on order status
                 updates = {
-                    'updated_at': datetime.now().isoformat(),
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
                     'binance_response': str(data)
                 }
 
@@ -116,9 +118,12 @@ class WebSocketIntegrationExample:
             try:
                 logger.info("Account position update received")
 
+                # Extract data from ACCOUNT_UPDATE event structure
+                account_data = data.get('a', {})
+                
                 # Update position information in database
                 # This could be used to track unrealized PnL
-                for balance in data.get('B', []):
+                for balance in account_data.get('B', []):
                     asset = balance.get('a')
                     free = float(balance.get('f', 0))
                     locked = float(balance.get('l', 0))
@@ -175,7 +180,7 @@ class WebSocketIntegrationExample:
             logger.error(f"WebSocket error: {error_msg}")
 
         # Register handlers
-        self.ws_manager.add_event_handler('executionReport', handle_execution_report)
+        self.ws_manager.add_event_handler('ORDER_TRADE_UPDATE', handle_execution_report)
         self.ws_manager.add_event_handler('outboundAccountPosition', handle_account_position)
         self.ws_manager.add_event_handler('ticker', handle_ticker)
         self.ws_manager.add_event_handler('connection', handle_connection)

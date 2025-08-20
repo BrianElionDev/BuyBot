@@ -33,25 +33,30 @@ def map_binance_order_status(binance_status: str) -> str:
     """Map Binance order status to our order_status column."""
     return ORDER_STATUS.get(binance_status.upper(), 'PENDING')
 
-def determine_position_status_from_order(order_status: str, position_size: float = 0) -> str:
+def determine_position_status_from_order(order_status: str, position_size: float = 0, is_exit_order: bool = False) -> str:
     """
     Determine position status based on order status and position size.
 
     Args:
         order_status: The order status (FILLED, PARTIALLY_FILLED, etc.)
         position_size: Current position size (0 means no position)
+        is_exit_order: Whether this is an exit order (reduceOnly=True or closePosition=True)
 
     Returns:
         Position status string
     """
     if order_status == 'FILLED':
-        if position_size > 0:
-            return POSITION_STATUS['OPEN']
+        if is_exit_order:
+            return POSITION_STATUS['CLOSED']  # Exit order filled = position closed
+        elif position_size > 0:
+            return POSITION_STATUS['OPEN']    # Entry order filled = position open
         else:
-            return POSITION_STATUS['CLOSED']  # Exit order filled
+            return POSITION_STATUS['NONE']    # No position
     elif order_status == 'PARTIALLY_FILLED':
-        if position_size > 0:
-            return POSITION_STATUS['PARTIALLY_CLOSED']
+        if is_exit_order:
+            return POSITION_STATUS['PARTIALLY_CLOSED']  # Exit order partially filled
+        elif position_size > 0:
+            return POSITION_STATUS['OPEN']    # Entry order partially filled = position open
         else:
             return POSITION_STATUS['NONE']
     elif order_status in ['CANCELED', 'EXPIRED', 'REJECTED']:

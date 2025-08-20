@@ -58,7 +58,7 @@ async def backfill_testnet_transfer():
         # Query for trades that are not already closed and are before the cutoff date
         response = supabase.from_("trades").select("*").or_(
             f"status.neq.CLOSED,order_status.neq.CLOSED"
-        ).lt("createdAt", CUTOFF_DATE).execute()
+        ).lt("created_at", CUTOFF_DATE).execute()
 
         if not response.data:
             logger.info("✅ No trades found that need backfilling")
@@ -121,7 +121,7 @@ async def backfill_testnet_transfer():
 
         # Verify the changes
         logger.info("🔍 Verifying changes...")
-        verify_response = supabase.from_("trades").select("id, status, order_status").lt("createdAt", CUTOFF_DATE).execute()
+        verify_response = supabase.from_("trades").select("id, status, order_status").lt("created_at", CUTOFF_DATE).execute()
 
         if verify_response.data:
             open_trades = [t for t in verify_response.data if t.get('status') != 'CLOSED' or t.get('order_status') != 'CLOSED']

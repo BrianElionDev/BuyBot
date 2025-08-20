@@ -136,7 +136,7 @@ class BinanceDatabaseSync:
         try:
             # get all trades from the last 48 hours, regardless of status
             # This includes OPEN, CLOSED, FAILED, etc. to handle incorrect statuses
-            response = self.supabase.table("trades").select("*").gte("createdAt", datetime.now(timezone.utc) - timedelta(hours=48)).execute()
+            response = self.supabase.table("trades").select("*").gte("created_at", datetime.now(timezone.utc) - timedelta(hours=48)).execute()
             trades = response.data if response.data else []
             logger.info(f"Found {len(trades)} trades in database (all statuses)")
             return trades
@@ -416,11 +416,10 @@ class BinanceDatabaseSync:
                             except Exception as e:
                                 logger.warning(f"Could not extract entry_price from parsed_signal: {e}")
 
-                        # CRITICAL: Ensure binance_entry_price is set if missing
+                        # CRITICAL: DO NOT set binance_entry_price to market price - it should come from actual execution
+                        # binance_entry_price should only be set from the actual avgPrice from Binance order response
                         if not db_trade.get('binance_entry_price') or float(db_trade.get('binance_entry_price', 0)) == 0:
-                            # Use current mark_price as fallback for binance_entry_price
-                            update_data['binance_entry_price'] = mark_price
-                            logger.info(f"Set missing binance_entry_price to current mark_price: {mark_price}")
+                            logger.warning(f"Trade {db_trade['id']} missing binance_entry_price - should be set from actual execution price, not market price")
 
                         # If position is closed (zero size), update position status
                         if position_amt == 0:

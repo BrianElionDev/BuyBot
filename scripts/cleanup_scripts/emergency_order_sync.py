@@ -60,7 +60,7 @@ async def emergency_order_sync():
         cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         cutoff_iso = cutoff.isoformat()
 
-        response = supabase.from_("trades").select("*").neq("status", "CLOSED").gte("createdAt", cutoff_iso).execute()
+        response = supabase.from_("trades").select("*").neq("status", "CLOSED").gte("created_at", cutoff_iso).execute()
         trades = response.data or []
 
         logger.info(f"Found {len(trades)} trades needing status updates")

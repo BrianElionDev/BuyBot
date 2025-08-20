@@ -13,6 +13,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'websocket'))
 
 from binance_websocket_manager import BinanceWebSocketManager
+from database_sync_handler import DatabaseSyncHandler
 from discord_bot.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class DiscordBotWebSocketManager:
         self.bot = bot
         self.db_manager = db_manager
         self.ws_manager: Optional[BinanceWebSocketManager] = None
+        self.db_sync_handler: Optional[DatabaseSyncHandler] = None
         self.is_running = False
         self.last_sync_time = None
         self.sync_stats = {
@@ -53,6 +55,9 @@ class DiscordBotWebSocketManager:
             api_key = self.bot.binance_exchange.api_key
             api_secret = self.bot.binance_exchange.api_secret
             is_testnet = self.bot.binance_exchange.is_testnet
+
+            # Create database sync handler
+            self.db_sync_handler = DatabaseSyncHandler(self.db_manager)
 
             # Create WebSocket manager with database sync
             self.ws_manager = BinanceWebSocketManager(
@@ -80,18 +85,26 @@ class DiscordBotWebSocketManager:
                 self.sync_stats['orders_updated'] += 1
                 self.last_sync_time = datetime.now(timezone.utc)
 
-                order_id = data.get('i', 'Unknown')
-                symbol = data.get('s', 'Unknown')
-                status = data.get('X', 'Unknown')
+                # Extract data for logging
+                order_data = data.get('o', {})
+                order_id = order_data.get('i', 'Unknown')
+                symbol = order_data.get('s', 'Unknown')
+                status = order_data.get('X', 'Unknown')
+                executed_qty = float(order_data.get('z', 0))
+                avg_price = float(order_data.get('ap', 0))
+                realized_pnl = float(order_data.get('Y', 0))
 
-                logger.info(f"WebSocket: Order {order_id} ({symbol}) - {status}")
+                logger.info(f"WebSocket: Order {order_id} ({symbol}) - {status} - Price: {avg_price}")
 
                 # Log important events
                 if status == 'FILLED':
-                    executed_qty = float(data.get('z', 0))
-                    avg_price = float(data.get('ap', 0))
-                    realized_pnl = float(data.get('Y', 0))
                     logger.info(f"WebSocket: ORDER FILLED - {symbol} at {avg_price} - PnL: {realized_pnl}")
+
+                # Use the database sync handler to process the event (ONLY ONCE)
+                if self.db_sync_handler:
+                    await self.db_sync_handler.handle_execution_report(data)
+                else:
+                    logger.warning("Database sync handler not available")
 
             except Exception as e:
                 logger.error(f"Error in execution report handler: {e}")
@@ -113,6 +126,10 @@ class DiscordBotWebSocketManager:
                     if float(free) > 0 or float(locked) > 0:
                         logger.info(f"WebSocket: Balance - {asset}: Free={free}, Locked={locked}")
 
+                # Call the database sync handler if available
+                if self.db_sync_handler:
+                    await self.db_sync_handler.handle_account_position(data)
+
             except Exception as e:
                 logger.error(f"Error in account position handler: {e}")
                 self.sync_stats['errors'] += 1
@@ -128,6 +145,10 @@ class DiscordBotWebSocketManager:
                 # Log every 100th ticker to avoid spam
                 if self.sync_stats['pnl_updates'] % 100 == 0:
                     logger.info(f"WebSocket: Ticker update #{self.sync_stats['pnl_updates']} - {symbol}: {price}")
+
+                # Call the database sync handler if available
+                if self.db_sync_handler:
+                    await self.db_sync_handler.handle_ticker(data)
 
             except Exception as e:
                 logger.error(f"Error in ticker handler: {e}")
@@ -151,8 +172,8 @@ class DiscordBotWebSocketManager:
 
         # Register handlers
         if self.ws_manager:
-            self.ws_manager.add_event_handler('executionReport', handle_execution_report)
-            self.ws_manager.add_event_handler('outboundAccountPosition', handle_account_position)
+            self.ws_manager.add_event_handler('ORDER_TRADE_UPDATE', handle_execution_report)
+            self.ws_manager.add_event_handler('ACCOUNT_UPDATE', handle_account_position)
             self.ws_manager.add_event_handler('ticker', handle_ticker)
             self.ws_manager.add_event_handler('connection', handle_connection)
             self.ws_manager.add_event_handler('disconnection', handle_disconnection)
