@@ -12,7 +12,8 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'websocket'))
 
-from binance_websocket_manager import BinanceWebSocketManager
+from src.websocket.binance_websocket_manager import BinanceWebSocketManager
+from src.websocket.database_sync_handler import DatabaseSyncHandler
 from discord_bot.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class DiscordBotWebSocketManager:
         self.bot = bot
         self.db_manager = db_manager
         self.ws_manager: Optional[BinanceWebSocketManager] = None
+        self.db_sync_handler: Optional[DatabaseSyncHandler] = None
         self.is_running = False
         self.last_sync_time = None
         self.sync_stats = {
@@ -53,6 +55,9 @@ class DiscordBotWebSocketManager:
             api_key = self.bot.binance_exchange.api_key
             api_secret = self.bot.binance_exchange.api_secret
             is_testnet = self.bot.binance_exchange.is_testnet
+
+            # Create database sync handler
+            self.db_sync_handler = DatabaseSyncHandler(self.db_manager)
 
             # Create WebSocket manager with database sync
             self.ws_manager = BinanceWebSocketManager(
@@ -80,17 +85,19 @@ class DiscordBotWebSocketManager:
                 self.sync_stats['orders_updated'] += 1
                 self.last_sync_time = datetime.now(timezone.utc)
 
-                order_id = data.get('i', 'Unknown')
-                symbol = data.get('s', 'Unknown')
-                status = data.get('X', 'Unknown')
+                # Extract data for logging
+                order_data = data.get('o', {})
+                order_id = order_data.get('i', 'Unknown')
+                symbol = order_data.get('s', 'Unknown')
+                status = order_data.get('X', 'Unknown')
+                executed_qty = float(order_data.get('z', 0))
+                avg_price = float(order_data.get('ap', 0))
+                realized_pnl = float(order_data.get('Y', 0))
 
-                logger.info(f"WebSocket: Order {order_id} ({symbol}) - {status}")
+                logger.info(f"WebSocket: Order {order_id} ({symbol}) - {status} - Price: {avg_price}")
 
                 # Log important events
                 if status == 'FILLED':
-                    executed_qty = float(data.get('z', 0))
-                    avg_price = float(data.get('ap', 0))
-                    realized_pnl = float(data.get('Y', 0))
                     logger.info(f"WebSocket: ORDER FILLED - {symbol} at {avg_price} - PnL: {realized_pnl}")
 
                 # CRITICAL: Call database sync handler to update database
@@ -165,8 +172,8 @@ class DiscordBotWebSocketManager:
 
         # Register handlers
         if self.ws_manager:
-            self.ws_manager.add_event_handler('executionReport', handle_execution_report)
-            self.ws_manager.add_event_handler('outboundAccountPosition', handle_account_position)
+            self.ws_manager.add_event_handler('ORDER_TRADE_UPDATE', handle_execution_report)
+            self.ws_manager.add_event_handler('ACCOUNT_UPDATE', handle_account_position)
             self.ws_manager.add_event_handler('ticker', handle_ticker)
             self.ws_manager.add_event_handler('connection', handle_connection)
             self.ws_manager.add_event_handler('disconnection', handle_disconnection)

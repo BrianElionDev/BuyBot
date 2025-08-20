@@ -5,9 +5,17 @@ Links Binance orders to database trades and keeps them synchronized in real-time
 
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from decimal import Decimal
+import sys
+from pathlib import Path
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.append(str(project_root))
+
+from discord_bot.utils.timestamp_manager import WebSocketTimestampHandler, TimestampManager
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +38,14 @@ class DatabaseSyncHandler:
             db_manager: Database manager instance
         """
         self.db_manager = db_manager
+        
+        # Initialize timestamp management
+        if hasattr(db_manager, 'supabase'):
+            self.timestamp_manager = TimestampManager(db_manager.supabase)
+            self.websocket_timestamp_handler = WebSocketTimestampHandler(self.timestamp_manager)
+        else:
+            self.timestamp_manager = None
+            self.websocket_timestamp_handler = None
         self.order_id_cache = {}  # Cache for orderId -> trade_id mapping
 
     async def handle_execution_report(self, data: Dict[str, Any]):
@@ -156,7 +172,7 @@ class DatabaseSyncHandler:
         """
         try:
             updates = {
-                'updated_at': datetime.now().isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat(),
                 'sync_order_response': json.dumps(execution_data)
             }
 
@@ -183,30 +199,56 @@ class DatabaseSyncHandler:
                         'position_size': str(executed_qty)
                     })
 
-                    # CRITICAL: Only update binance_entry_price if it's missing or for market orders
-                    # This prevents overwriting correct entry prices with exit prices
-                    current_binance_entry_price = trade.get('binance_entry_price')
-                    if not current_binance_entry_price or float(current_binance_entry_price) == 0:
-                        if avg_price > 0:
-                            updates['binance_entry_price'] = str(avg_price)
-                            logger.info(f"Updated missing binance_entry_price to execution price: {avg_price}")
+                    # CRITICAL: Determine if this is an entry or exit order
+                    # Entry orders: reduceOnly=False or not present, closePosition=False or not present
+                    # Exit orders: reduceOnly=True or closePosition=True
+                    is_exit_order = execution_data.get('reduceOnly', False) or execution_data.get('closePosition', False)
+                    
+                    if is_exit_order:
+                        # This is an exit order - update binance_exit_price and set closed_at
+                        updates['binance_exit_price'] = str(avg_price)
+                        logger.info(f"Updated binance_exit_price to execution price: {avg_price} (exit order)")
+                        
+                        # Set closed_at timestamp using WebSocket timestamp manager
+                        if self.websocket_timestamp_handler:
+                            fill_time = execution_data.get('T')  # Transaction time
+                            await self.websocket_timestamp_handler.handle_order_execution(execution_data)
+                    else:
+                        # This is an entry order - update binance_entry_price and set created_at
+                        current_binance_entry_price = trade.get('binance_entry_price')
+                        if not current_binance_entry_price or float(current_binance_entry_price) == 0:
+                            if avg_price > 0:
+                                updates['binance_entry_price'] = str(avg_price)
+                        
+                        # Set created_at timestamp using WebSocket timestamp manager
+                        if self.websocket_timestamp_handler:
+                            execution_time = execution_data.get('T')  # Transaction time
+                            await self.websocket_timestamp_handler.handle_order_execution(execution_data)
+                            
+                        logger.info(f"Updated missing binance_entry_price to execution price: {avg_price} (entry order)")
 
                     logger.info(f"Trade {trade_id} FILLED at {avg_price} - PnL: {realized_pnl}")
 
             elif status == 'PARTIALLY_FILLED':
-                # CRITICAL: Update position size and exit price for partial fills
+                # CRITICAL: Update position size for partial fills
                 updates.update({
-                    'exit_price': str(avg_price),
-                    'binance_exit_price': str(avg_price),
                     'position_size': str(executed_qty)
                 })
 
-                # CRITICAL: Only update binance_entry_price if it's missing
-                current_binance_entry_price = trade.get('binance_entry_price')
-                if not current_binance_entry_price or float(current_binance_entry_price) == 0:
-                    if avg_price > 0:
-                        updates['binance_entry_price'] = str(avg_price)
-                        logger.info(f"Updated missing binance_entry_price to execution price: {avg_price}")
+                # CRITICAL: Determine if this is an entry or exit order
+                is_exit_order = execution_data.get('reduceOnly', False) or execution_data.get('closePosition', False)
+                
+                if is_exit_order:
+                    # This is an exit order - update binance_exit_price
+                    updates['binance_exit_price'] = str(avg_price)
+                    logger.info(f"Updated binance_exit_price to execution price: {avg_price} (exit order - partial)")
+                else:
+                    # This is an entry order - update binance_entry_price if missing
+                    current_binance_entry_price = trade.get('binance_entry_price')
+                    if not current_binance_entry_price or float(current_binance_entry_price) == 0:
+                        if avg_price > 0:
+                            updates['binance_entry_price'] = str(avg_price)
+                            logger.info(f"Updated missing binance_entry_price to execution price: {avg_price} (entry order - partial)")
 
                 logger.info(f"Trade {trade_id} PARTIALLY_FILLED at {avg_price}")
 
@@ -282,7 +324,7 @@ class DatabaseSyncHandler:
         try:
             updates = {
                 'exchange_order_id': order_id,
-                'updated_at': datetime.now().isoformat()
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }
             await self.db_manager.update_existing_trade(trade_id, updates)
             logger.info(f"Updated trade {trade_id} with order ID {order_id}")
@@ -334,8 +376,7 @@ class DatabaseSyncHandler:
                 unrealized_pnl = self._calculate_unrealized_pnl(entry_price, current_price, position_size, position_type)
 
                 updates = {
-                    'unrealized_pnl': unrealized_pnl,
-                    'updated_at': datetime.now().isoformat()
+                    'unrealized_pnl': unrealized_pnl
                 }
 
                 await self.db_manager.update_existing_trade(trade_id, updates)
@@ -373,9 +414,7 @@ class DatabaseSyncHandler:
         Update trade with position data.
         """
         try:
-            updates = {
-                'updated_at': datetime.now().isoformat()
-            }
+            updates = {}
 
             # Add position-specific updates here
             # This would depend on the structure of position_data

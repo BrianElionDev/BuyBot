@@ -105,7 +105,7 @@ class OptimizedSyncManager:
             cutoff_iso = cutoff.isoformat()
 
             # Query for trades that need historical backfill
-            response = self.supabase.from_("trades").select("*").lt("createdAt", cutoff_iso).eq("status", "OPEN").execute()
+            response = self.supabase.from_("trades").select("*").lt("created_at", cutoff_iso).eq("status", "OPEN").execute()
 
             if response.data:
                 logger.info(f"Found {len(response.data)} trades needing historical backfill")
@@ -173,7 +173,7 @@ class OptimizedSyncManager:
         """
         try:
             # Find trades with sync errors
-            response = self.supabase.from_("trades").select("*").gt("sync_error_count", 0).gte("createdAt", (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()).execute()
+            response = self.supabase.from_("trades").select("*").gt("sync_error_count", 0).gte("created_at", (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()).execute()
 
             if response.data:
                 logger.info(f"Found {len(response.data)} trades with sync errors to recover")

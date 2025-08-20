@@ -500,9 +500,9 @@ class BinanceWebSocketManager:
         """
         try:
             if self.db_sync_handler:
-                if event_type == 'executionReport':
+                if event_type == 'ORDER_TRADE_UPDATE':
                     await self.db_sync_handler.handle_execution_report(event_data)
-                elif event_type == 'outboundAccountPosition':
+                elif event_type == 'ACCOUNT_UPDATE':
                     await self.db_sync_handler.handle_account_position(event_data)
                 elif event_type == 'ticker':
                     await self.db_sync_handler.handle_ticker(event_data)

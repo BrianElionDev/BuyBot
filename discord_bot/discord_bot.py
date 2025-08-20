@@ -485,25 +485,9 @@ class DiscordBot:
                 except Exception:
                     pass
 
-            # --- Fetch binance_entry_price from Binance ---
-            binance_entry_price = None
-            try:
-                coin_symbol_for_binance = parsed_data.get('coin_symbol')
-                if coin_symbol_for_binance:
-                    binance_entry_price = await self.price_service.get_coin_price(coin_symbol_for_binance)
-                    if binance_entry_price is not None:
-                        updates["binance_entry_price"] = float(binance_entry_price)
-                        logger.info(f"Fetched binance_entry_price for {coin_symbol_for_binance}: {binance_entry_price}")
-                    else:
-                        # CRITICAL: Set a fallback value to prevent empty field
-                        logger.warning(f"Could not fetch binance_entry_price for {coin_symbol_for_binance}, using entry_price as fallback")
-                        if entry_price_structured:
-                            updates["binance_entry_price"] = float(entry_price_structured)
-            except Exception as e:
-                logger.warning(f"Could not fetch binance_entry_price: {e}")
-                # CRITICAL: Set a fallback value to prevent empty field
-                if entry_price_structured:
-                    updates["binance_entry_price"] = float(entry_price_structured)
+            # --- DO NOT set binance_entry_price here - it should be set from actual execution price ---
+            # binance_entry_price will be set when the order is actually executed and we get the avgPrice from Binance
+            logger.info(f"binance_entry_price will be set from actual execution price when order is filled")
 
             # CRITICAL: Validate all required fields before updating database
             self._validate_required_fields(updates, trade_row['id'])
@@ -655,7 +639,6 @@ class DiscordBot:
         try:
             required_fields = {
                 'entry_price': 'Entry price from signal',
-                'binance_entry_price': 'Binance entry price for accurate PnL',
                 'coin_symbol': 'Coin symbol for trade identification',
                 'signal_type': 'Position type (LONG/SHORT) for PnL calculation'
             }

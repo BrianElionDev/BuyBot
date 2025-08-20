@@ -7,8 +7,9 @@ Tests real-time database updates when orders are filled on Binance.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from config import settings
+import sys
 
 from src.websocket.binance_websocket_manager import BinanceWebSocketManager
 from discord_bot.database import DatabaseManager
@@ -190,9 +191,9 @@ class WebSocketDatabaseSyncTester:
                 'position_size': 0.001,
                 'entry_price': 45000.0,
                 'status': 'PENDING',
-                'timestamp': datetime.now().isoformat(),
-                'created_at': datetime.now().isoformat(),
-                'updated_at': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
             response = self.supabase.from_("trades").insert(test_trade).execute()
@@ -280,4 +281,4 @@ async def main():
 
 if __name__ == "__main__":
     exit_code = asyncio.run(main())
-    sys.exit(exit_code)
+    sys.exit(exit_code)     
