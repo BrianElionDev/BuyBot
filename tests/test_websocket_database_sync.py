@@ -9,6 +9,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from config import settings
+import sys
 
 from src.websocket.binance_websocket_manager import BinanceWebSocketManager
 from discord_bot.database import DatabaseManager
@@ -280,4 +281,4 @@ async def main():
 
 if __name__ == "__main__":
     exit_code = asyncio.run(main())
-    sys.exit(exit_code) 
+    sys.exit(exit_code)     
