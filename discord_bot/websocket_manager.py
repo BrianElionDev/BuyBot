@@ -100,11 +100,10 @@ class DiscordBotWebSocketManager:
                 if status == 'FILLED':
                     logger.info(f"WebSocket: ORDER FILLED - {symbol} at {avg_price} - PnL: {realized_pnl}")
 
-                # Use the database sync handler to process the event (ONLY ONCE)
-                if self.db_sync_handler:
-                    await self.db_sync_handler.handle_execution_report(data)
-                else:
-                    logger.warning("Database sync handler not available")
+                # CRITICAL: Call database sync handler to update database
+                if self.ws_manager and self.ws_manager.db_sync_handler:
+                    await self.ws_manager.db_sync_handler.handle_execution_report(data)
+                    logger.info(f"Database sync called for order {order_id}")
 
             except Exception as e:
                 logger.error(f"Error in execution report handler: {e}")
@@ -126,9 +125,10 @@ class DiscordBotWebSocketManager:
                     if float(free) > 0 or float(locked) > 0:
                         logger.info(f"WebSocket: Balance - {asset}: Free={free}, Locked={locked}")
 
-                # Call the database sync handler if available
-                if self.db_sync_handler:
-                    await self.db_sync_handler.handle_account_position(data)
+                # CRITICAL: Call database sync handler to update database
+                if self.ws_manager and self.ws_manager.db_sync_handler:
+                    await self.ws_manager.db_sync_handler.handle_account_position(data)
+                    logger.info("Database sync called for account position update")
 
             except Exception as e:
                 logger.error(f"Error in account position handler: {e}")
@@ -146,9 +146,9 @@ class DiscordBotWebSocketManager:
                 if self.sync_stats['pnl_updates'] % 100 == 0:
                     logger.info(f"WebSocket: Ticker update #{self.sync_stats['pnl_updates']} - {symbol}: {price}")
 
-                # Call the database sync handler if available
-                if self.db_sync_handler:
-                    await self.db_sync_handler.handle_ticker(data)
+                # CRITICAL: Call database sync handler to update database
+                if self.ws_manager and self.ws_manager.db_sync_handler:
+                    await self.ws_manager.db_sync_handler.handle_ticker(data)
 
             except Exception as e:
                 logger.error(f"Error in ticker handler: {e}")

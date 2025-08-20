@@ -458,17 +458,21 @@ class DatabaseManager:
 
     async def save_alert_to_database(self, alert_data: Dict[str, Any]) -> bool:
         """
-        Saves an alert record to the alerts table.
+        Saves an alert record to the alerts table with default status.
         """
         if not self.supabase:
             logger.error("Supabase client not available.")
             return False
 
         try:
+            # Set default status to 'PENDING' if not provided
+            if 'status' not in alert_data:
+                alert_data['status'] = 'PENDING'
+
             response = self.supabase.from_("alerts").insert(alert_data).execute()
 
             if response.data:
-                logger.info(f"Successfully saved alert to database. ID: {response.data[0]['id']}")
+                logger.info(f"Successfully saved alert to database. ID: {response.data[0]['id']} with status: {alert_data.get('status')}")
                 return True
             else:
                 logger.error("Failed to save alert to database: no data returned")
