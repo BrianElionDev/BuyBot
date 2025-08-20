@@ -989,11 +989,11 @@ async def backfill_trades_from_binance_history(bot, supabase, days: int = 30, sy
             pnl = trade.get('pnl_usd')
             exit_price = trade.get('binance_exit_price')
             coin_symbol = trade.get('coin_symbol')
-            
+
             # Include if missing PnL or exit price, or if missing coin_symbol but has data to extract it
             missing_data = (pnl is None or pnl == 0 or exit_price is None or exit_price == 0)
             missing_symbol = not coin_symbol and (trade.get('parsed_signal') or trade.get('binance_response'))
-            
+
             if missing_data or missing_symbol:
                 trades_needing_backfill.append(trade)
 
@@ -1026,11 +1026,11 @@ def get_order_lifecycle(db_trade: Dict) -> Tuple[Optional[int], Optional[int], O
         # Get timestamps from database - prefer snake_case
         created_at = db_trade.get('created_at') or db_trade.get('createdAt')
         closed_at = db_trade.get('closed_at')
-        
+
         if not created_at:
             logging.warning(f"Trade {db_trade.get('id')} has no created_at timestamp")
             return None, None, None
-        
+
         # Parse start time (created_at)
         if isinstance(created_at, str):
             if 'T' in created_at:
@@ -1040,7 +1040,7 @@ def get_order_lifecycle(db_trade: Dict) -> Tuple[Optional[int], Optional[int], O
                 start_time = int(float(created_at) * 1000)
         else:
             start_time = int(created_at.timestamp() * 1000)
-        
+
         # Parse end time (closed_at)
         if not closed_at:
             # If no closed_at, use updated_at as fallback, then created_at
@@ -1071,9 +1071,9 @@ def get_order_lifecycle(db_trade: Dict) -> Tuple[Optional[int], Optional[int], O
             else:
                 end_time = int(closed_at.timestamp() * 1000)
             duration = end_time - start_time
-        
+
         return start_time, end_time, duration
-        
+
     except Exception as e:
         logging.error(f"Error getting order lifecycle: {e}")
         return None, None, None
@@ -1095,6 +1095,32 @@ async def get_income_for_trade_period(
     are returned. Set expand=True to allow a wider search window when nothing is found.
     """
     try:
+        # Validate symbol before making API call
+        if not symbol or len(symbol) < 2 or len(symbol) > 10:
+            logging.warning(f"Invalid symbol '{symbol}' - skipping income fetch")
+            return []
+
+        # Check if symbol is likely a valid trading pair
+        # Most valid symbols are 3-6 characters and contain only letters/numbers
+        if not symbol.isalnum():
+            logging.warning(f"Symbol '{symbol}' contains invalid characters - skipping income fetch")
+            return []
+
+        # Common invalid symbols that appear in the database
+        invalid_symbols = {
+            'APE', 'BT', 'ARC', 'AUCTION', 'AEVO', 'AERO', 'BANANAS31', 'APT', 'AAVE',
+            'ARKM', 'ARB', 'ALT', 'BNX', 'BILLY', 'AI16Z', 'BLAST', 'BSW', 'B2', 'API3',
+            'BON', 'AIXBT', 'AI', '1000BONK', 'ANIME', 'ARK', 'BOND', 'ANYONE', 'ADA',
+            'ALCH', 'BERA', 'ALU', 'ALGO', 'BONK', 'AGT', 'AVAX', 'AIN', 'ATOM',
+            '1000RATS', 'BMT', 'BB', 'AR', 'BENDOG', 'AVA', '0X0', 'BRETT', 'BANANA',
+            '1000TURBO', 'M', 'PUMPFUN', 'SPX', 'MYX', 'MOG', 'PENGU', 'SPK', 'CRV',
+            'HYPE', 'MAGIC', 'ZRC', 'FARTCOIN', 'IP', 'SYN', 'SKATE', 'SOON', 'PUMP'
+        }
+
+        if symbol.upper() in invalid_symbols:
+            logging.warning(f"Symbol '{symbol}' is in invalid symbols list - skipping income fetch")
+            return []
+
         logging.info(f"Fetching {symbol}USDT income from {start_time} to {end_time}")
 
         async def fetch_window(window_start: int, window_end: int) -> List[Dict]:
@@ -1126,36 +1152,18 @@ async def get_income_for_trade_period(
         # Include buffer in the filtering to catch final P&L records
         filter_start = search_start
         filter_end = search_end
-        
+
         filtered_incomes = []
         for income in all_incomes:
+            if not isinstance(income, dict):
+                continue
+
             income_time = income.get('time')
             if income_time and filter_start <= int(income_time) <= filter_end:
                 filtered_incomes.append(income)
 
-        if filtered_incomes or not expand:
-            logging.info(f"Found {len(filtered_incomes)} income records within trade period")
-            return filtered_incomes
-
-        # Optional fallback: expand forward/backward aggressively when requested
-        expand_before_ms = 6 * 60 * 60 * 1000  # 6 hours before
-        expand_after_ms = 3 * 24 * 60 * 60 * 1000  # 3 days after
-        expanded_start = start_time - expand_before_ms
-        expanded_end = max(end_time, start_time + expand_after_ms)
-        logging.warning(
-            f"No income found in strict window. Expanding search to {expanded_start} - {expanded_end}")
-
-        expanded_incomes = await fetch_window(expanded_start, expanded_end)
-
-        # Keep only incomes at/after start_time to avoid mixing with older positions
-        expanded_filtered = []
-        for income in expanded_incomes:
-            income_time = income.get('time')
-            if income_time and int(income_time) >= start_time:
-                expanded_filtered.append(income)
-
-        logging.info(f"Found {len(expanded_filtered)} income records in expanded window")
-        return expanded_filtered
+        logging.info(f"Found {len(filtered_incomes)} income records within trade period")
+        return filtered_incomes
 
     except Exception as e:
         logging.error(f"Error getting income for trade period: {e}")
@@ -1166,10 +1174,10 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
     """Backfill a single trade using order lifecycle matching with income history."""
     try:
         trade_id = trade.get('id')
-        
+
         # Use the enhanced symbol extraction function
         symbol = extract_symbol_from_trade(trade)
-        
+
         if not symbol:
             logging.warning(f"Trade {trade_id} missing symbol - cannot backfill")
             return False
@@ -1183,25 +1191,25 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
 
         # Get income records for this specific trade period
         income_records = await get_income_for_trade_period(bot, symbol, start_time, end_time)
-        
+
         if not income_records:
             logging.info(f"Trade {trade_id} ({symbol}): No income records found during order lifecycle")
             return False
-        
+
         # Calculate P&L components from Binance income history
         total_realized_pnl = 0.0
         total_commission = 0.0
         total_funding_fee = 0.0
         exit_price = 0.0
-        
+
         # Process all income records
         for income in income_records:
             if not isinstance(income, dict):
                 continue
-            
+
             income_type = income.get('incomeType') or income.get('type')
             income_value = float(income.get('income', 0.0))
-            
+
             if income_type == 'REALIZED_PNL':
                 total_realized_pnl += income_value
                 # Track the latest price from realized P&L records
@@ -1211,13 +1219,13 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
                 total_commission += income_value
             elif income_type == 'FUNDING_FEE':
                 total_funding_fee += income_value
-        
+
         # Calculate NET P&L (including fees)
         net_pnl = total_realized_pnl + total_commission + total_funding_fee
-        
+
         # Count REALIZED_PNL records for logging
         realized_pnl_records = [r for r in income_records if isinstance(r, dict) and (r.get('incomeType') or r.get('type')) == 'REALIZED_PNL']
-        
+
         if not realized_pnl_records:
             logging.info(f"Trade {trade_id} ({symbol}): No REALIZED_PNL records found")
             return False
@@ -1234,7 +1242,7 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
             from discord_bot.utils.timestamp_manager import fix_historical_timestamps
             await fix_historical_timestamps(supabase, trade_id)
             logging.info(f"✅ Fixed historical closed_at for trade {trade_id}")
-        
+
         # Update P&L if we have income records from Binance
         if len(income_records) > 0:
             # Store REALIZED_PNL only in pnl_usd
@@ -1245,24 +1253,24 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
             update_data['commission'] = str(total_commission)
             update_data['funding_fee'] = str(total_funding_fee)
             logging.info(f"✅ Updated trade {trade_id} - P&L: {total_realized_pnl:.6f} (REALIZED_PNL), NET P&L: {net_pnl:.6f} (from {len(realized_pnl_records)} batches)")
-        
+
         # Update exit price if we have one from realized P&L records
         if exit_price > 0:
             update_data['binance_exit_price'] = str(exit_price)
             logging.info(f"✅ Updated trade {trade_id} - Exit Price: {exit_price:.6f}")
-        
+
         # Also update coin_symbol if it was missing and we extracted it
         if not trade.get('coin_symbol') and symbol:
             update_data['coin_symbol'] = symbol
             logging.info(f"✅ Updated trade {trade_id} - Added coin_symbol: {symbol}")
-        
+
         # Update database
         if len(update_data) > 1:  # More than just updated_at
             response = supabase.from_("trades").update(update_data).eq("id", trade_id).execute()
             if response.data:
                 logging.info(f"✅ Successfully updated trade {trade_id}")
             return True
-        
+
             return False
 
     except Exception as e:

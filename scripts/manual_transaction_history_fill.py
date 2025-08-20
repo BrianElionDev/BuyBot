@@ -26,25 +26,52 @@ class TransactionHistoryFiller:
         self.bot = DiscordBot()
         self.db_manager = DatabaseManager(self.bot.supabase)
 
-    async def fetch_income_data(self, symbol: str = "", start_time: int = 0, end_time: int = 0, 
+    async def fetch_income_data(self, symbol: str = "", start_time: int = 0, end_time: int = 0,
                                income_type: str = "", limit: int = 1000) -> List[Dict[str, Any]]:
         """
         Fetch income data from Binance API.
-        
+
         Args:
             symbol: Trading pair symbol (e.g., 'BTCUSDT')
             start_time: Start time in milliseconds
             end_time: End time in milliseconds
-            income_type: Income type filter
+            income_type: Income type filter (optional)
             limit: Number of records to retrieve
-            
+
         Returns:
             List of income records
         """
         try:
-            # Initialize Binance client if needed
-            if not self.bot.binance_exchange.client:
-                await self.bot.binance_exchange._init_client()
+            # Validate symbol before making API call
+            if not symbol or len(symbol) < 2 or len(symbol) > 10:
+                logger.warning(f"Invalid symbol '{symbol}' - skipping income fetch")
+                return []
+
+            # Check if symbol is likely a valid trading pair
+            if not symbol.isalnum():
+                logger.warning(f"Symbol '{symbol}' contains invalid characters - skipping income fetch")
+                return []
+
+            # Common invalid symbols that appear in the database
+            invalid_symbols = {
+                'APE', 'BT', 'ARC', 'AUCTION', 'AEVO', 'AERO', 'BANANAS31', 'APT', 'AAVE',
+                'ARKM', 'ARB', 'ALT', 'BNX', 'BILLY', 'AI16Z', 'BLAST', 'BSW', 'B2', 'API3',
+                'BON', 'AIXBT', 'AI', '1000BONK', 'ANIME', 'ARK', 'BOND', 'ANYONE', 'ADA',
+                'ALCH', 'BERA', 'ALU', 'ALGO', 'BONK', 'AGT', 'AVAX', 'AIN', 'ATOM',
+                '1000RATS', 'BMT', 'BB', 'AR', 'BENDOG', 'AVA', '0X0', 'BRETT', 'BANANA',
+                '1000TURBO', 'M', 'PUMPFUN', 'SPX', 'MYX', 'MOG', 'PENGU', 'SPK', 'CRV',
+                'HYPE', 'MAGIC', 'ZRC', 'FARTCOIN', 'IP', 'SYN', 'SKATE', 'SOON', 'PUMP'
+            }
+
+            if symbol.upper() in invalid_symbols:
+                logger.warning(f"Symbol '{symbol}' is in invalid symbols list - skipping income fetch")
+                return []
+
+            # Add USDT suffix if not present
+            if not symbol.endswith('USDT'):
+                symbol = f"{symbol}USDT"
+
+            logger.info(f"Fetching income data for {symbol} from {start_time} to {end_time}")
 
             income_records = await self.bot.binance_exchange.get_income_history(
                 symbol=symbol,
@@ -55,7 +82,7 @@ class TransactionHistoryFiller:
             )
 
             logger.info(f"Fetched {len(income_records)} income records for {symbol}")
-            return income_records if isinstance(income_records, list) else [income_records]
+            return income_records
 
         except Exception as e:
             logger.error(f"Error fetching income data: {e}")
@@ -64,10 +91,10 @@ class TransactionHistoryFiller:
     def transform_income_to_transaction(self, income_record: Dict[str, Any]) -> Dict[str, Any]:
         """
         Transform Binance income record to transaction_history format.
-        
+
         Args:
             income_record: Raw income record from Binance API
-            
+
         Returns:
             Transaction record in the required format
         """
@@ -97,10 +124,10 @@ class TransactionHistoryFiller:
     async def insert_single_transaction(self, transaction: Dict[str, Any]) -> bool:
         """
         Insert a single transaction record with duplicate checking.
-        
+
         Args:
             transaction: Transaction record to insert
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -126,17 +153,17 @@ class TransactionHistoryFiller:
             logger.error(f"Error inserting transaction: {e}")
             return False
 
-    async def fill_transaction_history_manual(self, symbol: str = "", days: int = 30, 
+    async def fill_transaction_history_manual(self, symbol: str = "", days: int = 30,
                                             income_type: str = "", batch_size: int = 100) -> Dict[str, Any]:
         """
         Manually fill transaction_history table with income data.
-        
+
         Args:
             symbol: Trading pair symbol (e.g., 'BTCUSDT')
             days: Number of days to look back
             income_type: Income type filter (optional)
             batch_size: Number of records to process in each batch
-            
+
         Returns:
             Summary of the operation
         """
@@ -227,17 +254,17 @@ class TransactionHistoryFiller:
                 'skipped': 0
             }
 
-    async def fill_from_date(self, start_date: str, symbol: str = "", 
+    async def fill_from_date(self, start_date: str, symbol: str = "",
                            income_type: str = "", batch_size: int = 100) -> Dict[str, Any]:
         """
         Fill transaction history from a specific date to now.
-        
+
         Args:
             start_date: Start date in format 'YYYY-MM-DD' (e.g., '2025-08-10')
             symbol: Trading pair symbol (e.g., 'BTCUSDT')
             income_type: Income type filter (optional)
             batch_size: Number of records to process in each batch
-            
+
         Returns:
             Summary of the operation
         """
@@ -245,11 +272,11 @@ class TransactionHistoryFiller:
             # Parse start date
             start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
             end_dt = datetime.now(timezone.utc)
-            
+
             # Convert to milliseconds for Binance API
             start_time = int(start_dt.timestamp() * 1000)
             end_time = int(end_dt.timestamp() * 1000)
-            
+
             logger.info(f"Filling transaction history from {start_date} to now")
             logger.info(f"Time range: {start_dt} to {end_dt}")
 
@@ -338,11 +365,11 @@ class TransactionHistoryFiller:
     async def fill_all_symbols_manual(self, days: int = 30, income_type: str = "") -> Dict[str, Any]:
         """
         Fill transaction history for all available symbols.
-        
+
         Args:
             days: Number of days to look back
             income_type: Income type filter (optional)
-            
+
         Returns:
             Summary of the operation
         """
@@ -361,7 +388,7 @@ class TransactionHistoryFiller:
 
             for symbol in symbols:
                 logger.info(f"Processing symbol: {symbol}")
-                
+
                 result = await self.fill_transaction_history_manual(
                     symbol=symbol,
                     days=days,
@@ -409,51 +436,51 @@ async def main():
     print("2. Fill all symbols")
     print("3. Fill from specific date (e.g., 10th August)")
     print("4. Custom parameters")
-    
+
     choice = input("Enter your choice (1-4): ").strip()
 
     if choice == "1":
         symbol = input("Enter symbol (e.g., BTCUSDT): ").strip()
         days = int(input("Enter number of days to look back (default 30): ") or "30")
         income_type = input("Enter income type filter (optional, press Enter to skip): ").strip() or ""
-        
+
         result = await filler.fill_transaction_history_manual(
             symbol=symbol,
             days=days,
             income_type=income_type
         )
-        
+
     elif choice == "2":
         days = int(input("Enter number of days to look back (default 30): ") or "30")
         income_type = input("Enter income type filter (optional, press Enter to skip): ").strip() or ""
-        
+
         result = await filler.fill_all_symbols_manual(
             days=days,
             income_type=income_type
         )
-        
+
     elif choice == "3":
         start_date = input("Enter start date (YYYY-MM-DD, default 2025-08-10): ").strip() or "2025-08-10"
         symbol = input("Enter symbol (optional, press Enter to skip): ").strip() or ""
         income_type = input("Enter income type filter (optional, press Enter to skip): ").strip() or ""
-        
+
         print(f"\nThis will fill transaction history from {start_date} to now.")
         confirmation = input("Do you want to proceed? (y/N): ")
         if confirmation.lower() != 'y':
             print("Operation cancelled.")
             return
-        
+
         result = await filler.fill_from_date(
             start_date=start_date,
             symbol=symbol,
             income_type=income_type
         )
-        
+
     elif choice == "4":
         # Custom implementation
         print("Custom implementation - modify the script as needed")
         return
-        
+
     else:
         print("Invalid choice")
         return
@@ -465,7 +492,7 @@ async def main():
     print(f"Processed: {result.get('processed', result.get('total_processed', 0))}")
     print(f"Inserted: {result.get('inserted', result.get('total_inserted', 0))}")
     print(f"Skipped: {result.get('skipped', result.get('total_skipped', 0))}")
-    
+
     if result.get('start_date'):
         print(f"Date Range: {result.get('start_date')} to {result.get('end_date')}")
 
