@@ -434,12 +434,11 @@ class DiscordBot:
             signal = InitialDiscordSignal(**signal_data)
             logger.info(f"Processing initial signal: {signal.structured}")
 
-            trade_row = await self.db_manager.find_trade_by_timestamp(signal.timestamp)
+            trade_row = await self.db_manager.find_trade_by_discord_id(signal.discord_id)
             if not trade_row:
-                clean_timestamp = signal.timestamp.replace('T', ' ').rstrip('Z')
-                error_msg = f"No existing trade found for timestamp: '{signal.timestamp}'. Query was performed using cleaned timestamp: '{clean_timestamp}'"
+                error_msg = f"No existing trade found for discord_id: {signal.discord_id}"
                 logger.error(error_msg)
-                return {"status": "error", "message": f"No existing trade found for timestamp: {signal.timestamp}"}
+                return {"status": "error", "message": f"No existing trade found for discord_id: {signal.discord_id}"}
 
             # 1. Sanitize the structured signal and then parse it with the AI
             logger.info(f"Original structured signal: '{signal.structured}'")
