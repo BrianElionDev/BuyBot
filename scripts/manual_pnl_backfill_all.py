@@ -189,14 +189,14 @@ class ManualPnLBackfiller:
             
             # Always update P&L if we have income records from Binance
             if len(income_records) > 0:
-                # Store REALIZED_PNL only in pnl_usd (existing column)
+                # Store REALIZED_PNL in pnl_usd (existing column)
                 update_data['pnl_usd'] = str(total_realized_pnl)
                 
-                # Only add new columns if they exist in the database
-                # Note: These columns need to be added to the database schema first
+                # Store NET P&L (including fees) in net_pnl (existing column)
                 update_data['net_pnl'] = str(net_pnl)
-                # update_data['commission'] = str(total_commission)
-                # update_data['funding_fee'] = str(total_funding_fee)
+                
+                # Update last sync timestamp
+                update_data['last_pnl_sync'] = datetime.now(timezone.utc).isoformat()
             
             # Always update exit price if we have one from realized P&L records
             if exit_price > 0:
