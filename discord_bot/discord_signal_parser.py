@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 import json
 import openai
 from config import settings
@@ -170,8 +170,11 @@ class DiscordSignalParser:
 
         # Parse the cleaned signal
         parsed_data = await _parse_with_openai(cleaned_signal)
+        if not parsed_data:
+            return None
+
         parsed_data['order_type'] = 'LIMIT' if "LIMIT" in signal_content.upper() else 'MARKET'
-        if parsed_data and quantity and coin_symbol:
+        if quantity and coin_symbol:
             # Add quantity information to the parsed data
             parsed_data['quantity_multiplier'] = quantity
             logger.info(f"Added quantity multiplier {quantity} for {coin_symbol}")

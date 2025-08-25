@@ -71,7 +71,9 @@ async def process_pending_trades_for_july_9_and_10():
                 "structured": trade.get("structured"),
             }
 
-            await bot.process_initial_signal(signal_payload)
+            from discord_bot.models import InitialDiscordSignal
+            signal_model = InitialDiscordSignal(**signal_payload)  # type: ignore
+            await bot.process_initial_signal(signal_model)
             logging.info(f"Successfully processed trade {trade.get('id')}.")
 
         except Exception as e:

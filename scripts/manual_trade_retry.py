@@ -71,7 +71,9 @@ async def process_single_trade(bot: DiscordBot, supabase: Client, discord_id: st
             # Override the price check threshold to allow retrying trades
             initial_signal_data['price_threshold_override'] = 99999  # Effectively disables the check
             # Do NOT set client_order_id here; let the bot generate a new UUID
-            result = await bot.process_initial_signal(initial_signal_data)
+            from discord_bot.models import InitialDiscordSignal
+            signal_model = InitialDiscordSignal(**initial_signal_data)  # type: ignore
+            result = await bot.process_initial_signal(signal_model)
             if result.get("status") == "success":
                 logging.info(f"✅ Successfully re-processed initial signal.")
             else:

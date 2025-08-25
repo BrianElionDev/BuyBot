@@ -77,7 +77,9 @@ async def retry_balance_check_failures():
             try:
                 # --- 1. Re-process the initial signal ---
                 logging.info(f"--- (1/2) Re-processing initial signal for trade {trade_id} ---")
-                result = await bot.process_initial_signal(signal_data)
+                from discord_bot.models import InitialDiscordSignal
+                signal_model = InitialDiscordSignal(**signal_data)  # type: ignore
+                result = await bot.process_initial_signal(signal_model)
                 if result.get("status") == "success":
                     logging.info(f"✅ Successfully re-processed initial signal for trade ID {trade_id}.")
                 else:

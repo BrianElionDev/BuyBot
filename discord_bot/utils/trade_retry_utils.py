@@ -225,8 +225,12 @@ async def process_single_trade(bot: DiscordBot, supabase: Client, discord_id: st
         logging.error(f"Skipping initial signal for trade ID {trade.get('id')} due to missing data.")
     else:
         try:
-            initial_signal_data['price_threshold_override'] = 99999
-            result = await bot.process_initial_signal(initial_signal_data)
+            from discord_bot.models import InitialDiscordSignal
+            # Remove the price_threshold_override as it's not part of the model
+            signal_data = {k: v for k, v in initial_signal_data.items() if k != 'price_threshold_override'}
+            # Type assertion since we already checked all values are not None
+            signal_model = InitialDiscordSignal(**signal_data)  # type: ignore
+            result = await bot.process_initial_signal(signal_model)
             if result.get("status") == "success":
                 logging.info(f"Successfully re-processed initial signal.")
             else:
@@ -1255,13 +1259,13 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
         if len(income_records) > 0:
             # Store REALIZED_PNL in pnl_usd (existing column)
             update_data['pnl_usd'] = str(total_realized_pnl)
-            
+
             # Store NET P&L (including fees) in net_pnl (existing column)
             update_data['net_pnl'] = str(net_pnl)
-            
+
             # Update last sync timestamp
             update_data['last_pnl_sync'] = datetime.now(timezone.utc).isoformat()
-            
+
             logging.info(f"✅ Updated trade {trade_id} - P&L: {total_realized_pnl:.6f} (REALIZED_PNL), NET P&L: {net_pnl:.6f} (from {len(realized_pnl_records)} batches)")
 
         # Update exit price if we have one from realized P&L records

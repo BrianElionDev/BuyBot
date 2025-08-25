@@ -99,7 +99,7 @@ class DiscordBot:
             logger.warning(f"Unexpected parsed_signal type: {type(parsed_signal_data)}")
             return {}
 
-    def parse_alert_content(self, content, signal_data):
+    def parse_alert_content(self, content):
         """
         Parse alert content and determine what action(s) should be taken.
         Returns structured data for logging. Can handle single or multiple actions.
@@ -435,7 +435,6 @@ class DiscordBot:
                 logger.error(f"Missing required fields in signal: discord_id={signal.discord_id}, trader={signal.trader}, content_length={len(signal.content) if signal.content else 0}")
                 return {"status": "error", "message": "Missing required fields in signal"}
 
-            # Find existing trade record (assumed to exist by the time it hits this endpoint)
             trade_row = await self.db_manager.find_trade_by_discord_id(signal.discord_id)
             if not trade_row:
                 logger.error(f"No trade found for discord_id {signal.discord_id}")
@@ -462,12 +461,8 @@ class DiscordBot:
                     'parsed_signal': parsed_signal,
                     'coin_symbol': parsed_signal['coin_symbol'],
                     'signal_type': parsed_signal.get('signal_type'),
-                    'order_type': parsed_signal.get('order_type'),
                     'position_size': parsed_signal.get('position_size'),
-                    'entry_price': parsed_signal.get('entry_price'),
-                    'stop_loss': parsed_signal.get('stop_loss'),
-                    'take_profit': parsed_signal.get('take_profit'),
-                    'take_profit_2': parsed_signal.get('take_profit_2')
+                    'entry_price': parsed_signal.get('entry_price')
                 }
 
                 await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates=trade_updates)
