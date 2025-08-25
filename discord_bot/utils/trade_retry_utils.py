@@ -943,7 +943,7 @@ async def sync_pnl_data_with_binance(bot, supabase):
                                 'exit_price': entry_price,  # For single trades, entry = exit
                                 'realized_pnl': realized_pnl,
                                 'unrealized_pnl': unrealized_pnl,
-                                'last_pnl_sync': datetime.utcnow().isoformat()
+                                'last_pnl_sync': datetime.now(timezone.utc).isoformat()
                             }
 
                             if update_trade_pnl(supabase, trade['id'], pnl_data):

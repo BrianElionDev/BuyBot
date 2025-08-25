@@ -183,8 +183,9 @@ class DatabaseSyncHandler:
             order_status = map_binance_order_status(status)
             updates['order_status'] = order_status
 
-            # Determine position status based on order status and executed quantity
-            position_status = determine_position_status_from_order(order_status, executed_qty)
+            # CRITICAL: Determine position status based on order status, executed quantity, and order type
+            is_exit_order = execution_data.get('reduceOnly', False) or execution_data.get('closePosition', False)
+            position_status = determine_position_status_from_order(order_status, executed_qty, is_exit_order)
             updates['status'] = position_status  # status column now holds position status
 
             # Add additional data based on order status
@@ -196,6 +197,12 @@ class DatabaseSyncHandler:
                         'binance_exit_price': str(avg_price),
                         'pnl_usd': str(realized_pnl),
                         'realized_pnl': str(realized_pnl),
+                        'position_size': str(executed_qty)
+                    })
+            elif status == 'PARTIALLY_FILLED':
+                if executed_qty > 0:
+                    # CRITICAL: Update position size for partial fills
+                    updates.update({
                         'position_size': str(executed_qty)
                     })
 
@@ -215,8 +222,9 @@ class DatabaseSyncHandler:
                             await self.websocket_timestamp_handler.handle_order_execution(execution_data)
                     else:
                         # This is an entry order - update binance_entry_price and set created_at
+                        # CRITICAL: Only set binance_entry_price if there's actual execution (executed_qty > 0)
                         current_binance_entry_price = trade.get('binance_entry_price')
-                        if not current_binance_entry_price or float(current_binance_entry_price) == 0:
+                        if executed_qty > 0 and (not current_binance_entry_price or float(current_binance_entry_price) == 0):
                             if avg_price > 0:
                                 updates['binance_entry_price'] = str(avg_price)
                         
@@ -244,8 +252,9 @@ class DatabaseSyncHandler:
                     logger.info(f"Updated binance_exit_price to execution price: {avg_price} (exit order - partial)")
                 else:
                     # This is an entry order - update binance_entry_price if missing
+                    # CRITICAL: Only set binance_entry_price if there's actual execution (executed_qty > 0)
                     current_binance_entry_price = trade.get('binance_entry_price')
-                    if not current_binance_entry_price or float(current_binance_entry_price) == 0:
+                    if executed_qty > 0 and (not current_binance_entry_price or float(current_binance_entry_price) == 0):
                         if avg_price > 0:
                             updates['binance_entry_price'] = str(avg_price)
                             logger.info(f"Updated missing binance_entry_price to execution price: {avg_price} (entry order - partial)")
@@ -256,7 +265,7 @@ class DatabaseSyncHandler:
                 # CRITICAL: Update position size for new orders
                 if executed_qty > 0:
                     updates['position_size'] = str(executed_qty)
-                logger.info(f"Trade {trade_id} order created")
+                logger.info(f"Trade {trade_id} order unfilled")
 
             elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
                 logger.warning(f"Trade {trade_id} {status} - {execution_data}")

@@ -3,7 +3,7 @@ import logging
 import re
 import time
 from typing import Dict, Any, Optional, Union, List, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 import uuid
@@ -694,7 +694,7 @@ class DiscordBot:
                 alert_updates = {
                     "parsed_alert": {
                         "original_content": signal.content,
-                        "processed_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         "original_trade_id": trade_row['id'],
                         "coin_symbol": self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol'),
                         "trader": signal.trader,
@@ -1118,7 +1118,7 @@ class DiscordBot:
             alert_updates = {
                 "parsed_alert": {
                     "original_content": signal.content,
-                    "processed_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                     "action_determined": parsed_action,
                     "original_trade_id": trade_row['id'],
                     "coin_symbol": parsed_action.get('coin_symbol', self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')),

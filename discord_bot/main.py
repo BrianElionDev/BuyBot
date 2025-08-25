@@ -168,61 +168,23 @@ async def auto_fill_transaction_history(bot, supabase):
         filler.bot = bot  # Use the existing bot instance
         filler.db_manager = DatabaseManager(supabase)  # Use the existing supabase instance
 
-        # Get all active symbols from recent trades
-        response = supabase.from_("trades").select("coin_symbol").not_.is_("coin_symbol", "null").limit(100).execute()
-        all_symbols = list(set([trade['coin_symbol'] for trade in response.data if trade.get('coin_symbol')]))
+        # No need to filter symbols - we'll fetch ALL income data from Binance
+        logger.info("[Scheduler] Auto-filling transaction history for all symbols")
 
-        # Filter out invalid symbols
-        invalid_symbols = {
-            'APE', 'BT', 'ARC', 'AUCTION', 'AEVO', 'AERO', 'BANANAS31', 'APT', 'AAVE',
-            'ARKM', 'ARB', 'ALT', 'BNX', 'BILLY', 'AI16Z', 'BLAST', 'BSW', 'B2', 'API3',
-            'BON', 'AIXBT', 'AI', '1000BONK', 'ANIME', 'ARK', 'BOND', 'ANYONE', 'ADA',
-            'ALCH', 'BERA', 'ALU', 'ALGO', 'BONK', 'AGT', 'AVAX', 'AIN', 'ATOM',
-            '1000RATS', 'BMT', 'BB', 'AR', 'BENDOG', 'AVA', '0X0', 'BRETT', 'BANANA',
-            '1000TURBO', 'M', 'PUMPFUN', 'SPX', 'MYX', 'MOG', 'PENGU', 'SPK', 'CRV',
-            'HYPE', 'MAGIC', 'ZRC', 'FARTCOIN', 'IP', 'SYN', 'SKATE', 'SOON', 'PUMP'
-        }
+        # Use the last sync time approach to avoid duplicates - fetch ALL income data
+        result = await filler.fill_transaction_history_manual(
+            symbol="",  # Empty symbol fetches ALL income data
+            days=1,  # Last 24 hours (will be overridden by last sync time if data exists)
+            income_type="",
+            batch_size=100
+        )
 
-        # Filter symbols
-        valid_symbols = []
-        for symbol in all_symbols:
-            if (symbol and len(symbol) >= 2 and len(symbol) <= 10 and
-                symbol.isalnum() and symbol.upper() not in invalid_symbols):
-                valid_symbols.append(symbol)
-            else:
-                logger.warning(f"Skipping invalid symbol '{symbol}' in transaction history autofill")
-
-        if not valid_symbols:
-            logger.info("[Scheduler] No valid symbols found for transaction history autofill")
-            return
-
-        logger.info(f"[Scheduler] Auto-filling transaction history for {len(valid_symbols)} valid symbols")
-
-        total_inserted = 0
-        total_skipped = 0
-
-        for symbol in valid_symbols:
-            try:
-                # Use the existing fill method for last 24 hours
-                result = await filler.fill_transaction_history_manual(
-                    symbol=symbol,
-                    days=1,  # Last 24 hours
-                    income_type="",
-                    batch_size=100
-                )
-
-                if result.get('success'):
-                    total_inserted += result.get('inserted', 0)
-                    total_skipped += result.get('skipped', 0)
-
-                # Rate limiting between symbols
-                await asyncio.sleep(0.5)
-
-            except Exception as e:
-                logger.error(f"[Scheduler] Error processing symbol {symbol}: {e}")
-                continue
-
-        logger.info(f"[Scheduler] Transaction history autofill completed: {total_inserted} inserted, {total_skipped} skipped")
+        if result.get('success'):
+            total_inserted = result.get('inserted', 0)
+            total_skipped = result.get('skipped', 0)
+            logger.info(f"[Scheduler] Transaction history autofill completed: {total_inserted} inserted, {total_skipped} skipped")
+        else:
+            logger.error(f"[Scheduler] Transaction history autofill failed: {result.get('message', 'Unknown error')}")
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in transaction history autofill: {e}")

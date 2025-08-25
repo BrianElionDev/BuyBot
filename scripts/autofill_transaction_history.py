@@ -62,7 +62,7 @@ class AutoTransactionHistoryFiller:
         Fetch income data in chunks to handle large time ranges.
 
         Args:
-            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            symbol: Trading pair symbol (e.g., 'BTCUSDT'). If empty, fetches for ALL symbols
             start_time: Start time in milliseconds
             end_time: End time in milliseconds
             income_type: Income type filter (optional)
@@ -72,36 +72,17 @@ class AutoTransactionHistoryFiller:
             List of income records
         """
         try:
-            # Validate symbol before making API call
-            if not symbol or len(symbol) < 2 or len(symbol) > 10:
-                logger.warning(f"Invalid symbol '{symbol}' - skipping income fetch")
-                return []
+            # No local symbol validation or filtering; Binance API will validate
 
-            # Check if symbol is likely a valid trading pair
-            if not symbol.isalnum():
-                logger.warning(f"Symbol '{symbol}' contains invalid characters - skipping income fetch")
-                return []
+            # Get the last sync time to avoid re-syncing existing transactions
+            last_sync_time = await self.db_manager.get_last_transaction_sync_time()
+            
+            # If we have existing transactions, start from the last one + 1ms
+            if last_sync_time > 0 and start_time < last_sync_time:
+                start_time = last_sync_time + 1
+                logger.info(f"Starting sync from last transaction time: {start_time} ({datetime.fromtimestamp(start_time/1000, tz=timezone.utc)})")
 
-            # Common invalid symbols that appear in the database
-            invalid_symbols = {
-                'APE', 'BT', 'ARC', 'AUCTION', 'AEVO', 'AERO', 'BANANAS31', 'APT', 'AAVE',
-                'ARKM', 'ARB', 'ALT', 'BNX', 'BILLY', 'AI16Z', 'BLAST', 'BSW', 'B2', 'API3',
-                'BON', 'AIXBT', 'AI', '1000BONK', 'ANIME', 'ARK', 'BOND', 'ANYONE', 'ADA',
-                'ALCH', 'BERA', 'ALU', 'ALGO', 'BONK', 'AGT', 'AVAX', 'AIN', 'ATOM',
-                '1000RATS', 'BMT', 'BB', 'AR', 'BENDOG', 'AVA', '0X0', 'BRETT', 'BANANA',
-                '1000TURBO', 'M', 'PUMPFUN', 'SPX', 'MYX', 'MOG', 'PENGU', 'SPK', 'CRV',
-                'HYPE', 'MAGIC', 'ZRC', 'FARTCOIN', 'IP', 'SYN', 'SKATE', 'SOON', 'PUMP'
-            }
-
-            if symbol.upper() in invalid_symbols:
-                logger.warning(f"Symbol '{symbol}' is in invalid symbols list - skipping income fetch")
-                return []
-
-            # Add USDT suffix if not present
-            if not symbol.endswith('USDT'):
-                symbol = f"{symbol}USDT"
-
-            logger.info(f"Fetching income data for {symbol} from {start_time} to {end_time}")
+            logger.info(f"Fetching income data for {symbol or 'ALL SYMBOLS'} from {start_time} to {end_time}")
 
             all_records = []
             chunk_start = start_time
@@ -111,13 +92,22 @@ class AutoTransactionHistoryFiller:
                 chunk_end = min(chunk_start + chunk_size, end_time)
 
                 try:
-                    chunk_records = await self.bot.binance_exchange.get_income_history(
-                        symbol=symbol,
-                        income_type=income_type,
-                        start_time=chunk_start,
-                        end_time=chunk_end,
-                        limit=1000
-                    )
+                    # Call Binance without symbol if not provided to fetch ALL symbols
+                    if symbol:
+                        chunk_records = await self.bot.binance_exchange.get_income_history(
+                            symbol=symbol,
+                            income_type=income_type,
+                            start_time=chunk_start,
+                            end_time=chunk_end,
+                            limit=1000
+                        )
+                    else:
+                        chunk_records = await self.bot.binance_exchange.get_income_history(
+                            income_type=income_type,
+                            start_time=chunk_start,
+                            end_time=chunk_end,
+                            limit=1000
+                        )
                     all_records.extend(chunk_records)
                     await asyncio.sleep(0.5)  # Rate limiting
                 except Exception as e:
@@ -125,7 +115,7 @@ class AutoTransactionHistoryFiller:
 
                 chunk_start = chunk_end
 
-            logger.info(f"Fetched {len(all_records)} total income records for {symbol}")
+            logger.info(f"Fetched {len(all_records)} total income records for {symbol or 'ALL SYMBOLS'}")
             return all_records
 
         except Exception as e:
@@ -216,7 +206,7 @@ class AutoTransactionHistoryFiller:
                     'success': True
                 }
 
-            # Insert transactions in batches
+            # Insert transactions in batches (no duplicate checking; last sync prevents reruns)
             batch_size = 100
             inserted = 0
             skipped = 0
@@ -224,28 +214,11 @@ class AutoTransactionHistoryFiller:
             for i in range(0, len(transactions), batch_size):
                 batch = transactions[i:i + batch_size]
 
-                # Check for duplicates before inserting
-                filtered_batch = []
-                for transaction in batch:
-                    exists = await self.db_manager.check_transaction_exists(
-                        time=transaction['time'],
-                        type=transaction['type'],
-                        amount=transaction['amount'],
-                        asset=transaction['asset'],
-                        symbol=transaction['symbol']
-                    )
-
-                    if not exists:
-                        filtered_batch.append(transaction)
-                    else:
-                        skipped += 1
-
-                if filtered_batch:
-                    success = await self.db_manager.insert_transaction_history_batch(filtered_batch)
-                    if success:
-                        inserted += len(filtered_batch)
-                    else:
-                        skipped += len(filtered_batch)
+                success = await self.db_manager.insert_transaction_history_batch(batch)
+                if success:
+                    inserted += len(batch)
+                else:
+                    skipped += len(batch)
 
                 # Rate limiting
                 await asyncio.sleep(0.1)
@@ -288,12 +261,10 @@ class AutoTransactionHistoryFiller:
             if not self.bot.binance_exchange.client:
                 await self.bot.binance_exchange._init_client()
 
-            # Use default symbols if none provided
-            if symbols is None:
-                symbols = [
-                    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'SOLUSDT',
-                    'DOTUSDT', 'DOGEUSDT', 'AVAXUSDT', 'MATICUSDT', 'LINKUSDT'
-                ]
+            # If no symbols provided, fetch ALL symbols in one pass
+            fetch_all_symbols = symbols is None or len(symbols) == 0
+            if fetch_all_symbols:
+                symbols = [""]  # empty string means ALL symbols
 
             # Calculate time range
             end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -307,7 +278,7 @@ class AutoTransactionHistoryFiller:
             results = []
 
             for symbol in symbols:
-                logger.info(f"Processing symbol: {symbol}")
+                logger.info(f"Processing symbol: {symbol or 'ALL SYMBOLS'}")
 
                 result = await self.process_symbol_transactions(
                     symbol=symbol,

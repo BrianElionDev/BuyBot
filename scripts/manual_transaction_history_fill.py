@@ -32,7 +32,7 @@ class TransactionHistoryFiller:
         Fetch income data from Binance API.
 
         Args:
-            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            symbol: Trading pair symbol (e.g., 'BTCUSDT') - if empty, fetches all symbols
             start_time: Start time in milliseconds
             end_time: End time in milliseconds
             income_type: Income type filter (optional)
@@ -42,36 +42,15 @@ class TransactionHistoryFiller:
             List of income records
         """
         try:
-            # Validate symbol before making API call
-            if not symbol or len(symbol) < 2 or len(symbol) > 10:
-                logger.warning(f"Invalid symbol '{symbol}' - skipping income fetch")
-                return []
+            # Get the last sync time to avoid re-syncing existing transactions
+            last_sync_time = await self.db_manager.get_last_transaction_sync_time()
+            
+            # If we have existing transactions, start from the last one + 1ms
+            if last_sync_time > 0 and start_time < last_sync_time:
+                start_time = last_sync_time + 1
+                logger.info(f"Starting sync from last transaction time: {start_time} ({datetime.fromtimestamp(start_time/1000, tz=timezone.utc)})")
 
-            # Check if symbol is likely a valid trading pair
-            if not symbol.isalnum():
-                logger.warning(f"Symbol '{symbol}' contains invalid characters - skipping income fetch")
-                return []
-
-            # Common invalid symbols that appear in the database
-            invalid_symbols = {
-                'APE', 'BT', 'ARC', 'AUCTION', 'AEVO', 'AERO', 'BANANAS31', 'APT', 'AAVE',
-                'ARKM', 'ARB', 'ALT', 'BNX', 'BILLY', 'AI16Z', 'BLAST', 'BSW', 'B2', 'API3',
-                'BON', 'AIXBT', 'AI', '1000BONK', 'ANIME', 'ARK', 'BOND', 'ANYONE', 'ADA',
-                'ALCH', 'BERA', 'ALU', 'ALGO', 'BONK', 'AGT', 'AVAX', 'AIN', 'ATOM',
-                '1000RATS', 'BMT', 'BB', 'AR', 'BENDOG', 'AVA', '0X0', 'BRETT', 'BANANA',
-                '1000TURBO', 'M', 'PUMPFUN', 'SPX', 'MYX', 'MOG', 'PENGU', 'SPK', 'CRV',
-                'HYPE', 'MAGIC', 'ZRC', 'FARTCOIN', 'IP', 'SYN', 'SKATE', 'SOON', 'PUMP'
-            }
-
-            if symbol.upper() in invalid_symbols:
-                logger.warning(f"Symbol '{symbol}' is in invalid symbols list - skipping income fetch")
-                return []
-
-            # Add USDT suffix if not present
-            if not symbol.endswith('USDT'):
-                symbol = f"{symbol}USDT"
-
-            logger.info(f"Fetching income data for {symbol} from {start_time} to {end_time}")
+            logger.info(f"Fetching income data for {symbol or 'ALL SYMBOLS'} from {start_time} to {end_time}")
 
             income_records = await self.bot.binance_exchange.get_income_history(
                 symbol=symbol,
@@ -81,7 +60,7 @@ class TransactionHistoryFiller:
                 limit=limit
             )
 
-            logger.info(f"Fetched {len(income_records)} income records for {symbol}")
+            logger.info(f"Fetched {len(income_records)} income records for {symbol or 'ALL SYMBOLS'}")
             return income_records
 
         except Exception as e:
@@ -156,11 +135,11 @@ class TransactionHistoryFiller:
     async def fill_transaction_history_manual(self, symbol: str = "", days: int = 30,
                                             income_type: str = "", batch_size: int = 100) -> Dict[str, Any]:
         """
-        Manually fill transaction_history table with income data.
+        Manually fill transaction_history table with income data using last sync time approach.
 
         Args:
             symbol: Trading pair symbol (e.g., 'BTCUSDT')
-            days: Number of days to look back
+            days: Number of days to look back (only used if no existing transactions)
             income_type: Income type filter (optional)
             batch_size: Number of records to process in each batch
 
@@ -168,13 +147,13 @@ class TransactionHistoryFiller:
             Summary of the operation
         """
         try:
-            # Calculate time range
+            # Calculate time range (will be overridden by last sync time if data exists)
             end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
             start_time = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
 
             logger.info(f"Fetching income data for {symbol} from {datetime.fromtimestamp(start_time/1000, tz=timezone.utc)} to {datetime.fromtimestamp(end_time/1000, tz=timezone.utc)}")
 
-            # Fetch income data
+            # Fetch income data (this will use last sync time internally)
             income_records = await self.fetch_income_data(
                 symbol=symbol,
                 start_time=start_time,
@@ -193,7 +172,7 @@ class TransactionHistoryFiller:
                     'skipped': 0
                 }
 
-            # Transform and insert records
+            # Transform and insert records (no duplicate checking needed since last sync time handles it)
             processed = 0
             inserted = 0
             skipped = 0
@@ -208,6 +187,7 @@ class TransactionHistoryFiller:
                     skipped += 1
                     continue
 
+                # No duplicate checking needed - last sync time ensures we only get new transactions
                 batch.append(transaction)
                 processed += 1
 
@@ -299,7 +279,7 @@ class TransactionHistoryFiller:
                     'skipped': 0
                 }
 
-            # Transform and insert records
+            # Transform and insert records (no duplicate checking needed since last sync time handles it)
             processed = 0
             inserted = 0
             skipped = 0
@@ -314,6 +294,7 @@ class TransactionHistoryFiller:
                     skipped += 1
                     continue
 
+                # No duplicate checking needed - last sync time ensures we only get new transactions
                 batch.append(transaction)
                 processed += 1
 
@@ -364,7 +345,7 @@ class TransactionHistoryFiller:
 
     async def fill_all_symbols_manual(self, days: int = 30, income_type: str = "") -> Dict[str, Any]:
         """
-        Fill transaction history for all available symbols.
+        Fill transaction history for all available symbols by fetching without symbol filter.
 
         Args:
             days: Number of days to look back
@@ -374,42 +355,21 @@ class TransactionHistoryFiller:
             Summary of the operation
         """
         try:
-            # Common trading symbols
-            symbols = [
-                'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'SOLUSDT',
-                'DOTUSDT', 'DOGEUSDT', 'AVAXUSDT', 'MATICUSDT', 'LINKUSDT',
-                'UNIUSDT', 'LTCUSDT', 'BCHUSDT', 'XLMUSDT', 'ATOMUSDT'
-            ]
+            logger.info("Fetching ALL symbols transaction history")
 
-            total_processed = 0
-            total_inserted = 0
-            total_skipped = 0
-            results = []
-
-            for symbol in symbols:
-                logger.info(f"Processing symbol: {symbol}")
-
-                result = await self.fill_transaction_history_manual(
-                    symbol=symbol,
-                    days=days,
-                    income_type=income_type
-                )
-
-                results.append(result)
-                total_processed += result.get('processed', 0)
-                total_inserted += result.get('inserted', 0)
-                total_skipped += result.get('skipped', 0)
-
-                # Rate limiting between symbols
-                await asyncio.sleep(1)
+            # Fetch all symbols at once (empty symbol = all symbols)
+            result = await self.fill_transaction_history_manual(
+                symbol="",  # Empty symbol fetches all symbols
+                days=days,
+                income_type=income_type
+            )
 
             summary = {
-                'success': True,
-                'message': f'Processed {len(symbols)} symbols',
-                'total_processed': total_processed,
-                'total_inserted': total_inserted,
-                'total_skipped': total_skipped,
-                'symbol_results': results
+                'success': result.get('success', False),
+                'message': f'Fetched all symbols transaction history',
+                'total_processed': result.get('processed', 0),
+                'total_inserted': result.get('inserted', 0),
+                'total_skipped': result.get('skipped', 0)
             }
 
             logger.info(f"All symbols processing completed: {summary}")
