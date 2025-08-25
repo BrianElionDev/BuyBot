@@ -3,6 +3,8 @@ from typing import Optional
 from datetime import datetime
 
 class InitialDiscordSignal(BaseModel):
+    discord_id: str
+    trader: str
     timestamp: str
     content: str
     structured: str
