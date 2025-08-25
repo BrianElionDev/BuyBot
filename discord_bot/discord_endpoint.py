@@ -3,14 +3,10 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 import logging
 from discord_bot.discord_bot import discord_bot
+from discord_bot.models import InitialDiscordSignal
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-class InitialDiscordSignal(BaseModel):
-    timestamp: str
-    content: str
-    structured: str
 
 class DiscordUpdateSignal(BaseModel):
     timestamp: str
