@@ -1239,6 +1239,14 @@ class TradingEngine:
                     if trade_id and self.db_manager:
                         if close_percentage >= 100.0:
                             status = "CLOSED"
+                            
+                            # Set closed_at timestamp when trade is fully closed
+                            try:
+                                from discord_bot.utils.timestamp_manager import ensure_closed_at
+                                await ensure_closed_at(self.db_manager.supabase, trade_id)
+                                logger.info(f"✅ Set closed_at timestamp for trade {trade_id} via trading engine closure")
+                            except Exception as e:
+                                logger.warning(f"Could not set closed_at timestamp: {e}")
                         else:
                             status = "PARTIALLY_CLOSED"
 

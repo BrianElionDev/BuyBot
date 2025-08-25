@@ -5,12 +5,12 @@ This module provides clear separation between order lifecycle and position lifec
 
 # Order Status Constants
 ORDER_STATUS = {
-    'NEW': 'PENDING',
-    'FILLED': 'FILLED',
-    'PARTIALLY_FILLED': 'PARTIALLY_FILLED',
-    'CANCELED': 'CANCELED',
-    'EXPIRED': 'EXPIRED',
-    'REJECTED': 'REJECTED'
+    'NEW': 'UNFILLED',          # Order created but not yet executed
+    'PARTIALLY_FILLED': 'PARTIALLY_FILLED',  # Order partially executed
+    'FILLED': 'FILLED',         # Order fully executed
+    'CANCELED': 'CANCELED',     # Order was canceled
+    'EXPIRED': 'EXPIRED',       # Order expired
+    'REJECTED': 'REJECTED'      # Order was rejected
 }
 
 # Position Status Constants
@@ -59,6 +59,8 @@ def determine_position_status_from_order(order_status: str, position_size: float
             return POSITION_STATUS['OPEN']    # Entry order partially filled = position open
         else:
             return POSITION_STATUS['NONE']
+    elif order_status == 'UNFILLED':
+        return POSITION_STATUS['NONE']  # Order unfilled = no position yet
     elif order_status in ['CANCELED', 'EXPIRED', 'REJECTED']:
         return POSITION_STATUS['NONE']
     else:

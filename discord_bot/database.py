@@ -233,7 +233,36 @@ class DatabaseManager:
             if order_created_successfully:
                 # Order was created successfully - preserve original response
                 updates["binance_response"] = json.dumps(original_response) if isinstance(original_response, dict) else str(original_response)
-                updates["status"] = "OPEN"  # Assume open if we got orderId
+                
+                # CRITICAL: Set correct initial status based on order type and execution
+                order_type = original_response.get('type', 'MARKET')
+                executed_qty = float(original_response.get('executedQty', 0))
+                orig_qty = float(original_response.get('origQty', 0))
+                
+                if order_type == 'MARKET':
+                    # Market orders are typically filled immediately
+                    if executed_qty > 0:
+                        updates["order_status"] = "FILLED"
+                        updates["status"] = "OPEN"  # Position is open
+                    else:
+                        # Rare case: market order not filled
+                        updates["order_status"] = "UNFILLED"
+                        updates["status"] = "NONE"
+                else:
+                    # Limit orders
+                    if executed_qty > 0:
+                        if executed_qty >= orig_qty:
+                            # Fully executed
+                            updates["order_status"] = "FILLED"
+                            updates["status"] = "OPEN"
+                        else:
+                            # Partially executed
+                            updates["order_status"] = "PARTIALLY_FILLED"
+                            updates["status"] = "OPEN"
+                    else:
+                        # Order was placed but not yet executed
+                        updates["order_status"] = "UNFILLED"
+                        updates["status"] = "NONE"
 
                 if "orderId" in original_response:
                     updates["exchange_order_id"] = str(original_response.get("orderId", ""))
@@ -290,12 +319,15 @@ class DatabaseManager:
                                         execution_price_set = True
                         else:
                             # This is an entry order - set binance_entry_price
+                            # CRITICAL: Only set binance_entry_price if there's actual execution (executedQty > 0)
+                            executed_qty = float(original_response.get('executedQty', 0))
                             avg_price = original_response.get('avgPrice')
-                            if avg_price and float(avg_price) > 0:
+                            
+                            if executed_qty > 0 and avg_price and float(avg_price) > 0:
                                 updates["binance_entry_price"] = float(avg_price)
                                 logger.info(f"Stored binance_entry_price from execution: {avg_price} for trade {trade_id}")
                                 execution_price_set = True
-                            else:
+                            elif executed_qty > 0:
                                 # Try to get from fills array
                                 fills = original_response.get('fills', [])
                                 if fills:
@@ -306,6 +338,8 @@ class DatabaseManager:
                                         updates["binance_entry_price"] = avg_price
                                         logger.info(f"Stored binance_entry_price from fills: {avg_price} for trade {trade_id}")
                                         execution_price_set = True
+                            else:
+                                logger.info(f"Order not executed yet (executedQty={executed_qty}) - binance_entry_price will be set when order is filled")
 
                         # CRITICAL: If position_size is still not set, mark for manual verification
                         if not position_size_set:
@@ -343,10 +377,27 @@ class DatabaseManager:
                     updates["sync_issues"] = []
                     updates["manual_verification_needed"] = False
 
-                    # Determine both order and position status
+                    # CRITICAL: Determine correct order and position status
                     order_status, position_status = self._determine_order_and_position_status(status_response)
-                    updates["order_status"] = order_status
-                    updates["status"] = position_status  # status column now holds position status
+                    
+                    # Get current trade data to compare statuses
+                    current_trade = await self.get_trade_by_id(trade_id)
+                    if current_trade:
+                        # Only update status if it's more accurate than what we already have
+                        current_order_status = current_trade.get('order_status', 'UNFILLED')
+                        current_position_status = current_trade.get('status', 'NONE')
+                        
+                        # Update order_status if we have more specific information
+                        if order_status != 'UNFILLED' or current_order_status == 'UNFILLED':
+                            updates["order_status"] = order_status
+                        
+                        # Update position status if we have more specific information
+                        if position_status != 'NONE' or current_position_status == 'NONE':
+                            updates["status"] = position_status
+                    else:
+                        # Fallback if trade not found
+                        updates["order_status"] = order_status
+                        updates["status"] = position_status
             else:
                 # Order creation failed - this is a legitimate failure
                 updates["binance_response"] = json.dumps(original_response) if isinstance(original_response, dict) else str(original_response)
@@ -426,11 +477,17 @@ class DatabaseManager:
         from .status_constants import map_binance_order_status, determine_position_status_from_order
 
         if not isinstance(status_response, dict):
-            return 'PENDING', 'NONE'
+            return 'UNFILLED', 'NONE'
 
         binance_status = status_response.get('status', '').upper()
         order_status = map_binance_order_status(binance_status)
-        position_status = determine_position_status_from_order(order_status, position_size)
+        
+        # CRITICAL: Check if this is an exit order
+        is_exit_order = status_response.get('reduceOnly', False) or status_response.get('closePosition', False)
+        
+        # Get executed quantity for position status determination
+        executed_qty = float(status_response.get('executedQty', 0))
+        position_status = determine_position_status_from_order(order_status, executed_qty, is_exit_order)
 
         return order_status, position_status
 
@@ -653,6 +710,31 @@ class DatabaseManager:
             logger.error(f"Error getting transaction history: {e}", exc_info=True)
             return []
 
+    async def get_last_transaction_sync_time(self) -> int:
+        """
+        Get the timestamp of the most recent transaction in our database.
+        This is used to avoid re-syncing transactions we already have.
+        
+        Returns:
+            Timestamp in milliseconds, or 0 if no transactions exist
+        """
+        if not self.supabase:
+            logger.error("Supabase client not available.")
+            return 0
+
+        try:
+            response = self.supabase.from_("transaction_history").select("time").order("time", desc=True).limit(1).execute()
+            
+            if response.data and response.data[0]['time']:
+                # Convert ISO time back to milliseconds
+                from datetime import datetime, timezone
+                dt = datetime.fromisoformat(response.data[0]['time'].replace('Z', '+00:00'))
+                return int(dt.timestamp() * 1000)
+            return 0
+        except Exception as e:
+            logger.error(f"Error getting last transaction sync time: {e}", exc_info=True)
+            return 0
+
     async def check_transaction_exists(self, time: int, type: str, amount: float, asset: str, symbol: str) -> bool:
         """
         Check if a transaction record already exists to avoid duplicates.
@@ -681,11 +763,84 @@ class DatabaseManager:
             dt = datetime.fromtimestamp(time / 1000, tz=timezone.utc)
             iso_time = dt.isoformat()
             
+            # Use exact matching for ALL transaction types
+            # If we already have a record with the exact same timestamp, type, amount, asset, and symbol, don't create another one
             response = self.supabase.from_("transaction_history").select("id").eq("time", iso_time).eq("type", type).eq("amount", amount).eq("asset", asset).eq("symbol", symbol).limit(1).execute()
             return len(response.data) > 0
         except Exception as e:
             logger.error(f"Error checking transaction existence: {e}", exc_info=True)
             return False
+
+
+
+    async def cleanup_transaction_duplicates(self, symbol: str = "", transaction_type: str = "") -> Dict[str, int]:
+        """
+        Clean up exact transaction duplicates, keeping only one copy of each unique transaction.
+        
+        Args:
+            symbol: Optional symbol to limit cleanup to specific trading pair
+            transaction_type: Optional transaction type to limit cleanup
+            
+        Returns:
+            Dict with cleanup statistics
+        """
+        if not self.supabase:
+            logger.error("Supabase client not available.")
+            return {"cleaned": 0, "errors": 0}
+
+        try:
+            # Define transaction types to process
+            if transaction_type:
+                duplicate_types = [transaction_type]
+            else:
+                duplicate_types = ['COMMISSION', 'FUNDING_FEE', 'REALIZED_PNL', 'TRANSFER', 'WITHDRAW', 'DEPOSIT']
+            
+            cleaned_count = 0
+            error_count = 0
+            
+            # Process each transaction type
+            for tx_type in duplicate_types:
+                logger.info(f"Cleaning up {tx_type} duplicates...")
+                
+                # Get all entries of this type
+                query = self.supabase.from_("transaction_history").select("*").eq("type", tx_type)
+                if symbol:
+                    query = query.eq("symbol", symbol)
+                
+                response = query.execute()
+                records = response.data or []
+                
+                # Group by unique combination of time, type, amount, asset, symbol
+                groups = {}
+                for record in records:
+                    key = (record['time'], record['type'], record['amount'], record['asset'], record['symbol'])
+                    if key not in groups:
+                        groups[key] = []
+                    groups[key].append(record)
+                
+                # Find groups with duplicates (more than 1 record)
+                duplicate_groups = {key: records for key, records in groups.items() if len(records) > 1}
+                
+                for (time, tx_type, amount, asset, symbol), group_records in duplicate_groups.items():
+                    # Keep the first record, delete the rest
+                    records_to_delete = group_records[1:]
+                    
+                    for record in records_to_delete:
+                        try:
+                            # Delete the duplicate
+                            self.supabase.from_("transaction_history").delete().eq("id", record['id']).execute()
+                            cleaned_count += 1
+                            logger.info(f"Cleaned duplicate {tx_type}: {symbol} at {time} amount {amount}")
+                        except Exception as e:
+                            logger.error(f"Error deleting duplicate {tx_type} record {record['id']}: {e}")
+                            error_count += 1
+            
+            logger.info(f"Transaction cleanup completed: {cleaned_count} duplicates removed, {error_count} errors")
+            return {"cleaned": cleaned_count, "errors": error_count}
+            
+        except Exception as e:
+            logger.error(f"Error during transaction cleanup: {e}", exc_info=True)
+            return {"cleaned": 0, "errors": 1}
 
 def create_trades_table(supabase):
     """Create trades table if it doesn't exist"""

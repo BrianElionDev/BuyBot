@@ -586,6 +586,14 @@ async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, b
                 'updated_at': current_time
             }
 
+            # Set closed_at timestamp when trade is marked as closed
+            try:
+                from discord_bot.utils.timestamp_manager import ensure_closed_at
+                await ensure_closed_at(supabase, trade['id'])
+                logging.info(f"✅ Set closed_at timestamp for trade {trade['id']} via cleanup closure")
+            except Exception as e:
+                logging.warning(f"Could not set closed_at timestamp for trade {trade['id']}: {e}")
+
             supabase.table("trades").update(update_data).eq("id", trade['id']).execute()
             updates_made += 1
             logging.info(f"Marked trade {trade['id']} ({extract_symbol_from_trade(trade)}) as CLOSED")
@@ -943,7 +951,7 @@ async def sync_pnl_data_with_binance(bot, supabase):
                                 'exit_price': entry_price,  # For single trades, entry = exit
                                 'realized_pnl': realized_pnl,
                                 'unrealized_pnl': unrealized_pnl,
-                                'last_pnl_sync': datetime.utcnow().isoformat()
+                                'last_pnl_sync': datetime.now(timezone.utc).isoformat()
                             }
 
                             if update_trade_pnl(supabase, trade['id'], pnl_data):
@@ -1245,13 +1253,15 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
 
         # Update P&L if we have income records from Binance
         if len(income_records) > 0:
-            # Store REALIZED_PNL only in pnl_usd
+            # Store REALIZED_PNL in pnl_usd (existing column)
             update_data['pnl_usd'] = str(total_realized_pnl)
-            # Store NET P&L (including fees) in net_pnl
+            
+            # Store NET P&L (including fees) in net_pnl (existing column)
             update_data['net_pnl'] = str(net_pnl)
-            # Store individual components for reference
-            update_data['commission'] = str(total_commission)
-            update_data['funding_fee'] = str(total_funding_fee)
+            
+            # Update last sync timestamp
+            update_data['last_pnl_sync'] = datetime.now(timezone.utc).isoformat()
+            
             logging.info(f"✅ Updated trade {trade_id} - P&L: {total_realized_pnl:.6f} (REALIZED_PNL), NET P&L: {net_pnl:.6f} (from {len(realized_pnl_records)} batches)")
 
         # Update exit price if we have one from realized P&L records

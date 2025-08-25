@@ -9,6 +9,7 @@ import sys
 import json
 import logging
 from typing import List, Dict, Optional
+from datetime import datetime, timezone
 from config import settings
 
 # Add the project root to Python path
@@ -88,7 +89,7 @@ def update_coin_symbol(supabase: Client, trade_id: int, coin_symbol: str) -> boo
     try:
         response = supabase.table("trades").update({
             "coin_symbol": coin_symbol,
-            "updated_at": "now()"
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", trade_id).execute()
 
         return len(response.data) > 0

@@ -3,7 +3,7 @@ import logging
 import re
 import time
 from typing import Dict, Any, Optional, Union, List, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 import uuid
@@ -693,7 +693,7 @@ class DiscordBot:
                 alert_updates = {
                     "parsed_alert": {
                         "original_content": signal.content,
-                        "processed_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         "original_trade_id": trade_row['id'],
                         "coin_symbol": self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol'),
                         "trader": signal.trader,
@@ -763,6 +763,11 @@ class DiscordBot:
                 action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason=action_type)
                 if action_successful:
                     trade_updates["status"] = "CLOSED"
+                    
+                    # Set closed_at timestamp when trade is closed via alert
+                    from discord_bot.utils.timestamp_manager import ensure_closed_at
+                    await ensure_closed_at(self.supabase, trade_row['id'])
+                    logger.info(f"✅ Set closed_at timestamp for trade {trade_row['id']} via alert closure")
 
                     # Ensure coin_symbol is stored in database
                     if not trade_row.get('coin_symbol') and parsed_action.get('coin_symbol'):
@@ -847,20 +852,34 @@ class DiscordBot:
                             logger.warning(f"Could not determine coin symbol for SL update on trade {trade_row['id']}")
                     except Exception as e:
                         logger.error(f"Error moving SL to break-even: {str(e)}")
-                else:
-                    logger.error(f"Failed to execute TP1 for trade {trade_row['id']}")
 
             elif action_type == "take_profit_2":
                 logger.info(f"Processing TP2 for trade {trade_row['id']}. Closing remaining position.")
-                # Assumption: TP2 closes the rest of the position. A more complex system could calculate remaining size.
                 action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_2", close_percentage=100.0)
                 if action_successful:
                     trade_updates["status"] = "CLOSED"
+                    
+                    # Set closed_at timestamp when trade is fully closed via TP2
+                    from discord_bot.utils.timestamp_manager import ensure_closed_at
+                    await ensure_closed_at(self.supabase, trade_row['id'])
+                    logger.info(f"✅ Set closed_at timestamp for trade {trade_row['id']} via TP2 closure")
 
-                    # Ensure coin_symbol is stored in database
-                    if not trade_row.get('coin_symbol') and parsed_action.get('coin_symbol'):
-                        trade_updates["coin_symbol"] = parsed_action.get('coin_symbol')
-                        logger.info(f"Updated coin_symbol to {parsed_action.get('coin_symbol')} for trade {trade_row['id']}")
+                    # Update position_size to 0 since position is fully closed
+                    trade_updates["position_size"] = 0.0
+                    logger.info(f"Updated position_size to 0.0 after TP2 (fully closed)")
+
+                    # --- Fetch binance_exit_price from Binance ---
+                    coin_symbol_exit = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
+                    if coin_symbol_exit and isinstance(coin_symbol_exit, str):
+                        try:
+                            from src.services.price_service import PriceService
+                            price_service = PriceService()
+                            binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
+                            if binance_exit_price is not None:
+                                trade_updates["binance_exit_price"] = float(binance_exit_price)
+                                logger.info(f"Fetched binance_exit_price for {coin_symbol_exit}: {binance_exit_price}")
+                        except Exception as e:
+                            logger.warning(f"Could not fetch binance_exit_price: {e}")
 
             elif action_type == "stop_loss_update":
                 logger.info(f"Processing stop loss update for trade {trade_row['id']}")
@@ -1117,7 +1136,7 @@ class DiscordBot:
             alert_updates = {
                 "parsed_alert": {
                     "original_content": signal.content,
-                    "processed_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                     "action_determined": parsed_action,
                     "original_trade_id": trade_row['id'],
                     "coin_symbol": parsed_action.get('coin_symbol', self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')),
