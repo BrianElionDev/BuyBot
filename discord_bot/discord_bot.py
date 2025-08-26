@@ -99,7 +99,7 @@ class DiscordBot:
             logger.warning(f"Unexpected parsed_signal type: {type(parsed_signal_data)}")
             return {}
 
-    def parse_alert_content(self, content):
+    def parse_alert_content(self, content, trade_row=None):
         """
         Parse alert content and determine what action(s) should be taken.
         Returns structured data for logging. Can handle single or multiple actions.
@@ -381,6 +381,10 @@ class DiscordBot:
             response = await self.db_manager.supabase.table("alerts").select("id").eq("alert_hash", alert_hash).execute()
             return len(response.data) > 0
         except Exception as e:
+            # If the alert_hash column doesn't exist, skip duplicate checking
+            if "column alerts.alert_hash does not exist" in str(e):
+                logger.warning("alert_hash column not found in alerts table, skipping duplicate check")
+                return False
             logger.error(f"Error checking for duplicate alert: {e}")
             return False
 
@@ -393,6 +397,10 @@ class DiscordBot:
             await self.db_manager.supabase.table("alerts").insert({"alert_hash": alert_hash}).execute()
             return True
         except Exception as e:
+            # If the alert_hash column doesn't exist, skip storing
+            if "column alerts.alert_hash does not exist" in str(e):
+                logger.warning("alert_hash column not found in alerts table, skipping hash storage")
+                return True  # Return True to not block processing
             logger.error(f"Error storing alert hash: {e}")
             return False
 
@@ -437,10 +445,27 @@ class DiscordBot:
 
             trade_row = await self.db_manager.find_trade_by_discord_id(signal.discord_id)
             if not trade_row:
-                logger.error(f"No trade found for discord_id {signal.discord_id}")
-                return {"status": "error", "message": "Trade not found in database"}
+                logger.info(f"No trade found for discord_id {signal.discord_id}, creating new trade record")
 
-            logger.info(f"Found trade for discord_id {signal.discord_id}: ID {trade_row['id']}")
+                # Create a new trade record
+                trade_data = {
+                    'discord_id': signal.discord_id,
+                    'trader': signal.trader,
+                    'timestamp': signal.timestamp,
+                    'content': signal.content,
+                    'status': 'PENDING',
+                    'created_at': datetime.now(timezone.utc).isoformat(),
+                    'updated_at': datetime.now(timezone.utc).isoformat()
+                }
+
+                trade_row = await self.db_manager.save_signal_to_db(trade_data)
+                if not trade_row:
+                    logger.error(f"Failed to create trade record for discord_id {signal.discord_id}")
+                    return {"status": "error", "message": "Failed to create trade record"}
+
+                logger.info(f"Created new trade for discord_id {signal.discord_id}: ID {trade_row['id']}")
+            else:
+                logger.info(f"Found existing trade for discord_id {signal.discord_id}: ID {trade_row['id']}")
 
             # Parse signal with AI
             try:
