@@ -47,6 +47,14 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"❌ Failed to start WebSocket sync: {e}")
 
+            # Run initial price backfill on startup
+            try:
+                logger.info("🔄 Running initial price backfill on startup...")
+                await backfill_missing_prices(bot, supabase)
+                logger.info("✅ Initial price backfill completed")
+            except Exception as e:
+                logger.error(f"❌ Failed to run initial price backfill: {e}")
+
             # Start traditional sync scheduler (reduced frequency)
             try:
                 scheduler_task = asyncio.create_task(trade_retry_scheduler())
@@ -135,7 +143,9 @@ def create_app() -> FastAPI:
         
         # Calculate next run times
         daily_interval = 24 * 60 * 60
-        transaction_interval = 6 * 60 * 60
+        transaction_interval = 1 * 60 * 60
+        pnl_interval = 1 * 60 * 60
+        price_interval = 1 * 60 * 60
         weekly_interval = 7 * 24 * 60 * 60
         
         return {
@@ -143,7 +153,9 @@ def create_app() -> FastAPI:
             "status": "Running",
             "intervals": {
                 "daily_sync": f"{daily_interval/3600:.1f} hours",
-                "transaction_history": f"{transaction_interval/3600:.1f} hours", 
+                "transaction_history": f"{transaction_interval/3600:.1f} hours",
+                "pnl_backfill": f"{pnl_interval/3600:.1f} hours",
+                "price_backfill": f"{price_interval/3600:.1f} hours",
                 "weekly_backfill": f"{weekly_interval/3600:.1f} hours"
             },
             "current_time": datetime.fromtimestamp(current_time).isoformat(),
@@ -171,15 +183,18 @@ async def trade_retry_scheduler():
     # Initialize task timers
     last_daily_sync = 0
     last_transaction_sync = 0
+    last_pnl_backfill = 0
+    last_price_backfill = 0
     last_weekly_backfill = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
-    TRANSACTION_SYNC_INTERVAL = 6 * 60 * 60  # 6 hours
+    TRANSACTION_SYNC_INTERVAL = 1 * 60 * 60  # 1 hour
+    PNL_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
+    PRICE_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
     WEEKLY_BACKFILL_INTERVAL = 7 * 24 * 60 * 60  # 7 days
 
-    logger.info("[Scheduler] Starting centralized maintenance scheduler...")
-    logger.info(f"[Scheduler] Intervals - Daily: {DAILY_SYNC_INTERVAL/3600}h, Transaction: {TRANSACTION_SYNC_INTERVAL/3600}h, Weekly: {WEEKLY_BACKFILL_INTERVAL/3600}h")
+    logger.info("[Scheduler] ✅ Scheduler running - monitoring for tasks")
 
     while True:
         try:
@@ -197,7 +212,7 @@ async def trade_retry_scheduler():
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in daily sync: {e}")
 
-            # Transaction history autofill (every 6 hours)
+            # Transaction history autofill (every 1 minute)
             if current_time - last_transaction_sync >= TRANSACTION_SYNC_INTERVAL:
                 logger.info("[Scheduler] Running transaction history autofill...")
                 try:
@@ -207,6 +222,28 @@ async def trade_retry_scheduler():
                     tasks_run += 1
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in transaction history autofill: {e}")
+
+            # PnL backfill (every 1 hour)
+            if current_time - last_pnl_backfill >= PNL_BACKFILL_INTERVAL:
+                logger.info("[Scheduler] Running PnL backfill...")
+                try:
+                    await backfill_pnl_data(bot, supabase)
+                    last_pnl_backfill = current_time
+                    logger.info("[Scheduler] PnL backfill completed successfully")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in PnL backfill: {e}")
+
+            # Price backfill (every 1 hour)
+            if current_time - last_price_backfill >= PRICE_BACKFILL_INTERVAL:
+                logger.info("[Scheduler] Running price backfill...")
+                try:
+                    await backfill_missing_prices(bot, supabase)
+                    last_price_backfill = current_time
+                    logger.info("[Scheduler] Price backfill completed successfully")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in price backfill: {e}")
 
             # Weekly historical backfill (every 7 days)
             if current_time - last_weekly_backfill >= WEEKLY_BACKFILL_INTERVAL:
@@ -219,20 +256,12 @@ async def trade_retry_scheduler():
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in weekly historical backfill: {e}")
 
-            # Log status
-            if tasks_run > 0:
-                logger.info(f"[Scheduler] Completed {tasks_run} task(s) this cycle")
-            else:
-                logger.info("[Scheduler] No tasks due this cycle")
-
-            # Sleep for 6 hours before next check (since most frequent task is every 6 hours)
-            logger.info("[Scheduler] Sleeping for 6 hours before next check...")
-            await asyncio.sleep(6 * 60 * 60)  # 6 hours
+            # Sleep for 1 second to prevent CPU overload while maintaining responsiveness
+            await asyncio.sleep(1)  # 1 second sleep to prevent CPU overload
 
         except Exception as e:
             logger.error(f"Error in trade retry scheduler: {e}")
-            logger.info("[Scheduler] Waiting 6 hours before retrying...")
-            await asyncio.sleep(6 * 60 * 60)  # Wait 6 hours before retrying
+            await asyncio.sleep(1)  # Wait 1 second before retrying
 
 async def check_api_permissions(bot):
     """Check if API key has proper permissions for futures trading"""
@@ -274,12 +303,35 @@ async def auto_fill_transaction_history(bot, supabase):
         if result.get('success'):
             total_inserted = result.get('inserted', 0)
             total_skipped = result.get('skipped', 0)
-            logger.info(f"[Scheduler] Transaction history autofill completed: {total_inserted} inserted, {total_skipped} skipped")
+            if total_inserted > 0:
+                logger.info(f"[Scheduler] Transaction history: {total_inserted} new records inserted")
+            else:
+                logger.debug(f"[Scheduler] Transaction history: {total_inserted} inserted, {total_skipped} skipped")
         else:
-            logger.error(f"[Scheduler] Transaction history autofill failed: {result.get('message', 'Unknown error')}")
+            # Don't treat "no income records found" as an error - this is normal
+            if "No income records found" in result.get('message', ''):
+                logger.debug(f"[Scheduler] Transaction history: {result.get('message', 'No new income records')}")
+            else:
+                logger.error(f"[Scheduler] Transaction history autofill failed: {result.get('message', 'Unknown error')}")
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in transaction history autofill: {e}")
+
+
+async def backfill_pnl_data(bot, supabase):
+    """Backfill PnL and net PnL data for closed trades."""
+    try:
+        from discord_bot.utils.trade_retry_utils import backfill_trades_from_binance_history
+        
+        logger.info("[Scheduler] Starting PnL backfill for closed trades...")
+        
+        # Backfill PnL data for last 7 days (more recent, faster processing)
+        await backfill_trades_from_binance_history(bot, supabase, days=7)
+        
+        logger.info("[Scheduler] PnL backfill completed")
+
+    except Exception as e:
+        logger.error(f"[Scheduler] Error in PnL backfill: {e}")
 
 
 async def weekly_historical_backfill(bot, supabase):
@@ -295,6 +347,27 @@ async def weekly_historical_backfill(bot, supabase):
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in weekly_historical_backfill: {e}")
+
+
+async def backfill_missing_prices(bot, supabase):
+    """Backfill missing Binance entry and exit prices for recent trades."""
+    try:
+        from scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
+        
+        logger.info("[Scheduler] Starting price backfill for recent trades...")
+        
+        # Create backfill manager with existing clients
+        backfill_manager = HistoricalTradeBackfillManager()
+        backfill_manager.binance_exchange = bot.binance_exchange  # Use existing exchange instance
+        backfill_manager.db_manager = bot.db_manager  # Use existing database manager
+        
+        # Backfill prices for last 24 hours (recent trades that might have missed WebSocket updates)
+        await backfill_manager.backfill_from_historical_data(days=1)
+        
+        logger.info("[Scheduler] Price backfill completed")
+
+    except Exception as e:
+        logger.error(f"[Scheduler] Error in price backfill: {e}")
 
 
 app = create_app()

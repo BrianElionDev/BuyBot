@@ -1250,12 +1250,21 @@ class TradingEngine:
                         else:
                             status = "PARTIALLY_CLOSED"
 
+                        # Extract execution timestamp from Binance response for accurate updated_at
+                        execution_timestamp = None
+                        if isinstance(close_order, dict) and 'updateTime' in close_order:
+                            execution_timestamp = close_order['updateTime']
+                            # Convert milliseconds to ISO format
+                            from datetime import datetime, timezone
+                            execution_timestamp = datetime.fromtimestamp(execution_timestamp / 1000, tz=timezone.utc).isoformat()
+                            logger.info(f"Using Binance execution timestamp for updated_at: {execution_timestamp}")
+                        
                         await self.db_manager.update_existing_trade(
                             trade_id=trade_id,
                             updates={
-                                "status": status,
-                                "updated_at": datetime.now(timezone.utc).isoformat()
-                            }
+                                "status": status
+                            },
+                            binance_execution_time=execution_timestamp
                         )
                         logger.info(f"Updated trade {trade_id} status to {status}")
                 except Exception as e:

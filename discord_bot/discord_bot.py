@@ -1124,9 +1124,22 @@ class DiscordBot:
 
                         logger.info(f"PnL for this action: {newly_realized_pnl:.2f}. Total realized PnL for trade: {total_pnl:.2f}")
 
+                # Extract Binance execution timestamp if available for accurate updated_at
+                binance_execution_time = None
+                if isinstance(binance_response_log, dict) and 'updateTime' in binance_response_log:
+                    execution_timestamp = binance_response_log['updateTime']
+                    # Convert milliseconds to ISO format
+                    from datetime import datetime, timezone
+                    binance_execution_time = datetime.fromtimestamp(execution_timestamp / 1000, tz=timezone.utc).isoformat()
+                    logger.info(f"Using Binance execution timestamp for updated_at: {binance_execution_time}")
+
                 # Update the trade with new status or SL order ID
                 if trade_updates:
-                    await self.db_manager.update_existing_trade(trade_id=trade_row["id"], updates=trade_updates)
+                    await self.db_manager.update_existing_trade(
+                        trade_id=trade_row["id"], 
+                        updates=trade_updates,
+                        binance_execution_time=binance_execution_time
+                    )
                     logger.info(f"Updated trade {trade_row['id']} with: {trade_updates}")
             elif binance_response_log: # Action was attempted but failed
                 logger.error(f"Failed to execute '{action_type}' for trade {trade_row['id']}. Reason: {binance_response_log}")
