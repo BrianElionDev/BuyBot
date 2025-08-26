@@ -3,14 +3,10 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 import logging
 from discord_bot.discord_bot import discord_bot
+from discord_bot.models import InitialDiscordSignal
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-class InitialDiscordSignal(BaseModel):
-    timestamp: str
-    content: str
-    structured: str
 
 class DiscordUpdateSignal(BaseModel):
     timestamp: str
@@ -23,7 +19,7 @@ class DiscordUpdateSignal(BaseModel):
 async def process_initial_signal_background(signal: InitialDiscordSignal):
     """Process an initial signal in the background."""
     try:
-        result = await discord_bot.process_initial_signal(signal.dict())
+        result = await discord_bot.process_initial_signal(signal)
         if result.get("status") != "success":
             logger.error(f"Failed to process initial signal: {result.get('message')}")
         else:
@@ -90,7 +86,7 @@ async def receive_update_signal_test(signal: DiscordUpdateSignal):
     `trade` (signal_id) field and updates its status in the database.
     """
     try:
-        result =  discord_bot.parse_alert_content(signal.content,signal.dict())
+        result =  discord_bot.parse_alert_content(signal.content)
         return {
             "status": "success",
             "data": result,

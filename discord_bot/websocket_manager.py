@@ -3,10 +3,9 @@ WebSocket Manager for DiscordBot integration.
 Handles real-time database synchronization with Binance WebSocket events.
 """
 
-import asyncio
 import logging
 from typing import Optional
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import sys
 import os

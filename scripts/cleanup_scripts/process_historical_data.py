@@ -69,7 +69,9 @@ async def process_june_trades():
                 "structured": trade.get("structured"),
             }
 
-            result = await discord_bot.process_initial_signal(signal_payload)
+            from discord_bot.models import InitialDiscordSignal
+            signal_model = InitialDiscordSignal(**signal_payload)  # type: ignore
+            result = await discord_bot.process_initial_signal(signal_model)
             logging.info(f"Result for trade {trade.get('id')}: {result.get('message')}")
 
         except Exception as e:

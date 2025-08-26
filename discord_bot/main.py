@@ -34,12 +34,13 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting Discord Bot Service...")
-    
+
+    bot = None
     try:
         bot, supabase = initialize_clients()
         if bot and supabase:
             logger.info("✅ Clients initialized successfully")
-            
+
             # Start WebSocket real-time sync
             try:
                 await bot.start_websocket_sync()
@@ -78,7 +79,7 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Bot closed successfully")
     except Exception as e:
         logger.error(f"❌ Error closing bot: {e}")
-    
+
     logger.info("🛑 Discord Bot Service stopped")
 
 
@@ -117,7 +118,7 @@ def create_app() -> FastAPI:
             bot, supabase = initialize_clients()
             if not bot or not supabase:
                 return {"error": "Failed to initialize clients"}
-            
+
             await auto_fill_transaction_history(bot, supabase)
             return {"message": "Transaction history autofill completed"}
         except Exception as e:
@@ -130,7 +131,7 @@ def create_app() -> FastAPI:
             bot, supabase = initialize_clients()
             if not bot or not supabase:
                 return {"error": "Failed to initialize clients"}
-            
+
             await sync_trade_statuses_with_binance(bot, supabase)
             return {"message": "Daily sync completed"}
         except Exception as e:
@@ -140,14 +141,14 @@ def create_app() -> FastAPI:
     async def scheduler_status():
         """Get scheduler status and next run times."""
         current_time = time.time()
-        
+
         # Calculate next run times
         daily_interval = 24 * 60 * 60
         transaction_interval = 1 * 60 * 60
         pnl_interval = 1 * 60 * 60
         price_interval = 1 * 60 * 60
         weekly_interval = 7 * 24 * 60 * 60
-        
+
         return {
             "scheduler": "Discord Bot Scheduler",
             "status": "Running",
@@ -170,7 +171,7 @@ def create_app() -> FastAPI:
 async def trade_retry_scheduler():
     """Centralized scheduler for all maintenance tasks and auto-scripts."""
     logger.info("[Scheduler] Initializing trade retry scheduler...")
-    
+
     try:
         bot, supabase = initialize_clients()
         if not bot or not supabase:
@@ -374,5 +375,4 @@ app = create_app()
 
 if __name__ == "__main__":
     logger.info("🚀 Starting Discord Bot Service...")
-    # Run on a different port to avoid conflict with the Telegram service
     uvicorn.run(app, host="127.0.0.1", port=8001)
