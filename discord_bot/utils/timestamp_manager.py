@@ -59,12 +59,8 @@ class TimestampManager:
             if new_status != 'CLOSED':
                 return False
             
-            # If already has closed_at, don't allow changes (unless it's None/empty)
-            existing_closed_at = trade_data.get('closed_at')
-            if existing_closed_at:
-                logger.warning(f"Trade already has closed_at: {existing_closed_at}")
-                return False
-            
+            # Allow setting closed_at even if it already exists (for fixing missing timestamps)
+            # The database update function will handle the logic of when to actually set it
             return True
             
         except Exception as e:
@@ -153,10 +149,17 @@ class TimestampManager:
                 logger.info(f"Setting closed_at to current time: {closed_at}")
             
             # Update database with closed_at and status
+            # Use Binance execution time for updated_at if available (for accurate PnL calculations)
+            if binance_fill_time:
+                updated_at = datetime.fromtimestamp(binance_fill_time / 1000, tz=timezone.utc).isoformat()
+                logger.info(f"Using Binance execution time for updated_at: {updated_at}")
+            else:
+                updated_at = datetime.now(timezone.utc).isoformat()
+            
             update_data = {
                 'closed_at': closed_at,
                 'status': 'CLOSED',
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'updated_at': updated_at
             }
             
             self.supabase.from_("trades").update(update_data).eq("id", trade_id).execute()

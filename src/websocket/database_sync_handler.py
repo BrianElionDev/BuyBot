@@ -54,16 +54,35 @@ class DatabaseSyncHandler:
         This is the main event for order status changes.
         """
         try:
-            # Extract key data from execution report
-            order_id = data.get('i')  # Binance order ID
-            symbol = data.get('s')    # Symbol (e.g., 'BTCUSDT')
-            status = data.get('X')    # Order status (NEW, FILLED, PARTIALLY_FILLED, etc.)
-            executed_qty = float(data.get('z', 0))  # Cumulative filled quantity
-            avg_price = float(data.get('ap', 0))    # Average fill price
-            realized_pnl = float(data.get('Y', 0))  # Realized PnL from Binance
-            side = data.get('S')      # Side (BUY/SELL)
+            # Debug: Log the full data structure
+            logger.info(f"DEBUG: Received execution report data: {data}")
+            
+            # Handle both direct execution reports and ORDER_TRADE_UPDATE events
+            # ORDER_TRADE_UPDATE has data nested in 'o' object
+            if 'o' in data:
+                # This is an ORDER_TRADE_UPDATE event
+                order_data = data['o']
+                logger.info(f"DEBUG: Found 'o' object: {order_data}")
+                order_id = order_data.get('i')  # Binance order ID
+                symbol = order_data.get('s')    # Symbol (e.g., 'BTCUSDT')
+                status = order_data.get('X')    # Order status (NEW, FILLED, PARTIALLY_FILLED, etc.)
+                executed_qty = float(order_data.get('z', 0))  # Cumulative filled quantity
+                avg_price = float(order_data.get('ap', 0))    # Average fill price
+                realized_pnl = float(order_data.get('Y', 0))  # Realized PnL from Binance
+                side = order_data.get('S')      # Side (BUY/SELL)
+            else:
+                # This is a direct execution report
+                logger.info(f"DEBUG: No 'o' object found, using root data")
+                order_id = data.get('i')  # Binance order ID
+                symbol = data.get('s')    # Symbol (e.g., 'BTCUSDT')
+                status = data.get('X')    # Order status (NEW, FILLED, PARTIALLY_FILLED, etc.)
+                executed_qty = float(data.get('z', 0))  # Cumulative filled quantity
+                avg_price = float(data.get('ap', 0))    # Average fill price
+                realized_pnl = float(data.get('Y', 0))  # Realized PnL from Binance
+                side = data.get('S')      # Side (BUY/SELL)
 
             logger.info(f"Execution Report: {symbol} {order_id} - {status} - Qty: {executed_qty} - Price: {avg_price}")
+            
             # Find the corresponding trade in database
             trade = await self._find_trade_by_order_id(str(order_id)) if order_id is not None else None
             if not trade:
@@ -72,9 +91,12 @@ class DatabaseSyncHandler:
 
             trade_id = trade['id']
             logger.info(f"Found trade {trade_id} for order {order_id}")
+            
             # Update trade based on order status
             if status is not None:
-                await self._update_trade_status(trade_id, trade, data, status, executed_qty, avg_price, realized_pnl)
+                # Pass the order_data if it exists, otherwise pass the original data
+                execution_data = order_data if 'o' in data else data
+                await self._update_trade_status(trade_id, trade, execution_data, status, executed_qty, avg_price, realized_pnl)
             else:
                 logger.warning(f"Skipping trade update - status is None for order {order_id}")
 

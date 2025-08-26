@@ -84,8 +84,13 @@ class DiscordBotWebSocketManager:
                 self.sync_stats['orders_updated'] += 1
                 self.last_sync_time = datetime.now(timezone.utc)
 
+                # Debug: Log the full data structure
+                logger.info(f"DEBUG: DiscordBotWebSocketManager received data: {data}")
+
                 # Extract data for logging
                 order_data = data.get('o', {})
+                logger.info(f"DEBUG: order_data extracted: {order_data}")
+                
                 order_id = order_data.get('i', 'Unknown')
                 symbol = order_data.get('s', 'Unknown')
                 status = order_data.get('X', 'Unknown')
@@ -93,6 +98,7 @@ class DiscordBotWebSocketManager:
                 avg_price = float(order_data.get('ap', 0))
                 realized_pnl = float(order_data.get('Y', 0))
 
+                logger.info(f"DEBUG: Extracted order_id: {order_id} (type: {type(order_id)})")
                 logger.info(f"WebSocket: Order {order_id} ({symbol}) - {status} - Price: {avg_price}")
 
                 # Log important events

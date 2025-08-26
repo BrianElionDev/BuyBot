@@ -178,10 +178,20 @@ class DatabaseManager:
             logger.error(f"Error finding trade by id {trade_id}: {e}", exc_info=True)
             return None
 
-    async def update_existing_trade(self, signal_id: str = "", trade_id: int = 0, updates: Dict = {}) -> bool:
+    async def update_existing_trade(self, signal_id: str = "", trade_id: int = 0, updates: Dict = {}, alert_timestamp: Optional[str] = None, binance_execution_time: Optional[str] = None) -> bool:
         """
         Updates an existing trade record in the database.
         Enhanced to preserve original order responses and track sync issues.
+        
+        Args:
+            signal_id: Discord signal ID (optional, used if trade_id not provided)
+            trade_id: Database trade ID (optional, used if signal_id not provided)
+            updates: Dictionary of fields to update
+            alert_timestamp: Optional alert timestamp to use for updated_at (for accuracy in PnL calculations)
+            binance_execution_time: Optional Binance execution timestamp (most accurate for PnL calculations)
+            
+        Returns:
+            bool: Success status
         """
         if not self.supabase:
             logger.error("Supabase client not available.")
@@ -192,8 +202,36 @@ class DatabaseManager:
             return False
 
         try:
-            # Always update the updated_at timestamp (use UTC for consistency)
-            updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+            # Use Binance execution timestamp if provided (most accurate for PnL calculations)
+            if binance_execution_time:
+                updates["updated_at"] = binance_execution_time
+                logger.info(f"Using Binance execution timestamp for updated_at: {binance_execution_time}")
+            elif alert_timestamp:
+                updates["updated_at"] = alert_timestamp
+                logger.info(f"Using alert timestamp for updated_at: {alert_timestamp}")
+            else:
+                updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+            # CRITICAL: Ensure closed_at is set when status becomes CLOSED
+            if updates.get("status") == "CLOSED":
+                # Check if we need to set closed_at
+                if "closed_at" not in updates:
+                    # Get current trade data to check if closed_at already exists
+                    current_trade = None
+                    if trade_id:
+                        response = self.supabase.from_("trades").select("closed_at, updated_at").eq("id", trade_id).execute()
+                        current_trade = response.data[0] if response.data else None
+                    elif signal_id:
+                        response = self.supabase.from_("trades").select("closed_at, updated_at").eq("signal_id", signal_id).execute()
+                        current_trade = response.data[0] if response.data else None
+                    
+                    # Only set closed_at if it doesn't already exist
+                    if current_trade and not current_trade.get("closed_at"):
+                        # Use updated_at as fallback (more accurate than current time)
+                        # This preserves historical accuracy for PnL calculations
+                        fallback_time = current_trade.get("updated_at") or datetime.now(timezone.utc).isoformat()
+                        updates["closed_at"] = fallback_time
+                        logger.info(f"✅ Automatically set closed_at for trade {trade_id or signal_id} using updated_at fallback: {fallback_time}")
 
             if trade_id:
                 # For updates using database ID

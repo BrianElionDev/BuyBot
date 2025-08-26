@@ -1033,11 +1033,11 @@ async def backfill_trades_from_binance_history(bot, supabase, days: int = 30, sy
 
 
 def get_order_lifecycle(db_trade: Dict) -> Tuple[Optional[int], Optional[int], Optional[int]]:
-    """Get order start, end, and duration in milliseconds using created_at to closed_at range."""
+    """Get order start, end, and duration in milliseconds using created_at to updated_at range."""
     try:
         # Get timestamps from database - prefer snake_case
         created_at = db_trade.get('created_at') or db_trade.get('createdAt')
-        closed_at = db_trade.get('closed_at')
+        updated_at = db_trade.get('updated_at') or db_trade.get('updatedAt')
 
         if not created_at:
             logging.warning(f"Trade {db_trade.get('id')} has no created_at timestamp")
@@ -1053,37 +1053,24 @@ def get_order_lifecycle(db_trade: Dict) -> Tuple[Optional[int], Optional[int], O
         else:
             start_time = int(created_at.timestamp() * 1000)
 
-        # Parse end time (closed_at)
-        if not closed_at:
-            # If no closed_at, use updated_at as fallback, then created_at
-            updated_at = db_trade.get('updated_at')
-            if updated_at:
-                if isinstance(updated_at, str):
-                    if 'T' in updated_at:
-                        dt = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
-                        end_time = int(dt.timestamp() * 1000)
-                    else:
-                        end_time = int(float(updated_at) * 1000)
-                else:
-                    end_time = int(updated_at.timestamp() * 1000)
-                duration = end_time - start_time
-                logging.warning(f"Trade {db_trade.get('id')} has no closed_at - using updated_at as end time")
-            else:
-                # Fallback to created_at if no updated_at either
-                end_time = start_time
-                duration = 0
-                logging.warning(f"Trade {db_trade.get('id')} has no closed_at or updated_at - using created_at as end time")
+        # Parse end time (updated_at) - more reliable than closed_at
+        if not updated_at:
+            # Fallback to created_at if no updated_at
+            end_time = start_time
+            duration = 0
+            logging.warning(f"Trade {db_trade.get('id')} has no updated_at - using created_at as end time")
         else:
-            if isinstance(closed_at, str):
-                if 'T' in closed_at:
-                    dt = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+            if isinstance(updated_at, str):
+                if 'T' in updated_at:
+                    dt = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
                     end_time = int(dt.timestamp() * 1000)
                 else:
-                    end_time = int(float(closed_at) * 1000)
+                    end_time = int(float(updated_at) * 1000)
             else:
-                end_time = int(closed_at.timestamp() * 1000)
+                end_time = int(updated_at.timestamp() * 1000)
             duration = end_time - start_time
 
+        logging.info(f"Trade {db_trade.get('id')} lifecycle: {start_time} to {end_time} (duration: {duration}ms)")
         return start_time, end_time, duration
 
     except Exception as e:

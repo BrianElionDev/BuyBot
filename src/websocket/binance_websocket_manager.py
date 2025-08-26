@@ -152,11 +152,13 @@ class BinanceWebSocketManager:
 
     def add_event_handler(self, event_type: str, handler: Callable):
         """Add event handler for specific event type."""
-        if event_type in self.event_handlers:
+        if event_type not in self.event_handlers:
+            # Allow dynamic event types
+            self.event_handlers[event_type] = []
+            logger.info(f"Created new event handler list for event type: {event_type}")
+        
             self.event_handlers[event_type].append(handler)
             logger.debug(f"Added handler for event type: {event_type}")
-        else:
-            logger.warning(f"Unknown event type: {event_type}")
 
     def remove_event_handler(self, event_type: str, handler: Callable):
         """Remove event handler."""
@@ -335,7 +337,7 @@ class BinanceWebSocketManager:
 
             # Log all user data stream messages for debugging
             if stream_type == 'user_data':
-                logger.info(f"WebSocket {stream_type}: Received message: {message[:200]}...")
+                logger.info(f"WebSocket {stream_type}: Received message: {message}")
 
             # Convert bytes to string if needed
             if isinstance(message, bytes):
