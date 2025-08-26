@@ -200,3 +200,4 @@ if not trade.get('closed_at') and trade.get('status') == 'CLOSED':
 6. **Test P&L calculations** - verify range accuracy
 
 This system ensures that your trade timestamps are accurate, validated, and properly managed throughout the trade lifecycle.
+.
