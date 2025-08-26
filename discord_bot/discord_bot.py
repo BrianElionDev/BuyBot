@@ -472,10 +472,12 @@ class DiscordBot:
                 parsed_signal = await self.signal_parser.parse_new_trade_signal(signal.structured)
                 if not parsed_signal or not parsed_signal.get('coin_symbol'):
                     logger.error(f"Failed to parse signal or extract coin_symbol for trade {trade_row['id']}")
-                    # Update trade with error status
+                    # Update trade with error status using existing columns
                     await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                         'status': 'FAILED',
-                        'error_message': 'Failed to parse signal or extract coin symbol'
+                        'sync_error_count': 1,
+                        'sync_issues': ['Failed to parse signal or extract coin symbol'],
+                        'manual_verification_needed': True
                     })
                     return {"status": "error", "message": "Failed to parse signal or extract coin symbol"}
 
@@ -493,11 +495,90 @@ class DiscordBot:
                 await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates=trade_updates)
                 logger.info(f"Updated trade {trade_row['id']} with parsed signal data")
 
-                return {
-                    "status": "success",
-                    "message": "Trade processed successfully",
-                    "trade_id": trade_row['id']
-                }
+                # Execute the trade on Binance
+                try:
+                    logger.info(f"Executing trade on Binance for {parsed_signal['coin_symbol']}")
+
+                    # Extract parameters for trading engine
+                    coin_symbol = parsed_signal['coin_symbol']
+                    position_type = parsed_signal.get('position_type', 'LONG')
+                    order_type = parsed_signal.get('order_type', 'MARKET')
+                    entry_prices = parsed_signal.get('entry_prices', [])
+                    stop_loss = parsed_signal.get('stop_loss')
+                    take_profits = parsed_signal.get('take_profits')
+
+                    # Use first entry price as signal price
+                    signal_price = entry_prices[0] if entry_prices else None
+                    if not signal_price:
+                        logger.error(f"No entry price found for trade {trade_row['id']}")
+                        return {"status": "error", "message": "No entry price found"}
+
+                    # Execute the trade
+                    success, binance_response = await self.trading_engine.process_signal(
+                        coin_symbol=coin_symbol,
+                        signal_price=signal_price,
+                        position_type=position_type,
+                        order_type=order_type,
+                        stop_loss=stop_loss,
+                        take_profits=take_profits,
+                        entry_prices=entry_prices,
+                        client_order_id=signal.discord_id
+                    )
+
+                    if success:
+                        logger.info(f"✅ Trade executed successfully on Binance for {coin_symbol}")
+
+                        # Update trade with Binance response
+                        if isinstance(binance_response, dict):
+                            await self.db_manager.update_trade_with_original_response(
+                                trade_id=trade_row['id'],
+                                original_response=binance_response
+                            )
+                        else:
+                            # If binance_response is a string (error message), store it differently
+                            await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
+                                'binance_response': str(binance_response)
+                            })
+
+                        return {
+                            "status": "success",
+                            "message": "Trade processed and executed successfully",
+                            "trade_id": trade_row['id'],
+                            "binance_response": binance_response
+                        }
+                    else:
+                        logger.error(f"❌ Trade execution failed for {coin_symbol}: {binance_response}")
+
+                        # Update trade with error using existing columns
+                        await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
+                            'status': 'FAILED',
+                            'sync_error_count': 1,
+                            'sync_issues': [f'Trade execution failed: {binance_response}'],
+                            'manual_verification_needed': True
+                        })
+
+                        return {
+                            "status": "error",
+                            "message": f"Trade execution failed: {binance_response}",
+                            "trade_id": trade_row['id']
+                        }
+
+                except Exception as exec_error:
+                    logger.error(f"Error executing trade for {parsed_signal['coin_symbol']}: {exec_error}")
+
+                    # Update trade with error using existing columns
+                    await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
+                        'status': 'FAILED',
+                        'sync_error_count': 1,
+                        'sync_issues': [f'Execution error: {str(exec_error)}'],
+                        'manual_verification_needed': True
+                    })
+
+                    return {
+                        "status": "error",
+                        "message": f"Execution error: {str(exec_error)}",
+                        "trade_id": trade_row['id']
+                    }
 
             except Exception as parse_error:
                 logger.error(f"Error parsing signal for trade {trade_row['id']}: {parse_error}")
