@@ -114,9 +114,19 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
         and convert them into a structured JSON format. You must identify the coin symbol,
         position type, entry prices, stop loss, and take profit levels.
 
-        - 'coin_symbol': The ticker (e.g., BTC, ETH, HYPE). This is the most important field.
-          It is almost always the first word of the signal. Extract it with high accuracy. Do not abbreviate or change it.
-        - 'position_type': Should be 'LONG' or 'SHORT'. Infer this from words like "long", "longed", "short", "shorted". If not specified, default to 'LONG'.
+        CRITICAL RULES:
+        - 'coin_symbol': The ticker (e.g., BTC, ETH, SOL). This is the MOST IMPORTANT field.
+          NEVER abbreviate or truncate the coin symbol. If you see "BTC", return "BTC", not "TC".
+          If you see "ETH", return "ETH", not "ET". If you see "SOL", return "SOL", not "OL".
+          Common symbols: BTC, ETH, SOL, ADA, DOT, LINK, UNI, AAVE, MATIC, AVAX, NEAR, FTM, ALGO, ATOM, XRP, DOGE, SHIB, PEPE, BONK, WIF, FLOKI, TOSHI, TURBO, HYPE, FARTCOIN.
+
+        - 'position_type': MUST be 'LONG' or 'SHORT'. Look for these exact words:
+          * LONG: "long", "longed", "buy", "bought", "going long", "longing"
+          * SHORT: "short", "shorted", "sell", "sold", "going short", "shorting"
+          * If the signal says "Shorted BTC" or "Short BTC", position_type MUST be "SHORT"
+          * If the signal says "Longed BTC" or "Long BTC", position_type MUST be "LONG"
+          * Default to 'LONG' only if no position direction is mentioned at all.
+
         - 'entry_prices': A list of floats. Consolidate all entry points, including price ranges (e.g., "2567/2546") and DCA levels, into this list.
         - 'stop_loss': A float or a string. If it's a simple price, make it a float. If it's a condition like 'BE', '4h close below 212', or '2x 5m < 104900', keep it as a string.
         - 'take_profits': A list of floats.
@@ -124,10 +134,15 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
         - 'risk_level': A string describing any risk instructions, like "1% risk" or "Half risk". If not present, this key should be null.
         - If a value (like take_profits) is not present in the signal, the corresponding JSON key should have a value of null.
 
+        EXAMPLES:
+        - "Shorted BTC 111100 sl 112392" → {"coin_symbol": "BTC", "position_type": "SHORT", "entry_prices": [111100], "stop_loss": 112392, "take_profits": null, "order_type": "MARKET"}
+        - "Longed ETH 4525 sl 4432" → {"coin_symbol": "ETH", "position_type": "LONG", "entry_prices": [4525], "stop_loss": 4432, "take_profits": null, "order_type": "MARKET"}
+        - "BTC limit short 113811-144680 sl 116189" → {"coin_symbol": "BTC", "position_type": "SHORT", "entry_prices": [113811, 144680], "stop_loss": 116189, "take_profits": null, "order_type": "LIMIT"}
+
         Return ONLY the JSON object, without any explanatory text or markdown.
         """
         user_prompt = f"Parse this new trade signal: `{signal_content}`"
-        expected_keys = ["coin_symbol", "entry_prices"]
+        expected_keys = ["coin_symbol", "entry_prices", "position_type"]
 
     try:
         response = await client.chat.completions.create(
@@ -137,7 +152,7 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.2,
+            temperature=0.1,  # Reduced temperature for more consistent parsing
         )
         content = response.choices[0].message.content
         if not content:
@@ -145,10 +160,24 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
             return None
         parsed_data = json.loads(content)
 
-        # Basic validation
+        # Enhanced validation
         if not all(key in parsed_data for key in expected_keys):
             logger.warning(f"AI response missing expected keys for this context. Response: {parsed_data}")
             return None
+
+        # Additional validation for coin symbols
+        if not active_trade and parsed_data.get('coin_symbol'):
+            coin_symbol = parsed_data['coin_symbol'].upper()
+            # Check for common truncation errors
+            if len(coin_symbol) < 2:
+                logger.error(f"Coin symbol too short: {coin_symbol}")
+                return None
+
+            # Validate position type
+            position_type = parsed_data.get('position_type', '').upper()
+            if position_type not in ['LONG', 'SHORT']:
+                logger.error(f"Invalid position type: {position_type}")
+                return None
 
         logger.info(f"OpenAI parsed data: {parsed_data}")
         return parsed_data

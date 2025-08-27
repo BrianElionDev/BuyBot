@@ -156,7 +156,7 @@ class BinanceWebSocketManager:
             # Allow dynamic event types
             self.event_handlers[event_type] = []
             logger.info(f"Created new event handler list for event type: {event_type}")
-        
+
             self.event_handlers[event_type].append(handler)
             logger.debug(f"Added handler for event type: {event_type}")
 
@@ -190,6 +190,7 @@ class BinanceWebSocketManager:
     async def _refresh_listen_key(self):
         """Refresh listen key before expiry."""
         if not self.listen_key:
+            logger.info("No listen key exists, getting new one")
             await self._get_listen_key()
             return
 
@@ -203,14 +204,19 @@ class BinanceWebSocketManager:
                 ) as response:
                     if response.status == 200:
                         self.listen_key_expiry = datetime.now() + timedelta(minutes=60)
-                        logger.debug("Listen key refreshed successfully")
+                        logger.info("Listen key refreshed successfully")
                     else:
                         error_text = await response.text()
                         logger.warning(f"Failed to refresh listen key: {response.status} - {error_text}")
-                        # Get new listen key
+                        # Clear the old listen key and get a new one
+                        self.listen_key = None
+                        self.listen_key_expiry = None
                         await self._get_listen_key()
         except Exception as e:
             logger.error(f"Error refreshing listen key: {e}")
+            # Clear the old listen key and get a new one
+            self.listen_key = None
+            self.listen_key_expiry = None
             await self._get_listen_key()
 
     async def _delete_listen_key(self):
@@ -423,12 +429,18 @@ class BinanceWebSocketManager:
             try:
                 await asyncio.sleep(self.config.LISTEN_KEY_REFRESH_INTERVAL)
 
-                if self.listen_key_expiry and datetime.now() >= self.listen_key_expiry - timedelta(minutes=5):
+                # Check if listen key has expired or is about to expire
+                if not self.listen_key_expiry or datetime.now() >= self.listen_key_expiry - timedelta(minutes=5):
                     logger.info("Refreshing listen key before expiry")
                     await self._refresh_listen_key()
 
             except Exception as e:
                 logger.error(f"Error in listen key refresh: {e}")
+                # If refresh fails, try to get a new listen key
+                try:
+                    await self._get_listen_key()
+                except Exception as get_error:
+                    logger.error(f"Failed to get new listen key after refresh error: {get_error}")
 
     async def _manage_rate_limiting(self):
         """Manage rate limiting counters."""

@@ -485,11 +485,11 @@ class DiscordBot:
 
                 # Update trade with parsed signal data
                 trade_updates = {
-                    'parsed_signal': parsed_signal,
+                    'parsed_signal': json.dumps(parsed_signal) if isinstance(parsed_signal, dict) else str(parsed_signal),
                     'coin_symbol': parsed_signal['coin_symbol'],
-                    'signal_type': parsed_signal.get('signal_type'),
+                    'signal_type': parsed_signal.get('position_type'),  # Use position_type as signal_type
                     'position_size': parsed_signal.get('position_size'),
-                    'entry_price': parsed_signal.get('entry_price')
+                    'entry_price': parsed_signal.get('entry_prices', [None])[0] if parsed_signal.get('entry_prices') else None
                 }
 
                 await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates=trade_updates)
@@ -1098,7 +1098,7 @@ class DiscordBot:
                 # Update the trade with new status or SL order ID
                 if trade_updates:
                     await self.db_manager.update_existing_trade(
-                        trade_id=trade_row["id"], 
+                        trade_id=trade_row["id"],
                         updates=trade_updates,
                         binance_execution_time=binance_execution_time
                     )

@@ -1239,7 +1239,7 @@ class TradingEngine:
                     if trade_id and self.db_manager:
                         if close_percentage >= 100.0:
                             status = "CLOSED"
-                            
+
                             # Set closed_at timestamp when trade is fully closed
                             try:
                                 from discord_bot.utils.timestamp_manager import ensure_closed_at
