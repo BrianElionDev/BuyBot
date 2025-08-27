@@ -37,7 +37,8 @@ def reload_env():
 # Force reload on import with override=True to ensure fresh values
 load_dotenv(override=True)
 
-# Telegram
+# Telegram (Legacy - for signal listening, now deprecated)
+# These are kept for backward compatibility but not used in new notification system
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
 TELEGRAM_PHONE = os.getenv("TELEGRAM_PHONE")
@@ -70,8 +71,9 @@ SLIPPAGE_PERCENTAGE = float(os.getenv("SLIPPAGE_PERCENTAGE", "1.0"))
 TRADE_COOLDOWN = int(os.getenv("TRADE_COOLDOWN", "300"))
 LIMIT_ORDER_PRICE_THRESHOLD = float(os.getenv("LIMIT_ORDER_PRICE_THRESHOLD", "10.0"))  # Threshold for limit order price validation (10%)
 
-# Telegram Bot Configuration
+# Telegram Bot Configuration (for notifications)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
+TELEGRAM_NOTIFICATION_CHAT_ID = os.getenv("TELEGRAM_NOTIFICATION_CHAT_ID", "")
 
 # Minimum ETH balance to maintain for gas fees
 MIN_ETH_BALANCE = float(os.getenv("MIN_ETH_BALANCE", "0.01"))

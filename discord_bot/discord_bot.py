@@ -60,6 +60,10 @@ class DiscordBot:
         )
         self.signal_parser = DiscordSignalParser()
 
+        # Initialize Telegram notification service
+        from src.services.telegram_notification_service import TelegramNotificationService
+        self.telegram_notifications = TelegramNotificationService()
+
         # Initialize WebSocket manager for real-time database sync
         self.websocket_manager = DiscordBotWebSocketManager(self, self.db_manager)
 
@@ -534,6 +538,19 @@ class DiscordBot:
                                 trade_id=trade_row['id'],
                                 original_response=binance_response
                             )
+
+                            # Send Telegram notification for successful trade
+                            try:
+                                await self.telegram_notifications.send_trade_execution_notification(
+                                    coin_symbol=coin_symbol,
+                                    position_type=position_type,
+                                    entry_price=signal_price,
+                                    quantity=float(binance_response.get('origQty', 0)),
+                                    order_id=str(binance_response.get('orderId', '')),
+                                    status="SUCCESS"
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to send Telegram notification: {e}")
                         else:
                             # If binance_response is a string (error message), store it differently
                             await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
@@ -556,6 +573,20 @@ class DiscordBot:
                             'sync_issues': [f'Trade execution failed: {binance_response}'],
                             'manual_verification_needed': True
                         })
+
+                        # Send Telegram notification for failed trade
+                        try:
+                            await self.telegram_notifications.send_trade_execution_notification(
+                                coin_symbol=coin_symbol,
+                                position_type=position_type,
+                                entry_price=signal_price,
+                                quantity=0,
+                                order_id="",
+                                status="FAILED",
+                                error_message=str(binance_response)
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send Telegram notification: {e}")
 
                         return {
                             "status": "error",

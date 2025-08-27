@@ -1498,10 +1498,10 @@ class TradingEngine:
 
             # Calculate 5% stop loss from entry price (supervisor requirement)
             if position_type.upper() == 'LONG':
-                stop_loss_price = entry_price * (1 - 0.05)  # 5% below entry price
+                stop_loss_price = entry_price * (1 - 0.05)
                 logger.info(f"LONG position: Calculated 5% stop loss from entry. Entry: {entry_price}, SL: {stop_loss_price}")
             elif position_type.upper() == 'SHORT':
-                stop_loss_price = entry_price * (1 + 0.05)  # 5% above entry price
+                stop_loss_price = entry_price * (1 + 0.05)
                 logger.info(f"SHORT position: Calculated 5% stop loss from entry. Entry: {entry_price}, SL: {stop_loss_price}")
             else:
                 logger.error(f"Unknown position type: {position_type}")
