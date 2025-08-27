@@ -341,7 +341,7 @@ class TradingEngine:
                 logger.warning(f"Order quantity {trade_amount} below minimum {min_qty} for {trading_pair}. Skipping order.")
                 return False, {"error": f"Quantity {trade_amount} below minimum {min_qty} for {trading_pair}, order skipped."}
 
-            if trade_amount > maxQuantity:
+            if trade_amount > max_qty:
                 logger.warning(f"Order quantity {trade_amount} above maximum {max_qty} for {trading_pair}. Skipping order.")
                 return False, {"error": f"Quantity {trade_amount} above maximum {max_qty} for {trading_pair}, order skipped."}
 
@@ -785,30 +785,55 @@ class TradingEngine:
                     except Exception as e:
                         logger.error(f"Error creating TP order {i+1} at {tp_price}: {e}")
 
-            # Create Stop Loss order
-            if stop_loss:
-                try:
-                    sl_price_float = float(stop_loss)
-
-                    # For stop loss, use reduceOnly with specific amount to handle partial positions correctly
-                    sl_order = await self.binance_exchange.create_futures_order(
-                        pair=trading_pair,
-                        side=tp_sl_side,
-                        order_type_market='STOP_MARKET',
-                        amount=position_size,  # Use specific amount for partial positions
-                        stop_price=sl_price_float,
-                        reduce_only=True  # This ensures it only reduces the position by the specified amount
-                    )
-
-                    if sl_order and 'orderId' in sl_order:
-                        sl_order['order_type'] = 'STOP_LOSS'
-                        tp_sl_orders.append(sl_order)
-                        stop_loss_order_id = str(sl_order['orderId'])
-                        logger.info(f"Created SL order at {sl_price_float} for {trading_pair} with amount {position_size} and order ID: {stop_loss_order_id}")
+                                # Create Stop Loss order (supervisor requirement: default 5% if no SL provided)
+                    if stop_loss:
+                        try:
+                            sl_price_float = float(stop_loss)
+                            logger.info(f"Using provided stop loss: {sl_price_float}")
+                        except (ValueError, TypeError):
+                            logger.warning(f"Invalid stop loss provided: {stop_loss}, using default 5%")
+                            sl_price_float = None
                     else:
-                        logger.error(f"Failed to create SL order: {sl_order}")
-                except Exception as e:
-                    logger.error(f"Error creating SL order at {stop_loss}: {e}")
+                        sl_price_float = None
+
+                    # If no valid stop loss provided, calculate default 5% from entry price
+                    if sl_price_float is None:
+                        # Get current market price as entry price (fallback)
+                        current_price = await self.binance_exchange.get_futures_mark_price(trading_pair)
+                        if current_price:
+                            sl_price_float = await self.calculate_5_percent_stop_loss(
+                                coin_symbol=trading_pair.replace('USDT', ''),
+                                position_type=position_type,
+                                entry_price=current_price
+                            )
+                            logger.info(f"Using default 5% stop loss: {sl_price_float}")
+                        else:
+                            logger.error(f"Could not get current price for {trading_pair}, skipping stop loss")
+                            sl_price_float = None
+
+                    if sl_price_float:
+                        try:
+                            # For stop loss, use reduceOnly with specific amount to handle partial positions correctly
+                            sl_order = await self.binance_exchange.create_futures_order(
+                                pair=trading_pair,
+                                side=tp_sl_side,
+                                order_type_market='STOP_MARKET',
+                                amount=position_size,  # Use specific amount for partial positions
+                                stop_price=sl_price_float,
+                                reduce_only=True  # This ensures it only reduces the position by the specified amount
+                            )
+
+                            if sl_order and 'orderId' in sl_order:
+                                sl_order['order_type'] = 'STOP_LOSS'
+                                tp_sl_orders.append(sl_order)
+                                stop_loss_order_id = str(sl_order['orderId'])
+                                logger.info(f"Created SL order at {sl_price_float} for {trading_pair} with amount {position_size} and order ID: {stop_loss_order_id}")
+                            else:
+                                logger.error(f"Failed to create SL order: {sl_order}")
+                        except Exception as e:
+                            logger.error(f"Error creating SL order at {sl_price_float}: {e}")
+                    else:
+                        logger.warning(f"No stop loss created for {trading_pair} - will be handled by position audit")
 
             return tp_sl_orders, stop_loss_order_id
 
@@ -1258,7 +1283,7 @@ class TradingEngine:
                             from datetime import datetime, timezone
                             execution_timestamp = datetime.fromtimestamp(execution_timestamp / 1000, tz=timezone.utc).isoformat()
                             logger.info(f"Using Binance execution timestamp for updated_at: {execution_timestamp}")
-                        
+
                         await self.db_manager.update_existing_trade(
                             trade_id=trade_id,
                             updates={
@@ -1453,6 +1478,237 @@ class TradingEngine:
         except Exception as e:
             logger.error(f"Error calculating {percentage}% stop loss for {coin_symbol}: {e}")
             return None
+
+    async def calculate_5_percent_stop_loss(self, coin_symbol: str, position_type: str, entry_price: float) -> Optional[float]:
+        """
+        Calculate a 5% stop loss price from the entry price (supervisor requirement).
+
+        Args:
+            coin_symbol: The trading symbol (e.g., 'BTC')
+            position_type: The position type ('LONG' or 'SHORT')
+            entry_price: The entry price for the position
+
+        Returns:
+            The calculated stop loss price or None if calculation fails
+        """
+        try:
+            if entry_price <= 0:
+                logger.error(f"Invalid entry price for {coin_symbol}: {entry_price}")
+                return None
+
+            # Calculate 5% stop loss from entry price (supervisor requirement)
+            if position_type.upper() == 'LONG':
+                stop_loss_price = entry_price * (1 - 0.05)  # 5% below entry price
+                logger.info(f"LONG position: Calculated 5% stop loss from entry. Entry: {entry_price}, SL: {stop_loss_price}")
+            elif position_type.upper() == 'SHORT':
+                stop_loss_price = entry_price * (1 + 0.05)  # 5% above entry price
+                logger.info(f"SHORT position: Calculated 5% stop loss from entry. Entry: {entry_price}, SL: {stop_loss_price}")
+            else:
+                logger.error(f"Unknown position type: {position_type}")
+                return None
+
+            # Get precision for rounding
+            trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
+            precision = await self.binance_exchange.get_symbol_precision(trading_pair)
+            rounded_stop_loss_price = round(stop_loss_price, precision)
+
+            return rounded_stop_loss_price
+
+        except Exception as e:
+            logger.error(f"Error calculating 5% stop loss for {coin_symbol}: {e}")
+            return None
+
+    async def ensure_stop_loss_for_position(self, coin_symbol: str, position_type: str, position_size: float, entry_price: float, external_sl: Optional[float] = None) -> Tuple[bool, Optional[str]]:
+        """
+        Ensure a stop loss is in place for a position (supervisor requirement).
+
+        Args:
+            coin_symbol: The trading symbol
+            position_type: The position type ('LONG' or 'SHORT')
+            position_size: The position size
+            entry_price: The entry price
+            external_sl: External stop loss price from signal (if provided)
+
+        Returns:
+            Tuple of (success, stop_loss_order_id)
+        """
+        try:
+            trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
+
+            # Determine stop loss price
+            if external_sl is not None and external_sl > 0:
+                # Use external SL from signal (supervisor requirement: cancel ours and replace with signal SL)
+                logger.info(f"Using external stop loss from signal: {external_sl}")
+                sl_price = external_sl
+            else:
+                # Use default 5% SL from entry price (supervisor requirement)
+                sl_price = await self.calculate_5_percent_stop_loss(coin_symbol, position_type, entry_price)
+                if not sl_price:
+                    logger.error(f"Failed to calculate default 5% stop loss for {coin_symbol}")
+                    return False, None
+                logger.info(f"Using default 5% stop loss: {sl_price}")
+
+            # Cancel any existing stop loss orders for this symbol
+            await self._cancel_existing_stop_loss_orders(trading_pair)
+
+            # Create new stop loss order
+            sl_side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
+
+            sl_order = await self.binance_exchange.create_futures_order(
+                pair=trading_pair,
+                side=sl_side,
+                order_type_market=FUTURE_ORDER_TYPE_STOP_MARKET,
+                amount=position_size,
+                stop_price=sl_price,
+                reduce_only=True
+            )
+
+            if sl_order and 'orderId' in sl_order:
+                stop_loss_order_id = str(sl_order['orderId'])
+                logger.info(f"Successfully created stop loss order: {stop_loss_order_id} at {sl_price}")
+                return True, stop_loss_order_id
+            else:
+                logger.error(f"Failed to create stop loss order: {sl_order}")
+                return False, None
+
+        except Exception as e:
+            logger.error(f"Error ensuring stop loss for {coin_symbol}: {e}")
+            return False, None
+
+    async def _cancel_existing_stop_loss_orders(self, trading_pair: str) -> bool:
+        """
+        Cancel existing stop loss orders for a trading pair.
+
+        Args:
+            trading_pair: The trading pair (e.g., 'BTCUSDT')
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Get open orders for the symbol
+            open_orders = await self.binance_exchange.get_open_orders(trading_pair)
+
+            if not open_orders:
+                logger.info(f"No open orders found for {trading_pair}")
+                return True
+
+            # Cancel stop loss orders
+            cancelled_count = 0
+            for order in open_orders:
+                if order.get('type') == 'STOP_MARKET':
+                    order_id = order.get('orderId')
+                    if order_id:
+                        cancel_result = await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
+                        if cancel_result:
+                            logger.info(f"Cancelled existing stop loss order: {order_id}")
+                            cancelled_count += 1
+                        else:
+                            logger.warning(f"Failed to cancel stop loss order: {order_id}")
+
+            logger.info(f"Cancelled {cancelled_count} existing stop loss orders for {trading_pair}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error cancelling existing stop loss orders for {trading_pair}: {e}")
+            return False
+
+    async def audit_open_positions_for_stop_loss(self) -> Dict[str, Any]:
+        """
+        Audit all open positions to ensure they have stop loss orders (supervisor requirement).
+
+        Returns:
+            Dictionary with audit results
+        """
+        try:
+            logger.info("Starting stop loss audit for all open positions...")
+
+            # Get all open positions
+            positions = await self.binance_exchange.get_position_risk()
+
+            audit_results = {
+                'total_positions': 0,
+                'positions_with_sl': 0,
+                'positions_without_sl': 0,
+                'sl_orders_created': 0,
+                'errors': []
+            }
+
+            for position in positions:
+                symbol = position.get('symbol')
+                position_amt = float(position.get('positionAmt', 0))
+
+                # Skip positions with zero size
+                if position_amt == 0:
+                    continue
+
+                audit_results['total_positions'] += 1
+
+                # Determine position type
+                position_type = 'LONG' if position_amt > 0 else 'SHORT'
+                entry_price = float(position.get('entryPrice', 0))
+
+                if not entry_price:
+                    audit_results['errors'].append(f"No entry price for {symbol}")
+                    continue
+
+                # Check if position has stop loss orders
+                has_sl = await self._check_position_has_stop_loss(symbol)
+
+                if has_sl:
+                    audit_results['positions_with_sl'] += 1
+                    logger.info(f"Position {symbol} already has stop loss order")
+                else:
+                    audit_results['positions_without_sl'] += 1
+                    logger.warning(f"Position {symbol} missing stop loss order - creating default 5% SL")
+
+                    # Create default 5% stop loss
+                    success, sl_order_id = await self.ensure_stop_loss_for_position(
+                        coin_symbol=symbol.replace('USDT', ''),
+                        position_type=position_type,
+                        position_size=abs(position_amt),
+                        entry_price=entry_price
+                    )
+
+                    if success:
+                        audit_results['sl_orders_created'] += 1
+                        logger.info(f"Created stop loss order for {symbol}: {sl_order_id}")
+                    else:
+                        audit_results['errors'].append(f"Failed to create stop loss for {symbol}")
+
+            logger.info(f"Stop loss audit completed: {audit_results}")
+            return audit_results
+
+        except Exception as e:
+            logger.error(f"Error during stop loss audit: {e}")
+            return {'error': str(e)}
+
+    async def _check_position_has_stop_loss(self, trading_pair: str) -> bool:
+        """
+        Check if a position has active stop loss orders.
+
+        Args:
+            trading_pair: The trading pair (e.g., 'BTCUSDT')
+
+        Returns:
+            True if position has stop loss orders, False otherwise
+        """
+        try:
+            open_orders = await self.binance_exchange.get_open_orders(trading_pair)
+
+            if not open_orders:
+                return False
+
+            # Check for stop loss orders
+            for order in open_orders:
+                if order.get('type') == 'STOP_MARKET':
+                    return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error checking stop loss orders for {trading_pair}: {e}")
+            return False
 
     async def close(self):
         """Close all exchange connections."""
