@@ -70,301 +70,23 @@ class DiscordBot:
         logger.info(f"DiscordBot initialized with {'AI' if client else 'simple'} Signal Parser.")
 
     def _clean_text_for_llm(self, text: str) -> str:
-        """
-        Clean text for LLM processing by removing problematic characters and formatting.
-        """
-        if not text:
-            return ""
-
-        # Remove or replace problematic characters
-        cleaned = text.replace('"', '"').replace('"', '"')  # Smart quotes to regular quotes
-        cleaned = cleaned.replace(''', "'").replace(''', "'")  # Smart apostrophes to regular apostrophes
-        cleaned = cleaned.replace('–', '-').replace('—', '-')  # Em dashes to regular dashes
-        cleaned = cleaned.replace('…', '...')  # Ellipsis to three dots
-
-        # Remove any other non-ASCII characters that might cause issues
-        cleaned = ''.join(char for char in cleaned if ord(char) < 128)
-
-        return cleaned.strip()
+        """Delegate to signal processor for text cleaning."""
+        from discord_bot.signal_processing import SignalValidator
+        validator = SignalValidator()
+        return validator.sanitize_signal_content(text)
 
     def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
-        """
-        Safely parse parsed_signal data which can be either a dict or JSON string.
-        """
-        if isinstance(parsed_signal_data, dict):
-            return parsed_signal_data
-        elif isinstance(parsed_signal_data, str):
-            try:
-                return json.loads(parsed_signal_data)
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse parsed_signal JSON: {parsed_signal_data}")
-                return {}
-        else:
-            logger.warning(f"Unexpected parsed_signal type: {type(parsed_signal_data)}")
-            return {}
+        """Delegate to signal processor for parsing."""
+        from discord_bot.signal_processing import SignalProcessor
+        processor = SignalProcessor()
+        return processor.parse_parsed_signal(parsed_signal_data)
 
     def parse_alert_content(self, content, trade_row=None):
-        """
-        Parse alert content and determine what action(s) should be taken.
-        Returns structured data for logging. Can handle single or multiple actions.
-        """
-        content_lower = content.lower()
-
-        # Extract coin symbol from content
-        coin_symbol = self._extract_coin_symbol_from_content(content)
-
-        # Determine action type and details
-        stop_loss_regex = r"stoploss moved to ([-+]?\d*\.?\d+)"
-        stops_to_be_regex= r"\b(stops?|sl)\b.*\bbe\b"
-        stops_to_x_regex = r"\b(stop\w*|sl)\b.*\bto\b\s*(-?\d+(\.\d+)?)"
-        dca_to_entry_regex = r"\bdca\b.*\bentry\b.*?(\d+\.\d+)(?:\s|$)"
-        leverage_regex = r"leverage\s*to\s*(\d+x)"
-        trailing_sl_regex = r"trailing\s+sl\s+at\s+(\d+\.?\d*%)"
-        partial_fill_regex = r"partial\s+fill"
-        liquidation_regex = r"liquidated|liquidation"
-        position_size_regex = r"(double|increase|decrease)\s+position\s+size"
-
-        # 1. Handle liquidation events (highest priority)
-        if re.search(liquidation_regex, content_lower):
-            return {
-                "action_type": "liquidation",
-                "action_description": f"Position liquidated for {coin_symbol}",
-                "binance_action": "NO_ACTION",
-                "position_status": "LIQUIDATED",
-                "reason": "Position forcibly closed due to liquidation",
-                "coin_symbol": coin_symbol
-            }
-
-        # 2. Handle partial fills
-        if re.search(partial_fill_regex, content_lower):
-            return {
-                "action_type": "partial_fill",
-                "action_description": f"Partial fill for {coin_symbol}",
-                "binance_action": "UPDATE_POSITION_SIZE",
-                "position_status": "OPEN",
-                "reason": "Partial fill of limit order",
-                "coin_symbol": coin_symbol
-            }
-
-        # 3. Take Profit 1 with Stop Loss move to Break Even (MUST BE FIRST!)
-        if "tp1 & stops moved to be" in content_lower:
-            return {
-                "action_type": "tp1_and_sl_to_be",
-                "action_description": f"TP1 hit and stop loss moved to break even for {coin_symbol}",
-                "binance_action": "PARTIAL_SELL_AND_UPDATE_STOP_ORDER",
-                "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP1 hit and risk management - move to break even",
-                "coin_symbol": coin_symbol
-            }
-
-        # 4. Handle position closure scenarios
-        if "stopped out" in content_lower or "closed in profits" in content_lower or "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
-            return {
-                "action_type": "stop_loss_hit",
-                "action_description": f"Position closed for {coin_symbol}",
-                "binance_action": "MARKET_SELL",
-                "stop_loss": None,
-                "take_profit": None,
-                "position_status": "CLOSED",
-                "reason": "Position closed",
-                "coin_symbol": coin_symbol
-            }
-
-        # 5. Handle leverage updates
-        if re.search(leverage_regex, content_lower):
-            match = re.search(leverage_regex, content_lower)
-            leverage = int(match.group(1).replace('x', ''))
-            return {
-                "action_type": "update_leverage",
-                "action_description": f"Update leverage to {leverage}x for {coin_symbol}",
-                "binance_action": "UPDATE_LEVERAGE",
-                "position_status": "OPEN",
-                "leverage": leverage,
-                "reason": "Leverage adjustment",
-                "coin_symbol": coin_symbol
-            }
-
-        # 6. Handle trailing stop-loss
-        if re.search(trailing_sl_regex, content_lower):
-            match = re.search(trailing_sl_regex, content_lower)
-            trailing_percentage = float(match.group(1).replace('%', ''))
-            return {
-                "action_type": "trailing_stop_loss",
-                "action_description": f"Set trailing stop loss at {trailing_percentage}% for {coin_symbol}",
-                "binance_action": "SET_TRAILING_STOP",
-                "position_status": "OPEN",
-                "trailing_percentage": trailing_percentage,
-                "reason": "Trailing stop loss activation",
-                "coin_symbol": coin_symbol
-            }
-
-        # 7. Handle position size adjustments
-        if re.search(position_size_regex, content_lower):
-            match = re.search(position_size_regex, content_lower)
-            action = match.group(1)
-            multiplier = 2.0 if action == "double" else 1.5 if action == "increase" else 0.5
-            return {
-                "action_type": "adjust_position_size",
-                "action_description": f"{action.capitalize()} position size for {coin_symbol}",
-                "binance_action": "ADJUST_POSITION",
-                "position_status": "OPEN",
-                "position_multiplier": multiplier,
-                "reason": f"Position size {action}d",
-                "coin_symbol": coin_symbol
-            }
-
-        # 8. Handle limit order cancellation
-        elif "limit order cancelled" in content_lower:
-            return {
-                "action_type": "limit_order_cancelled",
-                "action_description": f"Limit order cancelld for {coin_symbol}",
-                "binance_action": "CANCEL_ORDER",
-                "position_status": "CLOSED",
-                "stop_loss": None,
-                "take_profit":None,
-                "reason": "Cancel limit order",
-                "coin_symbol": coin_symbol
-            }
-
-        # 9. Handle specific stop loss updates (excluding "move stops to" which is caught by regex)
-        elif "move stops to 1H" in content_lower or "updated stoploss" in content_lower or "updated stop loss " in content_lower:
-            return {
-                "action_type": "cancelled_stoploss_order_and_create_new",
-                "action_description": f"Limit order cancelld for {coin_symbol}",
-                "binance_action": "UPDATE_ORDER",
-                "position_status": "OPEN",
-                "stop_loss": 2,
-                "take_profit":None,
-                "reason": "Cancel SL order and create new one +-2%",
-                "coin_symbol": coin_symbol
-            }
-
-        # 10. Handle take profit scenarios
-        elif "tp1 taken" in content_lower:
-            return {
-                "action_type": "take_profit_taken_hit",
-                "action_description": f"Take Profit 2 hit for {coin_symbol}",
-                "binance_action": "PARTIAL_SELL",
-                "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP2 target reached",
-                "coin_symbol": coin_symbol
-            }
-        elif "tp1" in content_lower:
-            return {
-                "action_type": "take_profit_1",
-                "action_description": f"Take Profit 1 hit for {coin_symbol}",
-                "binance_action": "PARTIAL_SELL",
-                "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP1 target reached",
-                "coin_symbol": coin_symbol
-            }
-        elif "tp2" in content_lower:
-            return {
-                "action_type": "take_profit_2",
-                "action_description": f"Take Profit 2 hit for {coin_symbol}",
-                "binance_action": "PARTIAL_SELL",
-                "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP2 target reached",
-                "coin_symbol": coin_symbol
-            }
-
-        # 11. Handle limit order filled
-        elif "limit order filled" in content_lower:
-            return {
-                "action_type": "limit_order_filled",
-                "action_description": f"Limit order filled for {coin_symbol}",
-                "binance_action": "NO_ACTION",  # Order already filled, just update status
-                "position_status": "OPEN",
-                "reason": "Limit order filled - position now open",
-                "coin_symbol": coin_symbol
-            }
-
-        # 12. Handle stop loss updates with regex patterns
-        if re.search(stops_to_be_regex, content_lower):
-            return {
-                "action_type": "stop_loss_update",
-                "action_description": f"Stop loss moved to break even for {coin_symbol}",
-                "binance_action": "UPDATE_STOP_ORDER",
-                "position_status": "OPEN",
-                "stop_loss": "BE",
-                "take_profit": None,
-                "reason": "Risk management - move to break even",
-                "coin_symbol": coin_symbol
-            }
-        elif re.search(stops_to_x_regex, content_lower):
-            match = re.search(stops_to_x_regex, content_lower)
-            if match:
-                try:
-                    entry_value = float(match.group(2))
-                    if entry_value <= 0:
-                        logger.error(f"Invalid stop loss price in alert: {content}")
-                        return {
-                            "action_type": "invalid_price",
-                            "action_description": f"Invalid stop loss price for {coin_symbol}",
-                            "binance_action": "NO_ACTION",
-                            "position_status": "UNKNOWN",
-                            "reason": "Invalid price in alert",
-                            "coin_symbol": coin_symbol
-                        }
-                    return {
-                        "action_type": "stop_loss_update",
-                        "action_description": f"Stop loss moved to {entry_value} for {coin_symbol}",
-                        "binance_action": "UPDATE_STOP_ORDER",
-                        "position_status": "OPEN",
-                        "stop_loss": entry_value,
-                        "take_profit": None,
-                        "reason": "Stop loss adjusted to specific value",
-                        "coin_symbol": coin_symbol
-                    }
-                except ValueError:
-                    logger.error(f"Invalid stop loss price in alert: {content}")
-                    return {
-                        "action_type": "invalid_price",
-                        "action_description": f"Invalid stop loss price for {coin_symbol}",
-                        "binance_action": "NO_ACTION",
-                        "position_status": "UNKNOWN",
-                        "reason": "Invalid price in alert",
-                        "coin_symbol": coin_symbol
-                    }
-        elif re.search(dca_to_entry_regex, content_lower):
-            match = re.search(dca_to_entry_regex, content_lower)
-            if match:
-                entry_value = match.group(1) # Convert the extracted string to a float
-                return {
-                "action_type": "dca_to_entry",
-                "action_description": f"Create a new order if their is no open positions {entry_value} for {coin_symbol}",
-                "binance_action": "CREATE_NEW_ORDER_IF_NONE_STOP_ORDER",
-                "position_status": "OPEN",
-                "entry": entry_value,
-                "take_profit": None,
-                "reason": "Stop loss adjusted to specific value",
-                "coin_symbol": coin_symbol
-                }
-
-        # 13. Handle ambiguous or incomplete alerts
-        else:
-            # Check if this is an ambiguous alert that needs manual review
-            ambiguous_keywords = ["update", "move", "adjust", "change", "modify"]
-            is_ambiguous = any(keyword in content_lower for keyword in ambiguous_keywords)
-
-            if is_ambiguous:
-                logger.error(f"Ambiguous alert content: {content}. Flagging for manual review.")
-                return {
-                    "action_type": "flagged_for_review",
-                    "action_description": f"Ambiguous alert for {coin_symbol}: {content}",
-                    "binance_action": "NO_ACTION",
-                    "position_status": "UNKNOWN",
-                    "reason": "Ambiguous alert content - manual review required",
-                    "coin_symbol": coin_symbol
-                }
-            else:
-                return {
-                    "action_type": "unknown_update",
-                    "action_description": f"Update for {coin_symbol}: {content}",
-                    "binance_action": "NO_ACTION",
-                    "position_status": "UNKNOWN",
-                    "reason": "Unrecognized alert type",
-                    "coin_symbol": coin_symbol
+        """Delegate to signal processor for alert content parsing."""
+        from discord_bot.signal_processing import SignalProcessor
+        processor = SignalProcessor()
+        alert_action = processor.process_alert_content(content, trade_row)
+        return alert_action.to_dict()
                 }
 
     def _generate_alert_hash(self, discord_id: str, content: str) -> str:
@@ -409,33 +131,11 @@ class DiscordBot:
             return False
 
     def _extract_coin_symbol_from_content(self, content: str) -> str:
-        """
-        Extract coin symbol from alert content using regex patterns.
-        """
-        import re
-
-        # Common coin symbols pattern - look for uppercase letters at start of content
-        # Pattern: " COIN 🚀｜trades" or "COIN 🚀｜trades" or "COIN:"
-        coin_patterns = [
-            r'^\s*([A-Z0-9]{2,10})\s*[🚀📈📉]',  # COIN 🚀 at start
-            r'^\s*([A-Z0-9]{2,10}):',  # COIN: at start
-            r'^\s*([A-Z0-9]{2,10})\s+',  # COIN followed by space
-            r'\s+([A-Z0-9]{2,10})\s*[🚀📈📉]',  # COIN 🚀 anywhere
-            r'\s+([A-Z0-9]{2,10}):',  # COIN: anywhere
-        ]
-
-        for pattern in coin_patterns:
-            match = re.search(pattern, content)
-            if match:
-                coin_symbol = match.group(1).strip()
-                # Validate it's a reasonable coin symbol (2-10 chars, alphanumeric)
-                if 2 <= len(coin_symbol) <= 10 and coin_symbol.isalnum():
-                    logger.info(f"Extracted coin symbol '{coin_symbol}' from content: '{content[:50]}...'")
-                    return coin_symbol
-
-        # Fallback: try to extract from the original trade's parsed_signal
-        logger.warning(f"Could not extract coin symbol from content: '{content[:50]}...'")
-        return "UNKNOWN"
+        """Delegate to signal processor for coin symbol extraction."""
+        from discord_bot.signal_processing import SignalProcessor
+        processor = SignalProcessor()
+        coin_symbol = processor.get_coin_symbol(content)
+        return coin_symbol or "UNKNOWN"
 
     async def process_initial_signal(self, signal: InitialDiscordSignal) -> Dict[str, Any]:
         """Process an initial Discord signal."""

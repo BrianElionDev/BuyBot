@@ -90,7 +90,7 @@ class DiscordBotWebSocketManager:
                 # Extract data for logging
                 order_data = data.get('o', {})
                 logger.info(f"DEBUG: order_data extracted: {order_data}")
-                
+
                 order_id = order_data.get('i', 'Unknown')
                 symbol = order_data.get('s', 'Unknown')
                 status = order_data.get('X', 'Unknown')
