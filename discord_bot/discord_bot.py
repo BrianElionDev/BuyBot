@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.bot.trading_engine import TradingEngine
 from discord_bot.discord_signal_parser import DiscordSignalParser, client
 from discord_bot.models import InitialDiscordSignal, DiscordUpdateSignal
-from discord_bot.database import DatabaseManager
+from discord_bot.database_original import DatabaseManager
 from config import settings as config
 from supabase import create_client, Client
 from src.services.price_service import PriceService

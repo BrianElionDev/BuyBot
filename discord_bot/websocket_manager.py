@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'websock
 
 from src.websocket.binance_websocket_manager import BinanceWebSocketManager
 from src.websocket.database_sync_handler import DatabaseSyncHandler
-from discord_bot.database import DatabaseManager
+from discord_bot.database_original import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
