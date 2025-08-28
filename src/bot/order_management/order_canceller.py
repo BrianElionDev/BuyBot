@@ -7,7 +7,7 @@ including TP/SL orders, individual orders, and bulk cancellations.
 
 import logging
 import json
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class OrderCanceller:
         """
         self.binance_exchange = binance_exchange
 
-    async def cancel_tp_sl_orders(self, trading_pair: str, active_trade: Dict = None) -> bool:
+    async def cancel_tp_sl_orders(self, trading_pair: str, active_trade: Dict) -> bool:
         """
         Cancel TP/SL orders for a specific symbol using stored order IDs.
         """
@@ -57,7 +57,7 @@ class OrderCanceller:
                     except Exception:
                         binance_response = {}
 
-                tp_sl_orders = binance_response.get('tp_sl_orders', [])
+                tp_sl_orders = [] if binance_response is None else binance_response.get('tp_sl_orders', [])
                 for tp_sl_order in tp_sl_orders:
                     if isinstance(tp_sl_order, dict) and 'orderId' in tp_sl_order:
                         order_id = tp_sl_order['orderId']
