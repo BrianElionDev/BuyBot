@@ -786,7 +786,7 @@ class DiscordBot:
                     execution_timestamp = binance_response_log['updateTime']
                     # Convert milliseconds to ISO format
                     from datetime import datetime, timezone
-                    binance_execution_time = datetime.fromtimestamp(execution_timestamp / 1000, tz=timezone.utc).isoformat()
+                    binance_execution_time = datetime.fromtimestamp(float(execution_timestamp) / 1000, tz=timezone.utc).isoformat()
                     logger.info(f"Using Binance execution timestamp for updated_at: {binance_execution_time}")
 
                 # Update the trade with new status or SL order ID
@@ -851,7 +851,8 @@ class DiscordBot:
 
             # Update alert status to ERROR if we can find the alert
             try:
-                if 'signal' in locals():
+                if 'signal_data' in locals():
+                    signal = DiscordUpdateSignal(**signal_data)
                     alert_response = self.db_manager.supabase.from_("alerts").select("*").eq("discord_id", signal.discord_id).limit(1).execute()
                     if alert_response.data and len(alert_response.data) > 0:
                         alert_row = alert_response.data[0]
@@ -969,8 +970,35 @@ class DiscordBot:
                 if stop_loss and stop_loss != "BE":
                     return await self.trading_engine.update_stop_loss(trade_row, float(stop_loss))
                 else:
-                    # Handle break-even stop loss
-                    return await self.trading_engine.update_stop_loss(trade_row, "BE")
+                    # Handle break-even stop loss - calculate the break-even price first
+                    try:
+                        coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
+                        if coin_symbol:
+                            trading_pair = f"{coin_symbol}USDT"
+                            positions = await self.binance_exchange.get_futures_position_information()
+
+                            # Find the specific position
+                            position = None
+                            for pos in positions:
+                                if pos['symbol'] == trading_pair and float(pos['positionAmt']) != 0:
+                                    position = pos
+                                    break
+
+                            if position:
+                                # Use the entry price from Binance position data as break-even
+                                entry_price = float(position['entryPrice'])
+                                be_price = round(entry_price, 2)
+                                return await self.trading_engine.update_stop_loss(trade_row, be_price)
+                            else:
+                                # Fallback to database entry price
+                                original_entry_price = trade_row.get('entry_price')
+                                if original_entry_price:
+                                    be_price = round(float(original_entry_price), 2)
+                                    return await self.trading_engine.update_stop_loss(trade_row, be_price)
+                    except Exception as e:
+                        logger.error(f"Error calculating break-even price: {e}")
+
+                    return False, {"error": "Could not calculate break-even price"}
             elif action_type == "limit_order_filled":
                 # Order already filled, just log and return success
                 logger.info(f"Limit order already filled for trade {trade_row.get('id')}")

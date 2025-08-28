@@ -278,14 +278,38 @@ class TradingEngine:
 
     async def update_tp_sl_orders(self, trading_pair: str, position_type: str,
                                 new_take_profits: Optional[List[float]] = None,
-                                new_stop_loss: Optional[float] = None) -> Tuple[bool, List[Dict]]:
+                                new_stop_loss: Optional[Union[float, str]] = None) -> Tuple[bool, List[Dict]]:
         """
         Update TP/SL orders by canceling existing ones and creating new ones.
         This follows Binance Futures API requirements where TP/SL orders cannot be updated directly.
         """
-        return await self.order_updater.update_tp_sl_orders(trading_pair, position_type, new_take_profits, new_stop_loss)
+        try:
+            # Cancel existing TP/SL orders first
+            # Create a dummy trade object since OrderCanceller requires it
+            dummy_trade = {"tp_sl_orders": []}
+            await self.cancel_tp_sl_orders(trading_pair, dummy_trade)
 
-    async def cancel_tp_sl_orders(self, trading_pair: str, active_trade: Dict = None) -> bool:
+            # Get current position size from Binance
+            positions = await self.binance_exchange.get_futures_position_information()
+            position_size = 0.0
+
+            for pos in positions:
+                if pos['symbol'] == trading_pair and float(pos['positionAmt']) != 0:
+                    position_size = abs(float(pos['positionAmt']))
+                    break
+
+            if position_size <= 0:
+                return False, []
+
+            # Create new TP/SL orders
+            tp_sl_orders, stop_loss_order_id = await self._create_tp_sl_orders(trading_pair, position_type, position_size, new_take_profits, new_stop_loss)
+            return True, tp_sl_orders
+
+        except Exception as e:
+            logger.error(f"Error updating TP/SL orders for {trading_pair}: {e}")
+            return False, []
+
+    async def cancel_tp_sl_orders(self, trading_pair: str, active_trade: Dict) -> bool:
         """
         Cancel TP/SL orders for a specific symbol using stored order IDs.
         """
@@ -313,11 +337,14 @@ class TradingEngine:
         """
         return await self.stop_loss_manager.update_stop_loss(active_trade, new_sl_price)
 
-    async def create_stop_loss_order(self, trading_pair: str, position_size: float, new_sl_price: float) -> Tuple[bool, Dict]:
+    async def create_stop_loss_order(self, trading_pair: str, position_size: float, new_sl_price: float, position_type: str = "LONG") -> Tuple[bool, Dict]:
         """
         Create a new stop loss order for a position.
         """
         try:
+            # Determine the side for stop loss based on position type
+            new_sl_side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
+
             new_sl_order_result = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=new_sl_side,
@@ -351,7 +378,11 @@ class TradingEngine:
         Returns:
             The calculated stop loss price or None if calculation fails
         """
-        return await self.stop_loss_manager.calculate_2_percent_stop_loss(coin_symbol, position_type)
+        from src.bot.utils.price_calculator import PriceCalculator
+        current_price = await self.price_service.get_coin_price(coin_symbol)
+        if current_price:
+            return PriceCalculator.calculate_percentage_stop_loss(float(current_price), position_type, 2.0)
+        return None
 
     async def calculate_percentage_stop_loss(self, coin_symbol: str, position_type: str, percentage: float) -> Optional[float]:
         """
@@ -365,7 +396,11 @@ class TradingEngine:
         Returns:
             The calculated stop loss price or None if calculation fails
         """
-        return await self.stop_loss_manager.calculate_percentage_stop_loss(coin_symbol, position_type, percentage)
+        from src.bot.utils.price_calculator import PriceCalculator
+        current_price = await self.price_service.get_coin_price(coin_symbol)
+        if current_price:
+            return PriceCalculator.calculate_percentage_stop_loss(float(current_price), position_type, percentage)
+        return None
 
     async def calculate_5_percent_stop_loss(self, coin_symbol: str, position_type: str, entry_price: float) -> Optional[float]:
         """
@@ -379,7 +414,8 @@ class TradingEngine:
         Returns:
             The calculated stop loss price or None if calculation fails
         """
-        return await self.stop_loss_manager.calculate_5_percent_stop_loss(coin_symbol, position_type, entry_price)
+        from src.bot.utils.price_calculator import PriceCalculator
+        return PriceCalculator.calculate_5_percent_stop_loss(entry_price, position_type)
 
     async def ensure_stop_loss_for_position(self, coin_symbol: str, position_type: str, position_size: float, entry_price: float, external_sl: Optional[float] = None) -> Tuple[bool, Optional[str]]:
         """
@@ -442,7 +478,8 @@ class TradingEngine:
         Returns:
             The calculated take profit price or None if calculation fails
         """
-        return await self.take_profit_manager.calculate_5_percent_take_profit(coin_symbol, position_type, entry_price)
+        from src.bot.utils.price_calculator import PriceCalculator
+        return PriceCalculator.calculate_5_percent_take_profit(entry_price, position_type)
 
     async def ensure_take_profit_for_position(self, coin_symbol: str, position_type: str, position_size: float, entry_price: float, external_tp: Optional[float] = None) -> Tuple[bool, Optional[str]]:
         """
@@ -497,3 +534,17 @@ class TradingEngine:
         """Close all exchange connections."""
         await self.binance_exchange.close_client()
         logger.info("TradingEngine connections closed.")
+
+    async def close_position_at_market(self, trade_row: Dict, reason: str = "manual_close", close_percentage: float = 100.0) -> Tuple[bool, Dict]:
+        """
+        Close a position at market price by delegating to the position manager.
+
+        Args:
+            trade_row: The trade dictionary
+            reason: Reason for closing the position
+            close_percentage: Percentage of position to close (default 100%)
+
+        Returns:
+            Tuple of (success, response_data)
+        """
+        return await self.position_manager.close_position_at_market(trade_row, reason, close_percentage)
