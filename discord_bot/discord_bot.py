@@ -21,7 +21,7 @@ from config import settings as config
 from supabase import create_client, Client
 from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
-from discord_bot.websocket_manager import DiscordBotWebSocketManager
+from discord_bot.websocket import DiscordBotWebSocketManager
 from config import settings
 
 # Setup logging

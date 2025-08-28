@@ -14,8 +14,8 @@ import aiohttp
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-from websocket_config import WebSocketConfig
-from database_sync_handler import DatabaseSyncHandler
+from .websocket_config import WebSocketConfig
+from .database_sync_handler import DatabaseSyncHandler
 
 logger = logging.getLogger(__name__)
 
