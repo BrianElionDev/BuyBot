@@ -10,6 +10,27 @@ from src.exchange.binance_exchange import BinanceExchange
 from src.services.price_service import PriceService
 from src.exchange.fee_calculator import FixedFeeCalculator
 
+# Import modularized components
+from src.bot.utils.signal_parser import SignalParser
+from src.bot.utils.price_calculator import PriceCalculator
+from src.bot.utils.validation_utils import ValidationUtils
+from src.bot.utils.response_parser import ResponseParser
+
+from src.core.position_manager import PositionManager
+from src.core.market_data_handler import MarketDataHandler
+from src.core.trade_calculator import TradeCalculator
+
+from src.bot.risk_management.stop_loss_manager import StopLossManager
+from src.bot.risk_management.take_profit_manager import TakeProfitManager
+from src.bot.risk_management.position_auditor import PositionAuditor
+
+from src.bot.order_management.order_creator import OrderCreator
+from src.bot.order_management.order_canceller import OrderCanceller
+from src.bot.order_management.order_update import OrderUpdater
+
+from src.bot.signal_processor.initial_signal_processor import InitialSignalProcessor
+from src.bot.signal_processor.followup_signal_processor import FollowupSignalProcessor
+
 from config import settings as config
 import json
 
@@ -35,8 +56,34 @@ class TradingEngine:
         self.trade_cooldowns = {}
         # Use FixedFeeCalculator for simplified fee management
         self.fee_calculator = FixedFeeCalculator(fee_rate=config.FIXED_FEE_RATE)
+
+        # Initialize utility modules
+        self.signal_parser = SignalParser()
+        self.price_calculator = PriceCalculator()
+        self.validation_utils = ValidationUtils()
+        self.response_parser = ResponseParser()
+
+        # Initialize core modules
+        self.position_manager = PositionManager(binance_exchange, db_manager)
+        self.market_data_handler = MarketDataHandler(binance_exchange, price_service)
+        self.trade_calculator = TradeCalculator(self.fee_calculator)
+
+        # Initialize risk management modules
+        self.stop_loss_manager = StopLossManager(binance_exchange)
+        self.take_profit_manager = TakeProfitManager(binance_exchange)
+        self.position_auditor = PositionAuditor(binance_exchange)
+
+        # Initialize order management modules
+        self.order_creator = OrderCreator(binance_exchange)
+        self.order_canceller = OrderCanceller(binance_exchange)
+        self.order_updater = OrderUpdater(binance_exchange)
+
+        # Initialize signal processing modules
+        self.initial_signal_processor = InitialSignalProcessor(self)
+        self.followup_signal_processor = FollowupSignalProcessor(self)
+
         logger.info(f"Using FixedFeeCalculator with {config.FIXED_FEE_RATE * 100}% fee cap")
-        logger.info("TradingEngine initialized.")
+        logger.info("TradingEngine initialized with all modularized components.")
 
     def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
         """Parse the parsed_signal JSON string into a dictionary."""
