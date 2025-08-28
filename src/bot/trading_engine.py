@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from discord_bot.database import DatabaseManager
 from src.exchange.binance_exchange import BinanceExchange
-from src.services.price_service import PriceService
+from src.services.pricing.price_service import PriceService
 from src.exchange.fee_calculator import FixedFeeCalculator
 
 # Import modularized components
