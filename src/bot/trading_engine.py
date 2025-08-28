@@ -1,7 +1,5 @@
-import asyncio
 import logging
 import time
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Import DatabaseManager type for type hints only
@@ -10,7 +8,7 @@ if TYPE_CHECKING:
     from discord_bot.database import DatabaseManager
 from src.exchange.binance_exchange import BinanceExchange
 from src.services.price_service import PriceService
-from src.exchange.fee_calculator import FixedFeeCalculator, BinanceFuturesFeeCalculator
+from src.exchange.fee_calculator import FixedFeeCalculator
 
 from config import settings as config
 import json
@@ -35,13 +33,9 @@ class TradingEngine:
         self.binance_exchange = binance_exchange
         self.db_manager = db_manager
         self.trade_cooldowns = {}
-        # Choose fee calculator based on configuration
-        if config.USE_FIXED_FEE_CALCULATOR:
-            self.fee_calculator = FixedFeeCalculator(fee_rate=config.FIXED_FEE_RATE)
-            logger.info(f"Using FixedFeeCalculator with {config.FIXED_FEE_RATE * 100}% fee cap")
-        else:
-            self.fee_calculator = BinanceFuturesFeeCalculator()
-            logger.info("Using BinanceFuturesFeeCalculator with complex fee formulas")
+        # Use FixedFeeCalculator for simplified fee management
+        self.fee_calculator = FixedFeeCalculator(fee_rate=config.FIXED_FEE_RATE)
+        logger.info(f"Using FixedFeeCalculator with {config.FIXED_FEE_RATE * 100}% fee cap")
         logger.info("TradingEngine initialized.")
 
     def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
@@ -290,33 +284,23 @@ class TradingEngine:
                 trade_amount *= quantity_multiplier
                 logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
 
-            # --- Fee Calculation and Adjustment ---
+            # --- Breakeven Price Calculation ---
             if is_futures:
-                # Calculate fees for the trade using fixed fee cap
+                # Calculate breakeven price for the trade using fixed fee cap
                 fee_analysis = self.fee_calculator.calculate_comprehensive_fees(
                     margin=usdt_amount,
                     leverage=config.DEFAULT_LEVERAGE,  # Use leverage from settings
                     entry_price=current_price
                 )
 
-                # Log fee information
-                logger.info(f"Fee Analysis for {trading_pair}:")
-                logger.info(f"  Single Trade Fee: ${fee_analysis['single_trade_fee']} USDT")
-                logger.info(f"  Total Fees (Entry + Exit): ${fee_analysis['total_fees']} USDT")
+                # Log breakeven information only
+                logger.info(f"Breakeven Analysis for {trading_pair}:")
                 logger.info(f"  Breakeven Price: ${fee_analysis['breakeven_price']}")
-                logger.info(f"  Fee % of Margin: {fee_analysis['fee_percentage_of_margin']:.4f}%")
 
-                # Store fee information for later use
-                fee_info = {
-                    'single_trade_fee': float(fee_analysis['single_trade_fee']),
-                    'total_fees': float(fee_analysis['total_fees']),
-                    'breakeven_price': float(fee_analysis['breakeven_price']),
-                    'fee_percentage_of_margin': float(fee_analysis['fee_percentage_of_margin']),
-                    'fee_type': fee_analysis['fee_type'],
-                    'effective_fee_rate': float(fee_analysis['effective_fee_rate'])
-                }
+                # Store breakeven price for later use
+                breakeven_price = float(fee_analysis['breakeven_price'])
             else:
-                fee_info = None
+                breakeven_price = None
 
             # Get symbol filters for precision formatting
             # Commented out for now as it's handled elsewhere
@@ -390,27 +374,19 @@ class TradingEngine:
 
                     logger.info(f"Position validation passed for {trading_pair}. Current: {current_position_size}, New: {new_total_size}, Max: {max_position_size}")
 
-                    # Update fee calculation with actual leverage
-                    if fee_info:
+                    # Update breakeven calculation with actual leverage
+                    if breakeven_price is not None:
                         updated_fee_analysis = self.fee_calculator.calculate_comprehensive_fees(
                             margin=usdt_amount,
                             leverage=actual_leverage,
                             entry_price=current_price
                         )
 
-                        # Update fee info with actual leverage
-                        fee_info.update({
-                            'single_trade_fee': float(updated_fee_analysis['single_trade_fee']),
-                            'total_fees': float(updated_fee_analysis['total_fees']),
-                            'breakeven_price': float(updated_fee_analysis['breakeven_price']),
-                            'fee_percentage_of_margin': float(updated_fee_analysis['fee_percentage_of_margin']),
-                            'actual_leverage': actual_leverage
-                        })
+                        # Update breakeven price with actual leverage
+                        breakeven_price = float(updated_fee_analysis['breakeven_price'])
 
-                        logger.info(f"Updated fee analysis with actual leverage {actual_leverage}:")
-                        logger.info(f"  Single Trade Fee: ${fee_info['single_trade_fee']} USDT")
-                        logger.info(f"  Total Fees: ${fee_info['total_fees']} USDT")
-                        logger.info(f"  Breakeven Price: ${fee_info['breakeven_price']}")
+                        logger.info(f"Updated breakeven analysis with actual leverage {actual_leverage}:")
+                        logger.info(f"  Breakeven Price: ${breakeven_price}")
                 else:
                     logger.warning("Binance client not available for position validation. Proceeding with order.")
 
@@ -470,10 +446,10 @@ class TradingEngine:
                 if 'orderId' in order_result:
                     logger.info(f"Order created successfully: {order_result['orderId']}")
 
-                    # Add fee information to order result
-                    if fee_info:
-                        order_result['fee_analysis'] = fee_info
-                        logger.info(f"Fee analysis added to order result: {fee_info}")
+                    # Add breakeven price to order result
+                    if breakeven_price is not None:
+                        order_result['breakeven_price'] = breakeven_price
+                        logger.info(f"Breakeven price added to order result: {breakeven_price}")
 
                     # Create TP/SL orders as separate orders after position opening
                     # Convert origQty to float since it comes as string from Binance API
@@ -581,8 +557,7 @@ class TradingEngine:
             if position_size == 0:
                 return {
                     'error': f'No position found for {trading_pair}',
-                    'breakeven_price': None,
-                    'fee_analysis': None
+                    'breakeven_price': None
                 }
 
             # Calculate notional value
@@ -601,22 +576,14 @@ class TradingEngine:
                 'position_size': position_size,
                 'actual_leverage': actual_leverage,
                 'notional_value': notional_value,
-                'breakeven_price': float(breakeven_analysis['breakeven_price']),
-                'fee_analysis': {
-                    'single_trade_fee': float(breakeven_analysis['single_trade_fee']),
-                    'total_fees': float(breakeven_analysis['total_fees']),
-                    'fee_percentage_of_margin': float(breakeven_analysis['fee_percentage_of_margin']),
-                    'fee_type': breakeven_analysis['fee_type'],
-                    'effective_fee_rate': float(breakeven_analysis['effective_fee_rate'])
-                }
+                'breakeven_price': float(breakeven_analysis['breakeven_price'])
             }
 
         except Exception as e:
             logger.error(f"Error calculating breakeven price for {trading_pair}: {e}")
             return {
                 'error': f'Failed to calculate breakeven price: {str(e)}',
-                'breakeven_price': None,
-                'fee_analysis': None
+                'breakeven_price': None
             }
 
     async def _create_tp_sl_orders(self, trading_pair: str, position_type: str, position_size: float,

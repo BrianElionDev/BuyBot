@@ -8,15 +8,10 @@ import asyncio
 import logging
 import sys
 import os
-from typing import Optional
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.bot.trading_engine import TradingEngine
-from src.exchange.binance_exchange import BinanceExchange
-from src.services.price_service import PriceService
-from discord_bot.database import DatabaseManager
 from config import settings
 
 # Configure logging
