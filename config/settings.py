@@ -71,6 +71,11 @@ SLIPPAGE_PERCENTAGE = float(os.getenv("SLIPPAGE_PERCENTAGE", "1.0"))
 TRADE_COOLDOWN = int(os.getenv("TRADE_COOLDOWN", "300"))
 LIMIT_ORDER_PRICE_THRESHOLD = float(os.getenv("LIMIT_ORDER_PRICE_THRESHOLD", "10.0"))  # Threshold for limit order price validation (10%)
 
+# Take Profit Configuration
+DEFAULT_TP_PERCENTAGE = float(os.getenv("DEFAULT_TP_PERCENTAGE", "5.0").replace('%', ''))
+SIGNAL_TP_POSITION_PERCENTAGE = float(os.getenv("SIGNAL_TP_POSITION_PERCENTAGE", "50.0").replace('%', ''))
+TP_AUDIT_INTERVAL = int(os.getenv("TP_AUDIT_INTERVAL", "30"))
+
 # Telegram Bot Configuration (for notifications)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 TELEGRAM_NOTIFICATION_CHAT_ID = os.getenv("TELEGRAM_NOTIFICATION_CHAT_ID", "")

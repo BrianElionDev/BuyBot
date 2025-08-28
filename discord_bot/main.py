@@ -188,6 +188,7 @@ async def trade_retry_scheduler():
     last_price_backfill = 0
     last_weekly_backfill = 0
     last_stop_loss_audit = 0
+    last_take_profit_audit = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
@@ -195,7 +196,8 @@ async def trade_retry_scheduler():
     PNL_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
     PRICE_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
     WEEKLY_BACKFILL_INTERVAL = 7 * 24 * 60 * 60  # 7 days
-    STOP_LOSS_AUDIT_INTERVAL = 30 * 60
+    STOP_LOSS_AUDIT_INTERVAL = 30 * 60  # 30 minutes
+    TAKE_PROFIT_AUDIT_INTERVAL = 30 * 60  # 30 minutes
 
     logger.info("[Scheduler] ✅ Scheduler running - monitoring for tasks")
 
@@ -269,6 +271,20 @@ async def trade_retry_scheduler():
                     tasks_run += 1
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in stop loss audit: {e}")
+
+            # Take profit audit (every 30 minutes, 5 minutes after SL audit) - supervisor requirement
+            if current_time - last_take_profit_audit >= TAKE_PROFIT_AUDIT_INTERVAL:
+                # Check if it's been at least 5 minutes since the last SL audit
+                time_since_sl_audit = current_time - last_stop_loss_audit
+                if time_since_sl_audit >= 5 * 60:  # 5 minutes
+                    logger.info("[Scheduler] Running take profit audit for all open positions...")
+                    try:
+                        audit_results = await bot.trading_engine.audit_open_positions_for_take_profit()
+                        last_take_profit_audit = current_time
+                        logger.info(f"[Scheduler] Take profit audit completed: {audit_results}")
+                        tasks_run += 1
+                    except Exception as e:
+                        logger.error(f"[Scheduler] Error in take profit audit: {e}")
 
             # Sleep for 1 second to prevent CPU overload while maintaining responsiveness
             await asyncio.sleep(1)  # 1 second sleep to prevent CPU overload
