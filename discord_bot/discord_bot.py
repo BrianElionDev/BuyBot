@@ -19,7 +19,7 @@ from discord_bot.models import InitialDiscordSignal, DiscordUpdateSignal
 from discord_bot.database import DatabaseManager
 from config import settings as config
 from supabase import create_client, Client
-from src.services.price_service import PriceService
+from src.services.pricing.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
 from discord_bot.websocket import DiscordBotWebSocketManager
 from config import settings
@@ -61,8 +61,8 @@ class DiscordBot:
         self.signal_parser = DiscordSignalParser()
 
         # Initialize Telegram notification service
-        from src.services.telegram_notification_service import TelegramNotificationService
-        self.telegram_notifications = TelegramNotificationService()
+        from src.services.notifications.telegram_service import TelegramService
+        self.telegram_notifications = TelegramService()
 
         # Initialize WebSocket manager for real-time database sync
         self.websocket_manager = DiscordBotWebSocketManager(self, self.db_manager)
@@ -204,13 +204,8 @@ class DiscordBot:
 
                             # Send Telegram notification for successful trade
                             try:
-                                await self.telegram_notifications.send_trade_execution_notification(
-                                    coin_symbol=coin_symbol,
-                                    position_type=position_type,
-                                    entry_price=signal_price,
-                                    quantity=float(binance_response.get('origQty', 0)),
-                                    order_id=str(binance_response.get('orderId', '')),
-                                    status="SUCCESS"
+                                await self.telegram_notifications.send_message(
+                                    message=f"Trade executed successfully for {coin_symbol}: {binance_response}"
                                 )
                             except Exception as e:
                                 logger.error(f"Failed to send Telegram notification: {e}")
@@ -239,14 +234,8 @@ class DiscordBot:
 
                         # Send Telegram notification for failed trade
                         try:
-                            await self.telegram_notifications.send_trade_execution_notification(
-                                coin_symbol=coin_symbol,
-                                position_type=position_type,
-                                entry_price=signal_price,
-                                quantity=0,
-                                order_id="",
-                                status="FAILED",
-                                error_message=str(binance_response)
+                            await self.telegram_notifications.send_message(
+                                message=f"Trade execution failed for {coin_symbol}: {binance_response}"
                             )
                         except Exception as e:
                             logger.error(f"Failed to send Telegram notification: {e}")
@@ -349,7 +338,7 @@ class DiscordBot:
                 alert_updates = {
                     "parsed_alert": {
                         "original_content": signal.content,
-                        "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),  # pyright: ignore[reportUnboundVariable, reportAttributeAccessIssue]
                         "original_trade_id": trade_row['id'],
                         "coin_symbol": self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol'),
                         "trader": signal.trader,
@@ -434,7 +423,7 @@ class DiscordBot:
                     coin_symbol_exit = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
                     if coin_symbol_exit and isinstance(coin_symbol_exit, str):
                         try:
-                            from src.services.price_service import PriceService
+                            from src.services.pricing.price_service import PriceService
                             price_service = PriceService()
                             binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
                             if binance_exit_price is not None:
@@ -528,7 +517,7 @@ class DiscordBot:
                     coin_symbol_exit = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
                     if coin_symbol_exit and isinstance(coin_symbol_exit, str):
                         try:
-                            from src.services.price_service import PriceService
+                            from src.services.pricing.price_service import PriceService
                             price_service = PriceService()
                             binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
                             if binance_exit_price is not None:
@@ -805,7 +794,7 @@ class DiscordBot:
             alert_updates = {
                 "parsed_alert": {
                     "original_content": signal.content,
-                    "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),  # pyright: ignore[reportPossiblyUnboundVariable]
                     "action_determined": parsed_action,
                     "original_trade_id": trade_row['id'],
                     "coin_symbol": parsed_action.get('coin_symbol', self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')),
