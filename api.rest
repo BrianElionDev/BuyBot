@@ -4,6 +4,8 @@ Content-Type: application/json
 
 {
     "timestamp": "2025-08-14T12:35:06.928Z",
+    "discord_id": "1029838895535374439",
+    "trader": "@-Johnny",
     "content": "Longed eth 4670 sl 4558",
     "structured": "ETH|Entry:|4670|SL:|4558"      
 }
@@ -15,8 +17,8 @@ Content-Type: application/json
 {
     "discord_id": "1405530878343512074",
     "trader": "@-Johnny",
-    "trade": "1405529321535311943",
+    "trade": "1029838895535374439",
     "timestamp": "2025-08-14T12:37:54.898Z",
-    "content": "ETH 🚀|  Stopped out  | @Johnny"
+    "content": "ETH 🚀|  stops moved to BE  | @Johnny"
 }
 
