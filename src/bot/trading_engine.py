@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from discord_bot.database import DatabaseManager
-from src.exchange.binance_exchange import BinanceExchange
+from src.exchange import BinanceExchange
 from src.services.pricing.price_service import PriceService
-from src.exchange.fee_calculator import FixedFeeCalculator
+from src.exchange import FixedFeeCalculator
 
 # Import modularized components
 from src.bot.utils.signal_parser import SignalParser
@@ -348,7 +348,7 @@ class TradingEngine:
             new_sl_order_result = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=new_sl_side,
-                order_type_market=FUTURE_ORDER_TYPE_STOP_MARKET,
+                order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
                 stop_price=new_sl_price,
                 amount=position_size,  # Use specific amount for partial positions
                 reduce_only=True  # This ensures it only reduces the position by the specified amount

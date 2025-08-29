@@ -17,7 +17,7 @@ sys.path.insert(0, project_root)
 
 from src.bot.trading_engine import TradingEngine
 from src.services.price_service import PriceService
-from src.exchange.binance_exchange import BinanceExchange
+from src.exchange import BinanceExchange
 from discord_bot.database import DatabaseManager
 from discord_bot.discord_bot import DiscordBot
 from discord_bot.signal_processing import DiscordSignalParser
@@ -29,25 +29,25 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 async def get_binance_symbols(binance_exchange, limit=100):
     """
     Get available symbols from Binance.
-    
+
     Args:
         binance_exchange: BinanceExchange instance
         limit (int): Maximum number of symbols to return
-    
+
     Returns:
         list: List of symbol dictionaries
     """
     try:
         # Use the existing method to get futures symbols
         symbols = await binance_exchange.get_all_futures_symbols()
-        
+
         # Convert to the format expected by the rest of the code
         symbol_dicts = [{'symbol': symbol, 'status': 'TRADING'} for symbol in symbols]
-        
+
         # Sort by symbol name and limit results
         symbol_dicts.sort(key=lambda x: x['symbol'])
         return symbol_dicts[:limit]
-        
+
     except Exception as e:
         logging.error(f"Error getting symbols: {e}")
         return []
@@ -71,10 +71,10 @@ async def test_price_thresholds():
 
     #binance_exchange = BinanceExchange(api_key, api_secret, is_testnet)
     #hasOpenPosition =await binance_exchange.get_symbol_precision("ETHUSDT")
-    
+
     # Create DiscordBot instance to test parse_alert_content
     discord_bot = DiscordBot()
-    
+
     # Test signal data
     signal_data = {
         "discord_id": "1400363548219015178",
@@ -83,15 +83,15 @@ async def test_price_thresholds():
         "timestamp": "2025-07-31T06:24:47.392Z",
         "content": " ETH ⁠🚀｜trades⁠: Stop has moved to be @-Tareeq"
     }
-    
+
     # Test the parse_alert_content method
     parsed =  discord_bot.parse_alert_content("ETH ⁠🚀｜trades⁠: DCA'd and entry now 1.7125 @-Tareeq", signal_data)
     print("Parsed result:", parsed)
     return True
-     
-async def main():   
+
+async def main():
     """Main function to run the price threshold test."""
-    
+
     await test_price_thresholds()
 if __name__ == "__main__":
     asyncio.run(main())

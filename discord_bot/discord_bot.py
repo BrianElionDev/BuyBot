@@ -13,6 +13,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+from src.bot.order_management.order_creator import FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET
 from src.bot.trading_engine import TradingEngine
 from discord_bot.signal_processing import DiscordSignalParser
 from discord_bot.signal_processing.signal_parser import client
@@ -21,7 +22,7 @@ from discord_bot.database import DatabaseManager
 from config import settings as config
 from supabase import create_client, Client
 from src.services.pricing.price_service import PriceService
-from src.exchange.binance_exchange import BinanceExchange
+from src.exchange import BinanceExchange
 from discord_bot.websocket import DiscordBotWebSocketManager
 from config import settings
 
@@ -683,7 +684,7 @@ class DiscordBot:
                     new_tp_order = await self.binance_exchange.create_futures_order(
                         pair=trading_pair,
                         side=tp_side,
-                        order_type_market='TAKE_PROFIT_MARKET',
+                        order_type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
                         amount=current_position_size,
                         stop_price=new_tp_price,
                         reduce_only=True
