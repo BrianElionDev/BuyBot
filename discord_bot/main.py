@@ -187,6 +187,8 @@ async def trade_retry_scheduler():
     last_pnl_backfill = 0
     last_price_backfill = 0
     last_weekly_backfill = 0
+    last_stop_loss_audit = 0
+    last_take_profit_audit = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
@@ -194,6 +196,8 @@ async def trade_retry_scheduler():
     PNL_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
     PRICE_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
     WEEKLY_BACKFILL_INTERVAL = 7 * 24 * 60 * 60  # 7 days
+    STOP_LOSS_AUDIT_INTERVAL = 30 * 60  # 30 minutes
+    TAKE_PROFIT_AUDIT_INTERVAL = 30 * 60  # 30 minutes
 
     logger.info("[Scheduler] ✅ Scheduler running - monitoring for tasks")
 
@@ -256,6 +260,31 @@ async def trade_retry_scheduler():
                     tasks_run += 1
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in weekly historical backfill: {e}")
+
+            # Stop loss audit (every 30 minutes) - supervisor requirement
+            if current_time - last_stop_loss_audit >= STOP_LOSS_AUDIT_INTERVAL:
+                logger.info("[Scheduler] Running stop loss audit for all open positions...")
+                try:
+                    audit_results = await bot.trading_engine.audit_open_positions_for_stop_loss()
+                    last_stop_loss_audit = current_time
+                    logger.info(f"[Scheduler] Stop loss audit completed: {audit_results}")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in stop loss audit: {e}")
+
+            # Take profit audit (every 30 minutes, 5 minutes after SL audit) - supervisor requirement
+            if current_time - last_take_profit_audit >= TAKE_PROFIT_AUDIT_INTERVAL:
+                # Check if it's been at least 5 minutes since the last SL audit
+                time_since_sl_audit = current_time - last_stop_loss_audit
+                if time_since_sl_audit >= 5 * 60:  # 5 minutes
+                    logger.info("[Scheduler] Running take profit audit for all open positions...")
+                    try:
+                        audit_results = await bot.trading_engine.audit_open_positions_for_take_profit()
+                        last_take_profit_audit = current_time
+                        logger.info(f"[Scheduler] Take profit audit completed: {audit_results}")
+                        tasks_run += 1
+                    except Exception as e:
+                        logger.error(f"[Scheduler] Error in take profit audit: {e}")
 
             # Sleep for 1 second to prevent CPU overload while maintaining responsiveness
             await asyncio.sleep(1)  # 1 second sleep to prevent CPU overload
@@ -323,12 +352,12 @@ async def backfill_pnl_data(bot, supabase):
     """Backfill PnL and net PnL data for closed trades."""
     try:
         from discord_bot.utils.trade_retry_utils import backfill_trades_from_binance_history
-        
+
         logger.info("[Scheduler] Starting PnL backfill for closed trades...")
-        
+
         # Backfill PnL data for last 7 days (more recent, faster processing)
         await backfill_trades_from_binance_history(bot, supabase, days=7)
-        
+
         logger.info("[Scheduler] PnL backfill completed")
 
     except Exception as e:
@@ -354,17 +383,17 @@ async def backfill_missing_prices(bot, supabase):
     """Backfill missing Binance entry and exit prices for recent trades."""
     try:
         from scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
-        
+
         logger.info("[Scheduler] Starting price backfill for recent trades...")
-        
+
         # Create backfill manager with existing clients
         backfill_manager = HistoricalTradeBackfillManager()
         backfill_manager.binance_exchange = bot.binance_exchange  # Use existing exchange instance
         backfill_manager.db_manager = bot.db_manager  # Use existing database manager
-        
+
         # Backfill prices for last 24 hours (recent trades that might have missed WebSocket updates)
         await backfill_manager.backfill_from_historical_data(days=1)
-        
+
         logger.info("[Scheduler] Price backfill completed")
 
     except Exception as e:

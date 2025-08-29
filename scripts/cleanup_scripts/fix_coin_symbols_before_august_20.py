@@ -274,7 +274,7 @@ class CoinSymbolFixer:
         """Get all trades before August 20th, 2025."""
         try:
             # Get trades created before August 20th, 2025
-            response = self.supabase.from_("trades").select("*").gte("timestamp", "2025-08-21T00:00:00Z").execute()
+            response = self.supabase.from_("trades").select("*").eq("id", "31356").execute()
 
             if not response.data:
                 logger.info("No trades found before August 20th, 2025")
