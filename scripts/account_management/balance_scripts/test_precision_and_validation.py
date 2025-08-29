@@ -15,7 +15,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
-from src.exchange.binance_exchange import BinanceExchange
+from src.exchange import BinanceExchange
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -57,16 +57,16 @@ async def test_precision_and_validation():
             print(f"Testing {symbol}:")
 
             # Test symbol validation
-            is_valid = exchange._validate_futures_symbol(symbol)
+            is_valid = exchange.validate_symbol(symbol)
             print(f"   ✅ Symbol validation: {'PASS' if is_valid else 'FAIL'}")
 
             if is_valid:
                 # Test precision handling
-                rounded_qty = exchange._round_futures_quantity(symbol, test_quantity)
-                rounded_price = exchange._round_futures_price(symbol, test_price)
+                rounded_qty = exchange.round_quantity(symbol, test_quantity)
+                rounded_price = exchange.round_price(symbol, test_price)
 
-                qty_precision = exchange._get_futures_quantity_precision(symbol)
-                price_precision = exchange._get_futures_price_precision(symbol)
+                qty_precision = exchange.get_quantity_precision(symbol)
+                price_precision = exchange.get_price_precision(symbol)
 
                 print(f"   📊 Quantity: {test_quantity:.8f} -> {rounded_qty:.8f} ({qty_precision} decimals)")
                 print(f"   💰 Price: {test_price:.8f} -> {rounded_price:.8f} ({price_precision} decimals)")
@@ -91,9 +91,9 @@ async def test_precision_and_validation():
         common_symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT', 'DOGEUSDT', 'SOLUSDT', 'XRPUSDT']
 
         for symbol in common_symbols:
-            if exchange._validate_futures_symbol(symbol):
-                qty_precision = exchange._get_futures_quantity_precision(symbol)
-                price_precision = exchange._get_futures_price_precision(symbol)
+            if exchange.validate_symbol(symbol):
+                qty_precision = exchange.get_quantity_precision(symbol)
+                price_precision = exchange.get_price_precision(symbol)
                 print(f"   {symbol}: Qty={qty_precision} decimals, Price={price_precision} decimals")
 
         print("\n✅ Precision and validation testing completed!")

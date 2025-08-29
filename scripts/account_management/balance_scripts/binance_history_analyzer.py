@@ -23,7 +23,7 @@ from config import settings
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.exchange.binance_exchange import BinanceExchange
+from src.exchange import BinanceExchange
 from discord_bot.utils.trade_retry_utils import initialize_clients, safe_parse_binance_response
 # Setup logging
 logging.basicConfig(
@@ -169,11 +169,7 @@ class BinanceHistoryBackfiller:
                     logger.info(f"Fetching orders from {datetime.fromtimestamp(chunk_start/1000, tz=timezone.utc)} to {datetime.fromtimestamp(chunk_end/1000, tz=timezone.utc)}")
 
                     try:
-                        chunk_orders = await self.binance_exchange.get_order_history(
-                            symbol=symbol,
-                            limit=limit,
-                            start_time=chunk_start,
-                            end_time=chunk_end
+                        chunk_orders = await self.binance_exchange.get_all_open_futures_orders(
                         )
                         all_orders.extend(chunk_orders)
                         await asyncio.sleep(0.5)  # Rate limiting between chunks
@@ -183,11 +179,7 @@ class BinanceHistoryBackfiller:
                     chunk_start = chunk_end
             else:
                 # Single request without time range
-                all_orders = await self.binance_exchange.get_order_history(
-                    symbol=symbol,
-                    limit=limit,
-                    start_time=start_time,
-                    end_time=end_time
+                all_orders = await self.binance_exchange.get_all_open_futures_orders(
                 )
 
             logger.info(f"✅ Retrieved {len(all_orders)} order records from Binance")

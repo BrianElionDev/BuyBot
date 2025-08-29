@@ -15,8 +15,8 @@ project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
 from src.bot.trading_engine import TradingEngine
-from src.services.price_service import PriceService
-from src.exchange.binance_exchange import BinanceExchange
+from src.services import PriceService
+from src.exchange import BinanceExchange
 from discord_bot.database import DatabaseManager
 from config import settings as config
 
