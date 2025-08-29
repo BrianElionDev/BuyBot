@@ -16,8 +16,20 @@ Real-time WebSocket integration for Binance futures trading with automatic datab
 ```
 src/websocket/
 ├── __init__.py                 # Module exports
-├── websocket_config.py         # Configuration and constants
-├── binance_websocket_manager.py # Main WebSocket manager
+├── core/                       # Core WebSocket components
+│   ├── websocket_manager.py    # Main WebSocket manager
+│   ├── connection_manager.py   # Connection lifecycle
+│   ├── event_dispatcher.py     # Event routing
+│   └── websocket_config.py     # Configuration
+├── handlers/                   # Event handlers
+│   ├── market_data_handler.py  # Market data processing
+│   ├── user_data_handler.py    # User data processing
+│   ├── error_handler.py        # Error handling
+│   └── handler_models.py       # Data models
+├── sync/                       # Database synchronization
+│   ├── sync_manager.py         # Sync orchestration
+│   ├── database_sync.py        # Database operations
+│   └── sync_models.py          # Sync data models
 ├── example_usage.py            # Integration examples
 └── README.md                   # This file
 ```
@@ -28,11 +40,11 @@ src/websocket/
 
 ```python
 import asyncio
-from src.websocket import BinanceWebSocketManager
+from src.websocket import WebSocketManager
 
 async def main():
     # Initialize WebSocket manager
-    ws_manager = BinanceWebSocketManager(
+    ws_manager = WebSocketManager(
         api_key="your_api_key",
         api_secret="your_api_secret",
         is_testnet=True
@@ -42,7 +54,7 @@ async def main():
     async def handle_order_fill(data):
         print(f"Order filled: {data}")
 
-    ws_manager.add_event_handler('executionReport', handle_order_fill)
+    ws_manager.register_handler('executionReport', handle_order_fill)
 
     # Start WebSocket connections
     await ws_manager.start()

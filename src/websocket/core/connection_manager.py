@@ -34,8 +34,8 @@ class ConnectionManager:
         self.reconnect_tasks: Dict[str, asyncio.Task] = {}
         self.running = False
 
-    async def create_connection(self, connection_id: str, url: str, 
-                              message_handler: Callable, 
+    async def create_connection(self, connection_id: str, url: str,
+                              message_handler: Callable,
                               connection_type: str = "user_data") -> bool:
         """
         Create a new WebSocket connection.
@@ -51,7 +51,7 @@ class ConnectionManager:
         """
         try:
             logger.info(f"Creating {connection_type} connection: {connection_id}")
-            
+
             # Create connection state
             self.connection_states[connection_id] = {
                 'url': url,
@@ -72,7 +72,7 @@ class ConnectionManager:
 
             # Start message handling task
             asyncio.create_task(self._handle_messages(connection_id, websocket, message_handler))
-            
+
             logger.info(f"Successfully established {connection_type} connection: {connection_id}")
             return True
 
@@ -95,15 +95,15 @@ class ConnectionManager:
                 websocket = self.connections[connection_id]
                 await websocket.close()
                 del self.connections[connection_id]
-                
+
                 if connection_id in self.connection_states:
                     self.connection_states[connection_id]['connected'] = False
-                
+
                 # Cancel reconnect task if running
                 if connection_id in self.reconnect_tasks:
                     self.reconnect_tasks[connection_id].cancel()
                     del self.reconnect_tasks[connection_id]
-                
+
                 logger.info(f"Closed connection: {connection_id}")
                 return True
             return False
@@ -132,10 +132,10 @@ class ConnectionManager:
                 try:
                     # Update last ping time
                     self.connection_states[connection_id]['last_ping'] = time.time()
-                    
+
                     # Handle message
                     await message_handler(message, connection_id)
-                    
+
                 except Exception as e:
                     logger.error(f"Error handling message from {connection_id}: {e}")
 
@@ -155,7 +155,7 @@ class ConnectionManager:
         """
         if connection_id in self.connection_states:
             self.connection_states[connection_id]['connected'] = False
-            
+
             # Start reconnection if not already running
             if connection_id not in self.reconnect_tasks or self.reconnect_tasks[connection_id].done():
                 self.reconnect_tasks[connection_id] = asyncio.create_task(
@@ -179,20 +179,20 @@ class ConnectionManager:
             try:
                 state['reconnect_attempts'] += 1
                 delay = self.config.get_reconnect_delay(state['reconnect_attempts'])
-                
+
                 logger.info(f"Attempting to reconnect {connection_id} (attempt {state['reconnect_attempts']}/{max_attempts}) in {delay}s")
-                
+
                 await asyncio.sleep(delay)
-                
+
                 # Attempt reconnection
                 websocket = await websockets.connect(state['url'])
                 self.connections[connection_id] = websocket
                 state['connected'] = True
                 state['reconnect_attempts'] = 0
-                
+
                 # Restart message handling
                 asyncio.create_task(self._handle_messages(connection_id, websocket, state['message_handler']))
-                
+
                 logger.info(f"Successfully reconnected {connection_id}")
                 return
 
@@ -211,8 +211,8 @@ class ConnectionManager:
         Returns:
             bool: True if connection is active
         """
-        return (connection_id in self.connections and 
-                connection_id in self.connection_states and 
+        return (connection_id in self.connections and
+                connection_id in self.connection_states and
                 self.connection_states[connection_id]['connected'])
 
     def get_connection_state(self, connection_id: str) -> Optional[Dict[str, Any]]:

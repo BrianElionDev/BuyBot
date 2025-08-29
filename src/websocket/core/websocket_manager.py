@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class WebSocketManager:
     """
     Main WebSocket manager for Binance futures API.
-    
+
     Features:
     - Automatic reconnection with exponential backoff
     - Rate limiting compliance
@@ -247,7 +247,7 @@ class WebSocketManager:
             try:
                 if self.listen_key_expiry:
                     time_until_expiry = (self.listen_key_expiry - datetime.now()).total_seconds()
-                    
+
                     if time_until_expiry <= 300:  # Refresh 5 minutes before expiry
                         await self._refresh_listen_key()
 
@@ -281,7 +281,7 @@ class WebSocketManager:
         while self.running:
             try:
                 current_time = time.time()
-                
+
                 # Reset counters every second
                 if current_time - self.rate_limit_reset_time >= 1:
                     self.rate_limit_counter = {'messages': 0, 'ping_pong': 0}

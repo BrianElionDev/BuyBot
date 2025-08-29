@@ -11,8 +11,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'websocket'))
 
-from src.websocket.binance_websocket_manager import BinanceWebSocketManager
-from src.websocket.database_sync_handler import DatabaseSyncHandler
+from src.websocket import WebSocketManager, SyncManager
 from discord_bot.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -33,8 +32,8 @@ class DiscordBotWebSocketManager:
         """
         self.bot = bot
         self.db_manager = db_manager
-        self.ws_manager: Optional[BinanceWebSocketManager] = None
-        self.db_sync_handler: Optional[DatabaseSyncHandler] = None
+        self.ws_manager: Optional[WebSocketManager] = None
+        self.sync_manager: Optional[SyncManager] = None
         self.is_running = False
         self.last_sync_time = None
         self.sync_stats = {
@@ -55,11 +54,11 @@ class DiscordBotWebSocketManager:
             api_secret = self.bot.binance_exchange.api_secret
             is_testnet = self.bot.binance_exchange.is_testnet
 
-            # Create database sync handler
-            self.db_sync_handler = DatabaseSyncHandler(self.db_manager)
+            # Create sync manager
+            self.sync_manager = SyncManager(self.db_manager)
 
-            # Create WebSocket manager with database sync
-            self.ws_manager = BinanceWebSocketManager(
+            # Create WebSocket manager
+            self.ws_manager = WebSocketManager(
                 api_key=api_key,
                 api_secret=api_secret,
                 is_testnet=is_testnet,
@@ -106,8 +105,8 @@ class DiscordBotWebSocketManager:
                     logger.info(f"WebSocket: ORDER FILLED - {symbol} at {avg_price} - PnL: {realized_pnl}")
 
                 # CRITICAL: Call database sync handler to update database
-                if self.ws_manager and self.ws_manager.db_sync_handler:
-                    await self.ws_manager.db_sync_handler.handle_execution_report(data)
+                if self.sync_manager:
+                    await self.sync_manager.handle_execution_report(data)
                     logger.info(f"Database sync called for order {order_id}")
 
             except Exception as e:
@@ -131,8 +130,8 @@ class DiscordBotWebSocketManager:
                         logger.info(f"WebSocket: Balance - {asset}: Free={free}, Locked={locked}")
 
                 # CRITICAL: Call database sync handler to update database
-                if self.ws_manager and self.ws_manager.db_sync_handler:
-                    await self.ws_manager.db_sync_handler.handle_account_position(data)
+                if self.sync_manager:
+                    await self.sync_manager.handle_account_position(data)
                     logger.info("Database sync called for account position update")
 
             except Exception as e:
@@ -152,8 +151,10 @@ class DiscordBotWebSocketManager:
                     logger.info(f"WebSocket: Ticker update #{self.sync_stats['pnl_updates']} - {symbol}: {price}")
 
                 # CRITICAL: Call database sync handler to update database
-                if self.ws_manager and self.ws_manager.db_sync_handler:
-                    await self.ws_manager.db_sync_handler.handle_ticker(data)
+                if self.sync_manager:
+                    # Note: Ticker handling is now done through market data handler
+                    # Sync manager handles execution reports, positions, and balance updates
+                    pass
 
             except Exception as e:
                 logger.error(f"Error in ticker handler: {e}")

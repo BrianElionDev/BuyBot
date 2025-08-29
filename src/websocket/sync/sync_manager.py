@@ -46,7 +46,7 @@ class SyncManager:
             return
 
         self.running = False
-        
+
         # Cancel all sync tasks
         for task in self.sync_tasks:
             if not task.done():
@@ -84,7 +84,7 @@ class SyncManager:
 
             # Process immediately
             result = await self.database_sync.handle_execution_report(data)
-            
+
             if result:
                 sync_event.status = 'success'
                 logger.info(f"Successfully synced execution report for order {result.order_id}")
@@ -124,7 +124,7 @@ class SyncManager:
 
             # Process immediately
             result = await self.database_sync.handle_account_position(data)
-            
+
             if result:
                 sync_event.status = 'success'
                 logger.info(f"Successfully synced account position with {len(result)} positions")
@@ -164,7 +164,7 @@ class SyncManager:
 
             # Process immediately
             result = await self.database_sync.handle_balance_update(data)
-            
+
             if result:
                 sync_event.status = 'success'
                 logger.info(f"Successfully synced balance update for {result.asset}")
@@ -185,13 +185,13 @@ class SyncManager:
                 # Process events in batches
                 batch_size = min(10, len(self.sync_queue))
                 batch = self.sync_queue[:batch_size]
-                
+
                 for sync_event in batch:
                     await self._process_sync_event(sync_event)
-                
+
                 # Remove processed events
                 self.sync_queue = self.sync_queue[batch_size:]
-                
+
                 # Small delay to prevent overwhelming the database
                 await asyncio.sleep(0.1)
 

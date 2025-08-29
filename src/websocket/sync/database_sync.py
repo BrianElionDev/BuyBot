@@ -63,7 +63,7 @@ class DatabaseSync:
             realized_pnl = float(order_data.get('Y', 0))  # Realized PnL
 
             logger.info(f"Execution Report: {symbol} {order_id} - {status} - Qty: {executed_qty} - Price: {avg_price}")
-            
+
             # Find the corresponding trade in database
             trade = await self._find_trade_by_order_id(str(order_id)) if order_id is not None else None
             if not trade:
@@ -72,11 +72,11 @@ class DatabaseSync:
 
             trade_id = trade['id']
             logger.info(f"Found trade {trade_id} for order {order_id}")
-            
+
             # Update trade based on order status
             if status is not None:
                 await self._update_trade_status(trade_id, trade, order_data, status, executed_qty, avg_price, realized_pnl)
-                
+
                 # Create sync data
                 sync_data = TradeSyncData(
                     trade_id=str(trade_id),
@@ -88,7 +88,7 @@ class DatabaseSync:
                     realized_pnl=realized_pnl,
                     sync_timestamp=datetime.now(timezone.utc)
                 )
-                
+
                 self._update_sync_state('success')
                 return sync_data
 
@@ -259,7 +259,7 @@ class DatabaseSync:
 
             # Update database
             response = self.db_manager.supabase.from_("trades").update(updates).eq("id", trade_id).execute()
-            
+
             if response.data:
                 logger.info(f"Updated trade {trade_id} status to {mapped_status}")
             else:
@@ -281,9 +281,9 @@ class DatabaseSync:
                 'exchange_order_id': order_id,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
-            
+
             response = self.db_manager.supabase.from_("trades").update(updates).eq("id", trade_id).execute()
-            
+
             if response.data:
                 logger.info(f"Updated trade {trade_id} with order ID {order_id}")
             else:
@@ -301,7 +301,7 @@ class DatabaseSync:
         """
         self.sync_state.last_sync_time = datetime.now(timezone.utc)
         self.sync_state.sync_status = status
-        
+
         if status == 'success':
             self.sync_state.successful_events += 1
         elif status == 'failed':

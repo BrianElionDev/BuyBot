@@ -54,7 +54,7 @@ class EventDispatcher:
         """
         if event_type not in self.event_handlers:
             self.event_handlers[event_type] = []
-        
+
         if handler not in self.event_handlers[event_type]:
             self.event_handlers[event_type].append(handler)
             logger.debug(f"Registered handler for event type: {event_type}")
@@ -109,7 +109,7 @@ class EventDispatcher:
 
             # Get handlers for event type
             handlers = self.event_handlers.get(processed_event.event_type, [])
-            
+
             if not handlers:
                 logger.debug(f"No handlers registered for event type: {processed_event.event_type}")
                 return
@@ -138,7 +138,7 @@ class EventDispatcher:
             Optional[WebSocketEvent]: Processed event or None if filtered out
         """
         processed_event = event
-        
+
         for middleware in self.middleware:
             try:
                 result = await middleware(processed_event)
@@ -178,10 +178,10 @@ class EventDispatcher:
         try:
             # Parse JSON message
             data = json.loads(message)
-            
+
             # Determine event type
             event_type = self._determine_event_type(data)
-            
+
             # Create event object
             event = WebSocketEvent(
                 event_type=event_type,
@@ -189,7 +189,7 @@ class EventDispatcher:
                 timestamp=datetime.now().timestamp(),
                 connection_id=connection_id
             )
-            
+
             # Dispatch event
             await self.dispatch_event(event)
 

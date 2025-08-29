@@ -51,26 +51,26 @@ class ErrorHandler:
             event_time = datetime.now()
 
             error_event = ErrorEvent(
-                code=code,
-                message=message,
+                code=code if code is not None else -1,
+                message=message if message is not None else "Unknown error",
                 event_time=event_time
             )
 
             # Store in history
             self.error_history.append(error_event)
-            
+
             # Update error counts
             error_key = f"{code}:{message}"
             self.error_counts[error_key] = self.error_counts.get(error_key, 0) + 1
-            
+
             # Keep only recent errors
             if len(self.error_history) > self.max_error_history:
                 self.error_history = self.error_history[-self.max_error_history:]
 
             # Log error based on severity
-            if self._is_critical_error(code):
+            if self._is_critical_error(code if code is not None else -1):
                 logger.critical(f"Critical WebSocket Error {code}: {message}")
-            elif self._is_warning_error(code):
+            elif self._is_warning_error(code if code is not None else -1):
                 logger.warning(f"WebSocket Warning {code}: {message}")
             else:
                 logger.error(f"WebSocket Error {code}: {message}")
@@ -242,7 +242,7 @@ class ErrorHandler:
             List[ErrorEvent]: Critical error history
         """
         critical_errors = [
-            error for error in self.error_history 
+            error for error in self.error_history
             if self._is_critical_error(error.code)
         ]
         return critical_errors[-limit:]
@@ -258,7 +258,7 @@ class ErrorHandler:
             List[ErrorEvent]: Warning error history
         """
         warning_errors = [
-            error for error in self.error_history 
+            error for error in self.error_history
             if self._is_warning_error(error.code)
         ]
         return warning_errors[-limit:]
@@ -279,7 +279,7 @@ class ErrorHandler:
         total_errors = len(self.error_history)
         critical_errors = len([e for e in self.error_history if self._is_critical_error(e.code)])
         warning_errors = len([e for e in self.error_history if self._is_warning_error(e.code)])
-        
+
         return {
             'total_errors': total_errors,
             'critical_errors': critical_errors,

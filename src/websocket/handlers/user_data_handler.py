@@ -54,20 +54,20 @@ class UserDataHandler:
 
             execution_report = ExecutionReport(
                 order_id=str(order_id),
-                symbol=symbol,
-                status=status,
+                symbol=symbol if symbol is not None else "",
+                status=status if status is not None else "",
                 executed_qty=executed_qty,
                 avg_price=avg_price,
                 realized_pnl=realized_pnl,
-                side=side,
-                order_type=order_type,
+                side=side if side is not None else "",
+                order_type=order_type if order_type is not None else "",
                 time=time,
                 update_time=update_time
             )
 
             # Store in history
             self.execution_history.append(execution_report)
-            
+
             # Keep only last 1000 execution reports
             if len(self.execution_history) > 1000:
                 self.execution_history = self.execution_history[-1000:]
@@ -96,7 +96,7 @@ class UserDataHandler:
             clear_time = datetime.fromtimestamp(event_data.get('T', 0) / 1000)
 
             balance_update = BalanceUpdate(
-                asset=asset,
+                asset=asset if asset is not None else "",
                 balance_delta=balance_delta,
                 event_time=event_time,
                 clear_time=clear_time
@@ -104,7 +104,7 @@ class UserDataHandler:
 
             # Store in history
             self.balance_updates.append(balance_update)
-            
+
             # Keep only last 1000 balance updates
             if len(self.balance_updates) > 1000:
                 self.balance_updates = self.balance_updates[-1000:]
@@ -137,7 +137,7 @@ class UserDataHandler:
 
             # Store in history
             self.account_positions.append(account_position)
-            
+
             # Keep only last 1000 position updates
             if len(self.account_positions) > 1000:
                 self.account_positions = self.account_positions[-1000:]
@@ -161,10 +161,10 @@ class UserDataHandler:
             List[ExecutionReport]: Execution history
         """
         history = self.execution_history
-        
+
         if symbol:
             history = [report for report in history if report.symbol == symbol]
-        
+
         return history[-limit:]
 
     def get_balance_updates(self, asset: Optional[str] = None, limit: int = 100) -> List[BalanceUpdate]:
@@ -179,10 +179,10 @@ class UserDataHandler:
             List[BalanceUpdate]: Balance update history
         """
         updates = self.balance_updates
-        
+
         if asset:
             updates = [update for update in updates if update.asset == asset]
-        
+
         return updates[-limit:]
 
     def get_account_positions(self, limit: int = 100) -> List[AccountPosition]:
@@ -225,5 +225,5 @@ class UserDataHandler:
             self.balance_updates.clear()
         if history_type == 'position' or history_type is None:
             self.account_positions.clear()
-        
+
         logger.info(f"Cleared {history_type or 'all'} history")

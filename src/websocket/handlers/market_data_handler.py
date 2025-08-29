@@ -38,11 +38,12 @@ class MarketDataHandler:
             event_time = datetime.fromtimestamp(event_data.get('E', 0) / 1000)
 
             # Update price cache
-            self.price_cache[symbol] = price
-            self.last_update[symbol] = event_time
+            if symbol is not None:
+                self.price_cache[symbol] = price
+                self.last_update[symbol] = event_time
 
             market_data = MarketData(
-                symbol=symbol,
+                symbol=symbol if symbol is not None else "",
                 price=price,
                 quantity=volume,
                 trade_time=event_time,
@@ -73,11 +74,12 @@ class MarketDataHandler:
             trade_time = datetime.fromtimestamp(event_data.get('T', 0) / 1000)
 
             # Update price cache
-            self.price_cache[symbol] = price
-            self.last_update[symbol] = trade_time
+            if symbol is not None:
+                self.price_cache[symbol] = price
+                self.last_update[symbol] = trade_time
 
             market_data = MarketData(
-                symbol=symbol,
+                symbol=symbol if symbol is not None else "",
                 price=price,
                 quantity=quantity,
                 trade_time=trade_time,
@@ -104,7 +106,7 @@ class MarketDataHandler:
         try:
             symbol = event_data.get('s')  # Symbol
             event_time = datetime.fromtimestamp(event_data.get('E', 0) / 1000)
-            
+
             # Process bids and asks
             bids = event_data.get('b', [])  # Bids
             asks = event_data.get('a', [])  # Asks
