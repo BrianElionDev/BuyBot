@@ -17,8 +17,8 @@ Content-Type: application/json
 {
     "discord_id": "1405530878343512074",
     "trader": "@-Johnny",
-    "trade": "1029838895535374439",
+    "trade": "1405529321535311943",
     "timestamp": "2025-08-14T12:37:54.898Z",
-    "content": "ETH 🚀|  stops moved to BE  | @Johnny"
+    "content": "ETH 🚀|  TP1  | @Johnny"
 }
 

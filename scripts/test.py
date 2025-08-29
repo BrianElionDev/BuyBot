@@ -22,6 +22,8 @@ from discord_bot.database import DatabaseManager
 from discord_bot.discord_bot import DiscordBot
 from discord_bot.discord_signal_parser import DiscordSignalParser
 from config import settings as config
+from datetime import datetime, timezone
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -91,7 +93,7 @@ async def test_price_thresholds():
      
 async def main():   
     """Main function to run the price threshold test."""
-    
-    await test_price_thresholds()
+    processed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    print(f"Test started at {processed_at}")
 if __name__ == "__main__":
     asyncio.run(main())
