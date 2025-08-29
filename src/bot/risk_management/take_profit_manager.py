@@ -79,7 +79,7 @@ class TakeProfitManager:
             tp_order = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=tp_side,
-                order_type_market=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
+                order_type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
                 amount=tp_quantity,
                 stop_price=tp_price,
                 reduce_only=True

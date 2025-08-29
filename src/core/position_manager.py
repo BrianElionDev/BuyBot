@@ -121,7 +121,7 @@ class PositionManager:
             close_order = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=close_side,
-                order_type_market='MARKET',
+                order_type='MARKET',
                 amount=amount_to_close,
                 reduce_only=True
             )
@@ -158,7 +158,7 @@ class PositionManager:
                 return False, "Invalid entry price for breakeven calculation"
 
             # Calculate breakeven price using fee calculator
-            from src.exchange.fee_calculator import FixedFeeCalculator
+            from src.exchange.fees.fee_calculator import FixedFeeCalculator
             from config import settings as config
 
             fee_calculator = FixedFeeCalculator(fee_rate=config.FIXED_FEE_RATE)

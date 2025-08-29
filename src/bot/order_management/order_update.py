@@ -117,7 +117,7 @@ class OrderUpdater:
                 new_order = await self.binance_exchange.create_futures_order(
                     pair=trading_pair,
                     side=new_side,
-                    order_type_market='MARKET',
+                    order_type='MARKET',
                     amount=new_quantity
                 )
             else:
@@ -127,7 +127,7 @@ class OrderUpdater:
                 new_order = await self.binance_exchange.create_futures_order(
                     pair=trading_pair,
                     side=new_side,
-                    order_type_market='LIMIT',
+                    order_type='LIMIT',
                     amount=new_quantity,
                     price=new_price
                 )

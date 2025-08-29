@@ -77,7 +77,7 @@ class StopLossManager:
             sl_order = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=sl_side,
-                order_type_market=FUTURE_ORDER_TYPE_STOP_MARKET,
+                order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
                 amount=position_size,
                 stop_price=sl_price,
                 reduce_only=True

@@ -195,7 +195,7 @@ class OrderCreator:
                         tp_order = await self.binance_exchange.create_futures_order(
                             pair=trading_pair,
                             side=tp_sl_side,
-                            order_type_market='TAKE_PROFIT_MARKET',
+                            order_type='TAKE_PROFIT_MARKET',
                             amount=position_size,  # Use specific amount for partial positions
                             stop_price=tp_price_float,
                             reduce_only=True  # This ensures it only reduces the position by the specified amount
@@ -233,7 +233,7 @@ class OrderCreator:
                     sl_order = await self.binance_exchange.create_futures_order(
                         pair=trading_pair,
                         side=tp_sl_side,
-                        order_type_market='STOP_MARKET',
+                        order_type='STOP_MARKET',
                         amount=position_size,
                         stop_price=sl_price_float,
                         reduce_only=True
@@ -278,7 +278,7 @@ class OrderCreator:
             order = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=side,
-                order_type_market='MARKET',
+                order_type='MARKET',
                 amount=amount,
                 reduce_only=reduce_only
             )
@@ -319,7 +319,7 @@ class OrderCreator:
             order = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=side,
-                order_type_market='LIMIT',
+                order_type='LIMIT',
                 amount=amount,
                 price=price,
                 reduce_only=reduce_only

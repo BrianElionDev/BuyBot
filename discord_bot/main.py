@@ -11,7 +11,7 @@ from datetime import datetime
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from discord_bot.discord_endpoint import router as discord_router
+from discord_bot.endpoints.discord_endpoint import router as discord_router
 from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
     sync_trade_statuses_with_binance,
@@ -312,7 +312,7 @@ async def check_api_permissions(bot):
 async def auto_fill_transaction_history(bot, supabase):
     """Auto-fill transaction history from Binance income endpoint."""
     try:
-        from scripts.manual_transaction_history_fill import TransactionHistoryFiller
+        from scripts.maintenance.cleanup_scripts.manual_transaction_history_fill import TransactionHistoryFiller
         from discord_bot.database import DatabaseManager
 
         filler = TransactionHistoryFiller()
@@ -382,7 +382,7 @@ async def weekly_historical_backfill(bot, supabase):
 async def backfill_missing_prices(bot, supabase):
     """Backfill missing Binance entry and exit prices for recent trades."""
     try:
-        from scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
+        from scripts.maintenance.migration_scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
 
         logger.info("[Scheduler] Starting price backfill for recent trades...")
 

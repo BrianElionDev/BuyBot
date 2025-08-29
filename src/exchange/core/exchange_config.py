@@ -22,8 +22,8 @@ class ExchangeConfig:
     """
 
     # API Configuration
-    api_key: str
-    api_secret: str
+    api_key: str = ""
+    api_secret: str = ""
     is_testnet: bool = False
 
     # Connection Settings
@@ -51,8 +51,11 @@ class ExchangeConfig:
 
     def __post_init__(self):
         """Validate configuration after initialization."""
-        if not self.api_key or not self.api_secret:
-            raise ValueError("API key and secret are required")
+        # Only validate API credentials if they are provided
+        if self.api_key and self.api_secret:
+            # Validate that both are provided if one is
+            if not self.api_key or not self.api_secret:
+                raise ValueError("Both API key and secret must be provided if one is provided")
 
         if self.connection_timeout <= 0:
             raise ValueError("Connection timeout must be positive")
@@ -143,6 +146,12 @@ def format_value(value: float, step_size: str) -> str:
 
     # Perform quantization
     quantized_value = (value_dec // step_dec) * step_dec
+
+    # Format the output string to match the precision of the step_size
+    return f"{quantized_value:.{step_dec.normalize().as_tuple().exponent * -1}f}"
+
+    # Format the output string to match the precision of the step_size
+    return f"{quantized_value:.{step_dec.normalize().as_tuple().exponent * -1}f}"
 
     # Format the output string to match the precision of the step_size
     return f"{quantized_value:.{step_dec.normalize().as_tuple().exponent * -1}f}"

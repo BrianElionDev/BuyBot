@@ -223,7 +223,7 @@ class BinanceExchange(ExchangeBase):
 
         try:
             result = await self.client.futures_position_information()
-            return result
+            return list(result)
         except Exception as e:
             logger.error(f"Error getting futures positions: {e}")
             return []
@@ -233,13 +233,17 @@ class BinanceExchange(ExchangeBase):
         """Close a futures position."""
         side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
 
-        return await self.create_futures_order(
-            pair=pair,
-            side=side,
-            order_type=ORDER_TYPE_MARKET,
-            amount=amount,
-            reduce_only=True
-        )
+        try:
+            success, result = await self.create_futures_order(
+                pair=pair,
+                side=side,
+                order_type=ORDER_TYPE_MARKET,
+                amount=amount,
+                reduce_only=True
+            )
+            return bool(success), result if isinstance(result, dict) else {'error': str(result)}
+        except Exception as e:
+            return False, {'error': str(e)}
 
     # Market Data
     async def get_current_prices(self, symbols: List[str]) -> Dict[str, float]:
@@ -297,7 +301,7 @@ class BinanceExchange(ExchangeBase):
     async def is_futures_symbol_supported(self, symbol: str) -> bool:
         """Check if symbol is supported for futures trading."""
         if WHITELIST_AVAILABLE:
-            return is_symbol_supported(symbol)
+            return is_symbol_supported(symbol)  # pyright: ignore[reportPossiblyUnboundVariable]
 
         # Fallback: check if symbol exists in exchange info
         filters = await self.get_futures_symbol_filters(symbol)
@@ -312,7 +316,7 @@ class BinanceExchange(ExchangeBase):
         assert self.client is not None
 
         try:
-            params = {'limit': limit}
+            params: dict[str, int | str] = {'limit': limit}
             if symbol:
                 params['symbol'] = symbol
             if from_id > 0:
@@ -323,7 +327,7 @@ class BinanceExchange(ExchangeBase):
                 params['endTime'] = end_time
 
             result = await self.client.futures_account_trades(**params)
-            return result
+            return list(result)
         except Exception as e:
             logger.error(f"Error getting user trades: {e}")
             return []
@@ -336,7 +340,7 @@ class BinanceExchange(ExchangeBase):
         assert self.client is not None
 
         try:
-            params = {'limit': limit}
+            params: dict[str, int | str] = {'limit': limit}
             if symbol:
                 params['symbol'] = symbol
             if income_type:
@@ -347,7 +351,7 @@ class BinanceExchange(ExchangeBase):
                 params['endTime'] = end_time
 
             result = await self.client.futures_income_history(**params)
-            return result
+            return list(result)
         except Exception as e:
             logger.error(f"Error getting income history: {e}")
             return []
@@ -376,7 +380,46 @@ class BinanceExchange(ExchangeBase):
 
         try:
             result = await self.client.futures_get_open_orders()
-            return result
+            return list(result)
         except Exception as e:
             logger.error(f"Error getting open futures orders: {e}")
             return []
+    async def get_exchange_info(self) -> Optional[Dict[str, Any]]:
+        """Get exchange information including symbol details."""
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            result = await self.client.futures_exchange_info()
+            return result
+        except Exception as e:
+            logger.error(f"Error getting exchange info: {e}")
+            return None
+
+    async def calculate_min_max_market_order_quantity(self, symbol: str) -> Tuple[float, float]:
+        """Calculate minimum and maximum market order quantities for a symbol."""
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            # Get symbol filters
+            filters = await self.get_futures_symbol_filters(symbol)
+            if not filters:
+                logger.error(f"Could not get filters for {symbol}")
+                return 0.0, float('inf')
+
+            # Extract lot size filter
+            lot_size_filter = filters.get('LOT_SIZE', {})
+            min_qty = float(lot_size_filter.get('minQty', 0))
+            max_qty = float(lot_size_filter.get('maxQty', float('inf')))
+
+            return min_qty, max_qty
+        except Exception as e:
+            logger.error(f"Error calculating min/max quantities for {symbol}: {e}")
+            return 0.0, float('inf')
+
+    def get_futures_trading_pair(self, coin_symbol: str) -> str:
+        """Get the futures trading pair for a coin symbol."""
+        # Convert coin symbol to uppercase and append USDT
+        return f"{coin_symbol.upper()}USDT"
+

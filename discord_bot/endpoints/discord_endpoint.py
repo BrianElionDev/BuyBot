@@ -6,7 +6,7 @@ This module contains the Discord API endpoint for backward compatibility.
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional
 import logging
 from discord_bot.discord_bot import discord_bot
 from discord_bot.models import InitialDiscordSignal

@@ -109,7 +109,7 @@ class FollowupSignalProcessor:
             tp_order = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=tp_side,
-                order_type_market='LIMIT',
+                order_type='LIMIT',
                 amount=amount_to_close,
                 price=tp_price,
                 reduce_only=True
@@ -156,7 +156,7 @@ class FollowupSignalProcessor:
             close_order = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=close_side,
-                order_type_market='MARKET',
+                order_type='MARKET',
                 amount=amount_to_close,
                 reduce_only=True
             )
@@ -238,7 +238,7 @@ class FollowupSignalProcessor:
             new_sl_order = await self.binance_exchange.create_futures_order(
                 pair=trading_pair,
                 side=new_sl_side,
-                order_type_market='STOP_MARKET',
+                order_type='STOP_MARKET',
                 stop_price=new_stop_price,
                 amount=position_size,
                 reduce_only=True

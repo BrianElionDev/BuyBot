@@ -175,8 +175,8 @@ class InitialSignalProcessor:
 
             # Get symbol filters for precision formatting
             quantities = await self.binance_exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
-            minQuantity = float(quantities['min_quantity'])
-            maxQuantity = float(quantities['max_quantity'])
+            minQuantity = float(quantities[0])  # First element is min_qty
+            maxQuantity = float(quantities[1])  # Second element is max_qty
             print(f"Min Quantity: {minQuantity}, Max Quantity: {maxQuantity}")
             trade_amount = max(minQuantity, min(maxQuantity, trade_amount))
             print(f"Adjusted trade amount: {trade_amount}")
@@ -304,14 +304,14 @@ class InitialSignalProcessor:
                 order = await self.binance_exchange.create_futures_order(
                     pair=trading_pair,
                     side=order_side,
-                    order_type_market='MARKET',
+                    order_type='MARKET',
                     amount=trade_amount
                 )
             else:  # LIMIT
                 order = await self.binance_exchange.create_futures_order(
                     pair=trading_pair,
                     side=order_side,
-                    order_type_market='LIMIT',
+                    order_type='LIMIT',
                     amount=trade_amount,
                     price=signal_price
                 )

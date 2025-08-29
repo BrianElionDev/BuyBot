@@ -54,6 +54,8 @@ class TradingEngine:
         self.binance_exchange = binance_exchange
         self.db_manager = db_manager
         self.trade_cooldowns = {}
+        # Add config attribute for signal processors
+        self.config = config
         # Use FixedFeeCalculator for simplified fee management
         self.fee_calculator = FixedFeeCalculator(fee_rate=config.FIXED_FEE_RATE)
 
