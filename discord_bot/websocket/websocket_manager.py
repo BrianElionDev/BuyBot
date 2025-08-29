@@ -178,12 +178,12 @@ class DiscordBotWebSocketManager:
 
         # Register handlers
         if self.ws_manager:
-            self.ws_manager.add_event_handler('ORDER_TRADE_UPDATE', handle_execution_report)
-            self.ws_manager.add_event_handler('ACCOUNT_UPDATE', handle_account_position)
-            self.ws_manager.add_event_handler('ticker', handle_ticker)
-            self.ws_manager.add_event_handler('connection', handle_connection)
-            self.ws_manager.add_event_handler('disconnection', handle_disconnection)
-            self.ws_manager.add_event_handler('error', handle_error)
+            self.ws_manager.register_handler('ORDER_TRADE_UPDATE', handle_execution_report)
+            self.ws_manager.register_handler('ACCOUNT_UPDATE', handle_account_position)
+            self.ws_manager.register_handler('ticker', handle_ticker)
+            self.ws_manager.register_handler('connection', handle_connection)
+            self.ws_manager.register_handler('disconnection', handle_disconnection)
+            self.ws_manager.register_handler('error', handle_error)
 
     async def start(self):
         """Start the WebSocket manager."""

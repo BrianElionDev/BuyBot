@@ -102,9 +102,9 @@ class MarketAnalysis:
     price_change_percentage_24h: Optional[float] = None
     volatility: Optional[float] = None
     trend: Optional[str] = None  # 'bullish', 'bearish', 'neutral'
-    support_levels: List[float] = []
-    resistance_levels: List[float] = []
-    technical_indicators: Dict[str, Any] = {}
+    support_levels: Optional[List[float]] = None
+    resistance_levels: Optional[List[float]] = None
+    technical_indicators: Optional[Dict[str, Any]] = None
 
 
 @dataclass
