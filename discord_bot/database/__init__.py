@@ -14,7 +14,7 @@ from .utils.database_utils import DatabaseUtils
 __all__ = [
     'DatabaseManager',
     'TradeModel',
-    'AlertModel', 
+    'AlertModel',
     'TradeOperations',
     'AlertOperations',
     'DatabaseUtils'

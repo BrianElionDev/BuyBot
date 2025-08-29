@@ -20,7 +20,7 @@ from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
 from discord_bot.database import DatabaseManager
 from discord_bot.discord_bot import DiscordBot
-from discord_bot.discord_signal_parser import DiscordSignalParser
+from discord_bot.signal_processing import DiscordSignalParser
 from config import settings as config
 
 # Setup logging

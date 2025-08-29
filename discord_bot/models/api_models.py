@@ -1,3 +1,9 @@
+"""
+API Models for Discord Bot
+
+Pydantic models for API endpoints.
+"""
+
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime

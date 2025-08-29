@@ -305,7 +305,7 @@ class BinanceDatabaseSync:
                     import sys
                     import os
                     sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-                    from discord_bot.status_constants import map_binance_order_status, determine_position_status_from_order
+                    from discord_bot.constants import map_binance_order_status, determine_position_status_from_order
 
                     # Update order status
                     order_status = map_binance_order_status(status)

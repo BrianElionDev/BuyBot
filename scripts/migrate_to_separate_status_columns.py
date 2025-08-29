@@ -9,6 +9,7 @@ import sys
 import logging
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+import json
 
 # Add the project root to Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,7 +17,7 @@ project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
 from supabase import create_client, Client
-from discord_bot.status_constants import map_binance_order_status, determine_position_status_from_order
+from discord_bot.constants import map_binance_order_status, determine_position_status_from_order
 from config import settings
 
 # Setup logging
@@ -31,13 +32,17 @@ def initialize_supabase() -> Client:
 
         if not supabase_url or not supabase_key:
             logger.error("Missing Supabase credentials")
-            return None
+            raise ValueError("Missing Supabase credentials")
 
-        return create_client(supabase_url, supabase_key)
+        try:
+            return create_client(supabase_url, supabase_key)
+        except Exception as e:
+            logger.error(f"Failed to create Supabase client: {e}")
+            raise
 
     except Exception as e:
         logger.error(f"Failed to initialize Supabase: {e}")
-        return None
+        raise
 
 def migrate_trade_statuses(supabase: Client):
     """Migrate existing trades to use separate order_status and position_status columns."""
@@ -65,7 +70,6 @@ def migrate_trade_statuses(supabase: Client):
                 # Parse binance_response if available
                 if binance_response:
                     try:
-                        import json
                         binance_data = json.loads(binance_response) if isinstance(binance_response, str) else binance_response
 
                         if 'orderId' in binance_data and 'error' not in binance_data:
@@ -82,7 +86,6 @@ def migrate_trade_statuses(supabase: Client):
                 # Parse order_status_response if available
                 if order_status_response:
                     try:
-                        import json
                         status_data = json.loads(order_status_response) if isinstance(order_status_response, str) else order_status_response
 
                         binance_status = status_data.get('status', '').upper()

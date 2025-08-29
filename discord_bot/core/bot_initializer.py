@@ -14,7 +14,7 @@ from src.services.price_service import PriceService
 from src.exchange.binance_exchange import BinanceExchange
 from src.services.telegram_notification_service import TelegramNotificationService
 from discord_bot.database import DatabaseManager
-from discord_bot.discord_signal_parser import DiscordSignalParser
+from discord_bot.signal_processing import DiscordSignalParser
 from discord_bot.websocket import DiscordBotWebSocketManager
 
 from .bot_config import BotConfig

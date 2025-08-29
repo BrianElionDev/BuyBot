@@ -655,7 +655,7 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
                     order_status = matching_order.get('status')
 
                     # Import status constants
-                    from discord_bot.status_constants import map_binance_order_status
+                    from discord_bot.constants import map_binance_order_status
 
                     # Update order status
                     mapped_order_status = map_binance_order_status(order_status)
