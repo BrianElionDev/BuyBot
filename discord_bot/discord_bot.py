@@ -1,9 +1,9 @@
 import asyncio
+from datetime import datetime, timezone
 import logging
 import re
 import time
 from typing import Dict, Any, Optional, Union, List, Tuple
-from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 import uuid
@@ -775,8 +775,6 @@ class DiscordBot:
                 binance_execution_time = None
                 if isinstance(binance_response_log, dict) and 'updateTime' in binance_response_log:
                     execution_timestamp = binance_response_log['updateTime']
-                    # Convert milliseconds to ISO format
-                    from datetime import datetime, timezone
                     binance_execution_time = datetime.fromtimestamp(float(execution_timestamp) / 1000, tz=timezone.utc).isoformat()
                     logger.info(f"Using Binance execution timestamp for updated_at: {binance_execution_time}")
 

@@ -9,6 +9,7 @@ import asyncio
 import logging
 import math
 from dotenv import load_dotenv
+from datetime import datetime, timezone
 
 # Add the project root to Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -91,7 +92,10 @@ async def test_price_thresholds():
 
 async def main():
     """Main function to run the price threshold test."""
-
+    
+    processed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    print(f"Test started at {processed_at}")
+    
     await test_price_thresholds()
 if __name__ == "__main__":
     asyncio.run(main())
