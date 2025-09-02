@@ -114,11 +114,12 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
         and convert them into a structured JSON format. You must identify the coin symbol,
         position type, entry prices, stop loss, and take profit levels.
 
-        CRITICAL RULES:
-        - 'coin_symbol': The ticker (e.g., BTC, ETH, SOL). This is the MOST IMPORTANT field.
+        CRITICAL RULES - ALL FIELDS ARE REQUIRED:
+        - 'coin_symbol': The ticker (e.g., BTC, ETH, SOL, PUMPFUN). This is the MOST IMPORTANT field.
           NEVER abbreviate or truncate the coin symbol. If you see "BTC", return "BTC", not "TC".
           If you see "ETH", return "ETH", not "ET". If you see "SOL", return "SOL", not "OL".
-          Common symbols: BTC, ETH, SOL, ADA, DOT, LINK, UNI, AAVE, MATIC, AVAX, NEAR, FTM, ALGO, ATOM, XRP, DOGE, SHIB, PEPE, BONK, WIF, FLOKI, TOSHI, TURBO, HYPE, FARTCOIN.
+          If you see "PUMPFUN", return "PUMPFUN", not "UMPFUN".
+          Common symbols: BTC, ETH, SOL, ADA, DOT, LINK, UNI, AAVE, MATIC, AVAX, NEAR, FTM, ALGO, ATOM, XRP, DOGE, SHIB, PEPE, BONK, WIF, FLOKI, TOSHI, TURBO, HYPE, FARTCOIN, PUMPFUN, DSYNC.
 
         - 'position_type': MUST be 'LONG' or 'SHORT'. Look for these exact words:
           * LONG: "long", "longed", "buy", "bought", "going long", "longing"
@@ -126,6 +127,7 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
           * If the signal says "Shorted BTC" or "Short BTC", position_type MUST be "SHORT"
           * If the signal says "Longed BTC" or "Long BTC", position_type MUST be "LONG"
           * Default to 'LONG' only if no position direction is mentioned at all.
+          * THIS FIELD IS MANDATORY - NEVER return null or omit it.
 
         - 'entry_prices': A list of floats. Consolidate all entry points, including price ranges (e.g., "2567/2546") and DCA levels, into this list.
         - 'stop_loss': A float or a string. If it's a simple price, make it a float. If it's a condition like 'BE', '4h close below 212', or '2x 5m < 104900', keep it as a string.
@@ -165,6 +167,18 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
             logger.warning(f"AI response missing expected keys for this context. Response: {parsed_data}")
             return None
 
+        # Additional validation for required fields
+        if not active_trade:
+            if not parsed_data.get('coin_symbol'):
+                logger.error("AI response missing coin_symbol")
+                return None
+            if not parsed_data.get('position_type'):
+                logger.error("AI response missing position_type")
+                return None
+            if not parsed_data.get('entry_prices'):
+                logger.error("AI response missing entry_prices")
+                return None
+
         # Additional validation for coin symbols
         if not active_trade and parsed_data.get('coin_symbol'):
             coin_symbol = parsed_data['coin_symbol'].upper()
@@ -174,7 +188,12 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
                 return None
 
             # Validate position type
-            position_type = parsed_data.get('position_type', '').upper()
+            position_type = parsed_data.get('position_type')
+            if not position_type:
+                logger.error(f"Missing position_type in AI response")
+                return None
+
+            position_type = str(position_type).upper()
             if position_type not in ['LONG', 'SHORT']:
                 logger.error(f"Invalid position type: {position_type}")
                 return None

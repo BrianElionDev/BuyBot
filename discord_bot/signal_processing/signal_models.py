@@ -5,7 +5,7 @@ This module contains data models and structures for Discord trading signals.
 """
 
 from typing import Dict, Any, Optional, List, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 
@@ -126,7 +126,7 @@ class SignalValidationResult:
     """Data model for signal validation results."""
     is_valid: bool
     error_message: Optional[str] = None
-    warnings: List[str] = []
+    warnings: List[str] = field(default_factory=list)
     parsed_signal: Optional[ParsedSignal] = None
 
     def __post_init__(self):

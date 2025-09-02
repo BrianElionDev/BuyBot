@@ -342,7 +342,8 @@ class InitialSignalProcessor:
                 'status': 'OPEN'
             }
 
-            trade_id = await self.db_manager.insert_trade(trade_data)
+            trade_result = await self.db_manager.save_signal_to_db(trade_data)
+            trade_id = trade_result.get('id') if trade_result else None
             if trade_id:
                 logger.info(f"Trade stored in database with ID: {trade_id}")
 

@@ -7,7 +7,8 @@ from supabase import create_client, Client
 from typing import Optional
 
 # Add project root to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, project_root)
 
 from discord_bot.discord_bot import DiscordBot
 
