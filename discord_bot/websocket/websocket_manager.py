@@ -77,11 +77,18 @@ class DiscordBotWebSocketManager:
     def _register_event_handlers(self):
         """Register event handlers for real-time updates."""
 
-        async def handle_execution_report(data):
+        async def handle_execution_report(event):
             """Handle order execution reports."""
             try:
                 self.sync_stats['orders_updated'] += 1
                 self.last_sync_time = datetime.now(timezone.utc)
+
+                # Extract data from WebSocketEvent object
+                if hasattr(event, 'data') and event.data:
+                    data = event.data
+                else:
+                    # Fallback: treat as raw data
+                    data = event
 
                 # Debug: Log the full data structure
                 logger.info(f"DEBUG: DiscordBotWebSocketManager received data: {data}")
@@ -113,13 +120,20 @@ class DiscordBotWebSocketManager:
                 logger.error(f"Error in execution report handler: {e}")
                 self.sync_stats['errors'] += 1
 
-        async def handle_account_position(data):
+        async def handle_account_position(event):
             """Handle account position updates."""
             try:
                 self.sync_stats['positions_updated'] += 1
                 self.last_sync_time = datetime.now(timezone.utc)
 
                 logger.info("WebSocket: Account position update received")
+
+                # Extract data from WebSocketEvent object
+                if hasattr(event, 'data') and event.data:
+                    data = event.data
+                else:
+                    # Fallback: treat as raw data
+                    data = event
 
                 # Log balance changes
                 for balance in data.get('B', []):
@@ -138,10 +152,17 @@ class DiscordBotWebSocketManager:
                 logger.error(f"Error in account position handler: {e}")
                 self.sync_stats['errors'] += 1
 
-        async def handle_ticker(data):
+        async def handle_ticker(event):
             """Handle market ticker updates."""
             try:
                 self.sync_stats['pnl_updates'] += 1
+
+                # Extract data from WebSocketEvent object
+                if hasattr(event, 'data') and event.data:
+                    data = event.data
+                else:
+                    # Fallback: treat as raw data
+                    data = event
 
                 symbol = data.get('s', 'Unknown')
                 price = data.get('c', 'Unknown')
@@ -160,18 +181,39 @@ class DiscordBotWebSocketManager:
                 logger.error(f"Error in ticker handler: {e}")
                 self.sync_stats['errors'] += 1
 
-        async def handle_connection(data):
+        async def handle_connection(event):
             """Handle connection events."""
+            # Extract data from WebSocketEvent object
+            if hasattr(event, 'data') and event.data:
+                data = event.data
+            else:
+                # Fallback: treat as raw data
+                data = event
+
             stream_type = data.get('type', 'unknown')
             logger.info(f"WebSocket: Connected to {stream_type} stream")
 
-        async def handle_disconnection(data):
+        async def handle_disconnection(event):
             """Handle disconnection events."""
+            # Extract data from WebSocketEvent object
+            if hasattr(event, 'data') and event.data:
+                data = event.data
+            else:
+                # Fallback: treat as raw data
+                data = event
+
             stream_type = data.get('type', 'unknown')
             logger.warning(f"WebSocket: Disconnected from {stream_type} stream")
 
-        async def handle_error(data):
+        async def handle_error(event):
             """Handle error events."""
+            # Extract data from WebSocketEvent object
+            if hasattr(event, 'data') and event.data:
+                data = event.data
+            else:
+                # Fallback: treat as raw data
+                data = event
+
             error_msg = data.get('error', 'Unknown error')
             logger.error(f"WebSocket Error: {error_msg}")
             self.sync_stats['errors'] += 1
