@@ -14,11 +14,11 @@ import sys
 import os
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(script_dir))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
 sys.path.insert(0, project_root)
 
-from config import settings
-from src.exchange.binance_exchange import BinanceExchange
+from config.settings import *
+from src.exchange import BinanceExchange
 
 # Configure logging
 logging.basicConfig(
@@ -35,9 +35,9 @@ class BinanceStatusChecker:
         """Initialize the Binance exchange connection"""
         try:
             # Get credentials from environment variables
-            api_key = settings.BINANCE_API_KEY
-            api_secret = settings.BINANCE_API_SECRET
-            is_testnet = settings.BINANCE_TESTNET
+            api_key = BINANCE_API_KEY
+            api_secret = BINANCE_API_SECRET
+            is_testnet = BINANCE_TESTNET
 
             if not api_key or not api_secret:
                 logger.error("Binance API credentials not found in environment variables!")

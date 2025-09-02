@@ -181,15 +181,20 @@ class SignalValidator:
         patterns = {
             'liquidation': r'liquidated|liquidation',
             'partial_fill': r'partial\s+fill',
-            'tp1_and_sl_to_be': r'tp1\s*&\s*stops\s+moved\s+to\s+be',
+            'tp1and_sl_to_be': r'tp1\s*&\s*stops?\s+moved\s+to\s+be|tp1\s*&\s*stops?\s+to\s+be',
             'stop_loss_hit': r'stopped\s+out|closed\s+in\s+profits|closed\s+in\s+loss|closed\s+be/in\s+slight\s+loss',
             'leverage_update': r'leverage\s*to\s*(\d+x)',
             'trailing_stop_loss': r'trailing\s+sl\s+at\s+(\d+\.?\d*%)',
             'position_size_adjustment': r'(double|increase|decrease)\s+position\s+size',
             'stop_loss_update': r'stoploss\s+moved\s+to\s+([-+]?\d*\.?\d+)',
-            'stops_to_be': r'\b(stops?|sl)\b.*\bbe\b',
+            'stops_to_be': r'\b(stops?|sl)\b.*\bbe\b|stopped\s+be',
             'stops_to_price': r'\b(stop\w*|sl)\b.*\bto\b\s*(-?\d+(\.\d+)?)',
-            'dca_to_entry': r'\bdca\b.*\bentry\b.*?(\d+\.\d+)(?:\s|$)'
+            'dca_to_entry': r'\bdca\b.*\bentry\b.*?(\d+\.?\d+)(?:\s|$)',
+            'take_profit_1': r'tp1\b',
+            'take_profit_2': r'tp2\b',
+            'limit_order_cancelled': r'limit\s+order\s+cancelled?',
+            'limit_order_filled': r'limit\s+order\s+filled',
+            'position_closed': r'closed\s+be|closed\s+in\s+profits?|closed\s+in\s+loss'
         }
 
         # Check each pattern and return the first match
@@ -213,6 +218,50 @@ class SignalValidator:
                     action_data['stop_loss_price'] = float(match.group(2))
                 elif action_type == 'dca_to_entry':
                     action_data['entry_price'] = float(match.group(1))
+
+                # Add action descriptions and binance actions for new types
+                if action_type == 'take_profit_1':
+                    action_data['action_description'] = f'Take Profit 1 hit for {coin_symbol}'
+                    action_data['binance_action'] = 'PARTIAL_SELL'
+                    action_data['position_status'] = 'PARTIALLY_CLOSED'
+                    action_data['reason'] = 'TP1 target reached'
+                elif action_type == 'take_profit_2':
+                    action_data['action_description'] = f'Take Profit 2 hit for {coin_symbol}'
+                    action_data['binance_action'] = 'PARTIAL_SELL'
+                    action_data['position_status'] = 'PARTIALLY_CLOSED'
+                    action_data['reason'] = 'TP2 target reached'
+                elif action_type == 'limit_order_cancelled':
+                    action_data['action_description'] = f'Limit order cancelled for {coin_symbol}'
+                    action_data['binance_action'] = 'CANCEL_ORDER'
+                    action_data['position_status'] = 'CLOSED'
+                    action_data['reason'] = 'Cancel limit order'
+                elif action_type == 'position_closed':
+                    action_data['action_description'] = f'Position closed for {coin_symbol}'
+                    action_data['binance_action'] = 'MARKET_SELL'
+                    action_data['position_status'] = 'CLOSED'
+                    action_data['reason'] = 'Position closed'
+                elif action_type == 'stops_to_be':
+                    action_data['action_description'] = f'Stop loss moved to break even for {coin_symbol}'
+                    action_data['binance_action'] = 'UPDATE_STOP_ORDER'
+                    action_data['position_status'] = 'OPEN'
+                    action_data['stop_loss'] = 'BE'
+                    action_data['reason'] = 'Risk management - move to break even'
+                elif action_type == 'tp1and_sl_to_be':
+                    action_data['action_description'] = f'TP1 hit and stop loss moved to break even for {coin_symbol}'
+                    action_data['binance_action'] = 'PARTIAL_SELL_AND_UPDATE_STOP_ORDER'
+                    action_data['position_status'] = 'PARTIALLY_CLOSED'
+                    action_data['stop_loss'] = 'BE'
+                    action_data['reason'] = 'TP1 hit and risk management - move to break even'
+                elif action_type == 'limit_order_filled':
+                    action_data['action_description'] = f'Limit order filled for {coin_symbol}'
+                    action_data['binance_action'] = 'NO_ACTION'
+                    action_data['position_status'] = 'OPEN'
+                    action_data['reason'] = 'Limit order filled - position now open'
+                elif action_type == 'stop_loss_hit':
+                    action_data['action_description'] = f'Position closed for {coin_symbol}'
+                    action_data['binance_action'] = 'MARKET_SELL'
+                    action_data['position_status'] = 'CLOSED'
+                    action_data['reason'] = 'Position closed'
 
                 return action_data
 

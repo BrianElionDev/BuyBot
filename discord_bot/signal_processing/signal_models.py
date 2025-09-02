@@ -72,6 +72,7 @@ class AlertAction:
     leverage: Optional[int] = None
     trailing_percentage: Optional[float] = None
     stop_loss_price: Optional[float] = None
+    stop_loss: Optional[str] = None
     entry_price: Optional[float] = None
     timestamp: Optional[datetime] = None
 
@@ -88,6 +89,7 @@ class AlertAction:
             'leverage': self.leverage,
             'trailing_percentage': self.trailing_percentage,
             'stop_loss_price': self.stop_loss_price,
+            'stop_loss': self.stop_loss,
             'entry_price': self.entry_price,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None
         }
@@ -113,6 +115,7 @@ class AlertAction:
             leverage=data.get('leverage'),
             trailing_percentage=data.get('trailing_percentage'),
             stop_loss_price=data.get('stop_loss_price'),
+            stop_loss=data.get('stop_loss'),
             entry_price=data.get('entry_price'),
             timestamp=timestamp
         )
@@ -123,7 +126,7 @@ class SignalValidationResult:
     """Data model for signal validation results."""
     is_valid: bool
     error_message: Optional[str] = None
-    warnings: List[str] = None
+    warnings: List[str] = []
     parsed_signal: Optional[ParsedSignal] = None
 
     def __post_init__(self):

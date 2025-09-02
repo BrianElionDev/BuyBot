@@ -102,6 +102,8 @@ class DiscordBot:
         """Store an alert hash to prevent duplicate processing."""
         return await self.db_manager.store_alert_hash(alert_hash)
 
+
+
     async def process_initial_signal(self, signal: InitialDiscordSignal) -> Dict[str, Any]:
         """Process an initial Discord signal."""
         try:
@@ -327,6 +329,7 @@ class DiscordBot:
                 return {"status": "skipped", "message": "Duplicate alert"}
 
             # The 'trade' field in the update signal refers to the discord_id of the original trade
+            logger.info(f"Looking for original trade with discord_id: {signal.trade}")
             trade_row = await self.db_manager.find_trade_by_discord_id(signal.trade)
             if not trade_row:
                 error_msg = f"No original trade found for discord_id: {signal.trade}"
@@ -772,18 +775,18 @@ class DiscordBot:
                         logger.info(f"PnL for this action: {newly_realized_pnl:.2f}. Total realized PnL for trade: {total_pnl:.2f}")
 
                 # Extract Binance execution timestamp if available for accurate updated_at
-                binance_execution_time = None
+                binance_execution_time_str = None
                 if isinstance(binance_response_log, dict) and 'updateTime' in binance_response_log:
                     execution_timestamp = binance_response_log['updateTime']
-                    binance_execution_time = datetime.fromtimestamp(float(execution_timestamp) / 1000, tz=timezone.utc).isoformat()
-                    logger.info(f"Using Binance execution timestamp for updated_at: {binance_execution_time}")
+                    binance_execution_time_str = datetime.fromtimestamp(float(execution_timestamp) / 1000, tz=timezone.utc).isoformat()
+                    logger.info(f"Using Binance execution timestamp for updated_at: {binance_execution_time_str}")
 
                 # Update the trade with new status or SL order ID
                 if trade_updates:
                     await self.db_manager.update_existing_trade(
                         trade_id=trade_row["id"],
                         updates=trade_updates,
-                        binance_execution_time=binance_execution_time
+                        binance_execution_time=binance_execution_time_str
                     )
                     logger.info(f"Updated trade {trade_row['id']} with: {trade_updates}")
             elif binance_response_log: # Action was attempted but failed
