@@ -187,6 +187,25 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
                 logger.error(f"Coin symbol too short: {coin_symbol}")
                 return None
 
+            common_symbol_corrections = {
+                'TH': 'ETH',
+                'BT': 'BTC',
+                'SO': 'SOL',
+                'AD': 'ADA',
+                'DO': 'DOT',
+                'LI': 'LINK',
+                'UN': 'UNI',
+                'MA': 'MATIC',
+                'AV': 'AVAX',
+                'AT': 'ATOM'
+            }
+
+            if coin_symbol in common_symbol_corrections:
+                corrected_symbol = common_symbol_corrections[coin_symbol]
+                logger.warning(f"Corrected coin symbol from {coin_symbol} to {corrected_symbol}")
+                parsed_data['coin_symbol'] = corrected_symbol
+                coin_symbol = corrected_symbol
+
             # Validate position type
             position_type = parsed_data.get('position_type')
             if not position_type:

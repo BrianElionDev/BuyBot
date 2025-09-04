@@ -178,37 +178,19 @@ class DatabaseSync:
             Optional[Dict]: Trade data or None if not found
         """
         try:
-            # First check cache
-            if order_id in self.order_id_cache:
-                trade_id = self.order_id_cache[order_id]
-                response = self.db_manager.supabase.from_("trades").select("*").eq("id", trade_id).execute()
-                if response.data:
-                    return response.data[0]
+            trade = await self.db_manager.find_trade_by_order_id(order_id)
 
-            # Get 7-day cutoff for performance
-            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-            cutoff_iso = cutoff.isoformat()
-
-            # Search by exchange_order_id (limited to 7 days)
-            response = self.db_manager.supabase.from_("trades").select("*").eq("exchange_order_id", order_id).gte("created_at", cutoff_iso).execute()
-
-            if response.data:
-                trade = response.data[0]
-                # Cache the mapping
+            if trade:
                 self.order_id_cache[order_id] = trade['id']
-                return trade
 
-            # If not found by exchange_order_id, try parsing sync_order_response
-            response = self.db_manager.supabase.from_("trades").select("*").gte("created_at", cutoff_iso).execute()
-            for trade in response.data:
-                sync_order_response = trade.get('sync_order_response', '')
-                if sync_order_response and order_id in sync_order_response:
-                    # Found it! Update the exchange_order_id
+                if not trade.get('exchange_order_id'):
                     await self._update_trade_order_id(trade['id'], order_id)
-                    self.order_id_cache[order_id] = trade['id']
-                    return trade
 
-            return None
+                logger.info(f"Found trade {trade['id']} for order {order_id}")
+                return trade
+            else:
+                logger.warning(f"Trade not found for order ID: {order_id}")
+                return None
 
         except Exception as e:
             logger.error(f"Error finding trade by order ID {order_id}: {e}")

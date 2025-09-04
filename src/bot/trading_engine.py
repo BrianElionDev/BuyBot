@@ -169,7 +169,7 @@ class TradingEngine:
                     reason = f"Unknown position type '{position_type}' - using first price ${effective_price:.8f}"
 
                 return effective_price, reason
-            else:
+        else:
                 # Unknown order type
                 return entry_prices[0], f"Unknown order type '{order_type}' - using first price ${entry_prices[0]:.8f}"
 
@@ -250,9 +250,9 @@ class TradingEngine:
         success, result = await self.position_manager.calculate_position_breakeven_price(active_trade)
         if success:
             return {
-                'trading_pair': trading_pair,
+                            'trading_pair': trading_pair,
                 'entry_price': entry_price,
-                'position_type': position_type,
+                            'position_type': position_type,
                 'breakeven_price': result
             }
         else:
