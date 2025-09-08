@@ -13,6 +13,12 @@ from .binance import (
     BinanceBalance, BinanceTrade, BinanceIncome
 )
 
+# KuCoin exchange implementation
+from .kucoin import (
+    KucoinExchange, KucoinOrder, KucoinPosition,
+    KucoinBalance, KucoinTrade, KucoinIncome
+)
+
 # Transaction management
 from .transactions import (
     Transaction, Order, Position, TransactionType,
@@ -24,7 +30,13 @@ from .fees import FixedFeeCalculator
 
 # Legacy imports for backward compatibility
 from .binance import BinanceExchange as binance_exchange
+from .kucoin import KucoinExchange as kucoin_exchange
 from .fees import FixedFeeCalculator as fee_calculator
+
+# Register exchanges with factory
+from .core.exchange_factory import register_exchange
+register_exchange("binance", BinanceExchange)
+register_exchange("kucoin", KucoinExchange)
 
 __all__ = [
     # Core
@@ -40,6 +52,14 @@ __all__ = [
     'BinanceTrade',
     'BinanceIncome',
 
+    # KuCoin
+    'KucoinExchange',
+    'KucoinOrder',
+    'KucoinPosition',
+    'KucoinBalance',
+    'KucoinTrade',
+    'KucoinIncome',
+
     # Transactions
     'Transaction',
     'Order',
@@ -53,5 +73,6 @@ __all__ = [
 
     # Legacy
     'binance_exchange',
+    'kucoin_exchange',
     'fee_calculator'
 ]
