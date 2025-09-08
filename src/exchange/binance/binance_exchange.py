@@ -161,6 +161,10 @@ class BinanceExchange(ExchangeBase):
                 'closePosition': close_position
             }
 
+            # Add timeInForce for LIMIT orders (required parameter)
+            if order_type.upper() == 'LIMIT':
+                order_params['timeInForce'] = 'GTC'  # Good Till Cancelled
+
             if price:
                 order_params['price'] = price
             if stop_price:

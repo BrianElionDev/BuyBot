@@ -93,62 +93,11 @@ class OrderCreator:
                         tp_sl_params['stopLossPrice'] = f"{sl_price}"
                         logger.info(f"Setting position-based SL at {sl_price} for {trading_pair}")
 
-                    # Only proceed if we have TP or SL to set
-                    if tp_sl_params:
-                        # Set TP/SL on the position
-                        response = await self.binance_exchange.client.futures_change_position_tpsl_mode(
-                            symbol=trading_pair,
-                            dualSidePosition='false'  # Single position mode
-                        )
+                    # Fall back to separate orders which work reliably
+                    logger.info(f"Using separate TP/SL orders for {trading_pair} (position-based not available)")
 
-                        if response and response.get('status') == 'OK':
-                            # Now set the TP/SL prices
-                            tp_sl_response = await self.binance_exchange.client.futures_change_position_tpsl_mode(
-                                symbol=trading_pair,
-                                dualSidePosition='false',
-                                **tp_sl_params
-                            )
-
-                            if tp_sl_response and tp_sl_response.get('status') == 'OK':
-                                logger.info(f"Successfully set position-based TP/SL for {trading_pair}")
-
-                                # Create mock order responses for consistency
-                                if 'takeProfitPrice' in tp_sl_params:
-                                    tp_order = {
-                                        'orderId': f"pos_tp_{trading_pair}_{int(time.time())}",
-                                        'symbol': trading_pair,
-                                        'status': 'NEW',
-                                        'type': 'TAKE_PROFIT_MARKET',
-                                        'side': tp_sl_side,
-                                        'price': tp_sl_params['takeProfitPrice'],
-                                        'origQty': str(position_size),
-                                        'order_type': 'TAKE_PROFIT',
-                                        'tp_level': 1
-                                    }
-                                    tp_sl_orders.append(tp_order)
-
-                                if 'stopLossPrice' in tp_sl_params:
-                                    sl_order = {
-                                        'orderId': f"pos_sl_{trading_pair}_{int(time.time())}",
-                                        'symbol': trading_pair,
-                                        'status': 'NEW',
-                                        'type': 'STOP_MARKET',
-                                        'side': tp_sl_side,
-                                        'price': tp_sl_params['stopLossPrice'],
-                                        'origQty': str(position_size),
-                                        'order_type': 'STOP_LOSS'
-                                    }
-                                    tp_sl_orders.append(sl_order)
-                                    stop_loss_order_id = sl_order['orderId']
-
-                                return tp_sl_orders, stop_loss_order_id
-                            else:
-                                logger.warning(f"Failed to set position-based TP/SL: {tp_sl_response}")
-                        else:
-                            logger.warning(f"Failed to enable TP/SL mode: {response}")
-
-                # Fall back to separate orders if position-based TP/SL fails
-                logger.info(f"Falling back to separate TP/SL orders for {trading_pair}")
+                # Use separate orders instead of position-based TP/SL
+                logger.info(f"Using separate TP/SL orders for {trading_pair}")
                 return await self.create_separate_tp_sl_orders(trading_pair, position_type, position_size, take_profits, stop_loss)
 
             except Exception as e:

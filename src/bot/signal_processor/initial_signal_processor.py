@@ -330,35 +330,16 @@ class InitialSignalProcessor:
                     trading_pair, position_type, trade_amount, take_profits, stop_loss
                 )
 
-            # Store trade in database
-            trade_data = {
-                'coin_symbol': coin_symbol,
-                'signal_type': position_type,
-                'entry_price': signal_price,
-                'position_size': trade_amount,
-                'binance_response': order,
+            # Update cooldown
+            self.trade_cooldowns[f"cex_{coin_symbol}"] = time.time()
+
+            logger.info(f"Trade execution completed successfully for {coin_symbol}")
+            return True, {
+                'order_id': order['orderId'],
                 'tp_sl_orders': tp_sl_orders,
                 'stop_loss_order_id': stop_loss_order_id,
                 'status': 'OPEN'
             }
-
-            trade_result = await self.db_manager.save_signal_to_db(trade_data)
-            trade_id = trade_result.get('id') if trade_result else None
-            if trade_id:
-                logger.info(f"Trade stored in database with ID: {trade_id}")
-
-                # Update cooldown
-                self.trade_cooldowns[f"cex_{coin_symbol}"] = time.time()
-
-                return True, {
-                    'trade_id': trade_id,
-                    'order_id': order['orderId'],
-                    'tp_sl_orders': tp_sl_orders,
-                    'stop_loss_order_id': stop_loss_order_id
-                }
-            else:
-                logger.error("Failed to store trade in database")
-                return False, "Failed to store trade in database"
 
         except Exception as e:
             logger.error(f"Error executing trade: {e}", exc_info=True)

@@ -195,39 +195,7 @@ class FollowupSignalProcessor:
 
             logger.info(f"Updating stop loss for {coin_symbol} to {new_stop_price}")
 
-            # Try to use position-based TP/SL first (appears in TP/SL column)
-            try:
-                if self.binance_exchange.client:
-                    # Set position-based stop loss
-                    response = await self.binance_exchange.client.futures_change_position_tpsl_mode(
-                        symbol=trading_pair,
-                        dualSidePosition='false',
-                        stopLossPrice=f"{new_stop_price}"
-                    )
-
-                    if response and response.get('status') == 'OK':
-                        logger.info(f"Successfully updated position-based stop loss to {new_stop_price} for {trading_pair}")
-
-                        # Create mock response for consistency
-                        import time
-                        mock_response = {
-                            'orderId': f"pos_sl_{trading_pair}_{int(time.time())}",
-                            'symbol': trading_pair,
-                            'status': 'NEW',
-                            'type': 'STOP_MARKET',
-                            'side': 'SELL' if position_type and position_type.upper() == 'LONG' else 'BUY',
-                            'price': f"{new_stop_price}",
-                            'origQty': str(position_size)
-                        }
-                        return True, mock_response
-                    else:
-                        logger.warning(f"Failed to set position-based stop loss: {response}")
-                else:
-                    logger.warning("Binance client not available for position-based TP/SL")
-            except Exception as e:
-                logger.warning(f"Error setting position-based stop loss: {e}")
-
-            # Fall back to separate stop loss order (appears in Open Orders)
+            # Use separate stop loss order (appears in Open Orders)
             logger.info(f"Falling back to separate stop loss order for {trading_pair}")
 
             # Cancel old SL order if exists

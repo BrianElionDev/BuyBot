@@ -206,11 +206,26 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
                 parsed_data['coin_symbol'] = corrected_symbol
                 coin_symbol = corrected_symbol
 
-            # Validate position type
+            # Validate position type with fallback logic
             position_type = parsed_data.get('position_type')
             if not position_type:
-                logger.error(f"Missing position_type in AI response")
-                return None
+                logger.warning(f"Missing position_type in AI response, attempting fallback detection")
+
+                # Fallback: Try to detect position type from original signal content
+                content_lower = signal_content.lower()
+                if any(keyword in content_lower for keyword in ['short', 'shorted', 'shorting']):
+                    position_type = 'SHORT'
+                    parsed_data['position_type'] = position_type
+                    logger.info(f"Fallback detected SHORT position from signal content")
+                elif any(keyword in content_lower for keyword in ['long', 'longed', 'longing', 'buy', 'bought']):
+                    position_type = 'LONG'
+                    parsed_data['position_type'] = position_type
+                    logger.info(f"Fallback detected LONG position from signal content")
+                else:
+                    # Final fallback: Default to LONG (most common case)
+                    position_type = 'LONG'
+                    parsed_data['position_type'] = position_type
+                    logger.warning(f"Using default LONG position type as fallback")
 
             position_type = str(position_type).upper()
             if position_type not in ['LONG', 'SHORT']:
@@ -232,8 +247,14 @@ class DiscordSignalParser:
         return await _get_coin_symbol_from_signal(signal_content)
 
     async def parse_new_trade_signal(self, signal_content: str) -> Optional[Dict]:
+        # CRITICAL: Sanitize signal content first to remove Unicode corruption
+        from .signal_validator import SignalValidator
+        validator = SignalValidator()
+        sanitized_content = validator.sanitize_signal_content(signal_content)
+        logger.info(f"Sanitized signal: {repr(sanitized_content)}")
+
         # Preprocess to handle quantity prefixes like "1000TOSHI"
-        quantity, coin_symbol, cleaned_signal = extract_quantity_from_signal(signal_content)
+        quantity, coin_symbol, cleaned_signal = extract_quantity_from_signal(sanitized_content)
 
         # Parse the cleaned signal
         parsed_data = await _parse_with_openai(cleaned_signal)

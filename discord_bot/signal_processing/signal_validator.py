@@ -136,6 +136,27 @@ class SignalValidator:
         sanitized = sanitized.replace('–', '-').replace('—', '-')  # Em dashes to regular dashes
         sanitized = sanitized.replace('…', '...')  # Ellipsis to three dots
 
+        zero_width_chars = [
+            '\u200B',  # Zero Width Space
+            '\u200C',  # Zero Width Non-Joiner
+            '\u200D',  # Zero Width Joiner
+            '\u200E',  # Left-to-Right Mark
+            '\u200F',  # Right-to-Left Mark
+            '\u2060',  # Word Joiner
+            '\u2061',  # Function Application
+            '\u2062',  # Invisible Times
+            '\u2063',  # Invisible Separator
+            '\u2064',  # Invisible Plus
+            '\u2066',  # Left-to-Right Isolate
+            '\u2067',  # Right-to-Left Isolate
+            '\u2068',  # First Strong Isolate
+            '\u2069',  # Pop Directional Isolate
+            '\uFEFF',  # Zero Width No-Break Space (BOM)
+        ]
+
+        for char in zero_width_chars:
+            sanitized = sanitized.replace(char, '')
+
         # Remove any other non-ASCII characters that might cause issues
         sanitized = ''.join(char for char in sanitized if ord(char) < 128)
 
