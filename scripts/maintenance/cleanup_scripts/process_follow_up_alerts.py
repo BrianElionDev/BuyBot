@@ -5,8 +5,9 @@ import logging
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
-# Add the project root to the Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+# Add the project root to Python path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -30,7 +31,7 @@ async def process_alerts():
 
     try:
         # Fetch all alerts that haven't been processed yet
-        response = supabase.table("alerts").select("*").is_("binance_response", None).eq("timestamp", "2025-08-10T21:04:40.942Z").execute()
+        response = supabase.table("alerts").select("*").is_("binance_response", None).eq("timestamp", "2025-09-10T17:12:21.868Z").execute()
 
         if not hasattr(response, 'data') or not response.data:
             logging.info("No unprocessed alerts found.")

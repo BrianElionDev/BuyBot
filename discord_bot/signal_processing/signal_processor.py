@@ -161,7 +161,9 @@ class SignalProcessor:
 
             # Add context-specific information
             if trade_row:
-                alert_action.coin_symbol = trade_row.get('coin_symbol', alert_action.coin_symbol)
+                # Only use trade_row coin_symbol if no coin symbol was extracted from current content
+                if not alert_action.coin_symbol:
+                    alert_action.coin_symbol = trade_row.get('coin_symbol', alert_action.coin_symbol)
 
             return alert_action
 
