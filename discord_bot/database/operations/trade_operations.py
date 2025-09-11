@@ -79,6 +79,46 @@ class TradeOperations:
                 updates['exchange_order_id'] = str(original_response['orderId'])
                 logger.info(f"Stored exchange_order_id {original_response['orderId']} for trade {trade_id}")
 
+            # Extract stop_loss_order_id if available
+            if isinstance(original_response, dict) and 'stop_loss_order_id' in original_response:
+                updates['stop_loss_order_id'] = str(original_response['stop_loss_order_id'])
+                logger.info(f"Stored stop_loss_order_id {original_response['stop_loss_order_id']} for trade {trade_id}")
+
+            # Update trade status from "pending" to the status from response
+            if isinstance(original_response, dict) and 'status' in original_response:
+                response_status = original_response['status']
+                # Map Binance status to our internal status
+                if response_status == 'OPEN':
+                    updates['status'] = 'OPEN'
+                    updates['order_status'] = 'EXECUTED'
+                elif response_status == 'FILLED':
+                    updates['status'] = 'CLOSED'
+                    updates['order_status'] = 'FILLED'
+                elif response_status == 'CANCELED':
+                    updates['status'] = 'CANCELLED'
+                    updates['order_status'] = 'CANCELLED'
+                elif response_status == 'REJECTED':
+                    updates['status'] = 'FAILED'
+                    updates['order_status'] = 'REJECTED'
+                else:
+                    updates['status'] = response_status
+                    updates['order_status'] = response_status
+                logger.info(f"Updated trade {trade_id} status to {updates.get('status')} and order_status to {updates.get('order_status')}")
+
+            # Extract position size from tp_sl_orders if available
+            if isinstance(original_response, dict) and 'tp_sl_orders' in original_response:
+                tp_sl_orders = original_response['tp_sl_orders']
+                if isinstance(tp_sl_orders, list) and len(tp_sl_orders) > 0:
+                    # Get position size from the first TP/SL order (they should all have the same size)
+                    first_order = tp_sl_orders[0]
+                    if 'origQty' in first_order:
+                        try:
+                            position_size = float(first_order['origQty'])
+                            updates['position_size'] = position_size
+                            logger.info(f"Stored position_size {position_size} for trade {trade_id}")
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not parse position_size from tp_sl_orders for trade {trade_id}")
+
             return await self.update_existing_trade(trade_id, updates)
         except Exception as e:
             logger.error(f"Error updating trade {trade_id} with original response: {e}")
