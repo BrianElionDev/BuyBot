@@ -31,11 +31,148 @@ class FollowupSignalProcessor:
         self.binance_exchange = trading_engine.binance_exchange
         self.db_manager = trading_engine.db_manager
 
+    async def check_trade_status_on_binance(self, coin_symbol: str, exchange_order_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Check the current status of a trade on Binance.
+
+        Returns:
+            Dictionary with position info, order status, etc.
+        """
+        try:
+            symbol = f"{coin_symbol}USDT"
+            result = {
+                'has_position': False,
+                'position_size': 0.0,
+                'position_side': None,
+                'unrealized_pnl': 0.0,
+                'has_open_orders': False,
+                'stop_orders': []
+            }
+
+            # Check positions
+            positions = await self.binance_exchange.get_positions(symbol=symbol)
+            for pos in positions:
+                position_amt = float(pos.get('positionAmt', 0))
+                if position_amt != 0:
+                    result['has_position'] = True
+                    result['position_size'] = abs(position_amt)
+                    result['position_side'] = 'LONG' if position_amt > 0 else 'SHORT'
+                    result['unrealized_pnl'] = float(pos.get('unRealizedProfit', 0))
+                    break
+
+            # Check open orders (especially stop losses)
+            if exchange_order_id:
+                try:
+                    order_status = await self.binance_exchange.get_order_status(symbol, exchange_order_id)
+                    result['order_status'] = order_status
+                except:
+                    pass
+
+            # Get all open orders for this symbol
+            open_orders = await self.binance_exchange.get_open_orders(symbol=symbol)
+            result['has_open_orders'] = len(open_orders) > 0
+            result['stop_orders'] = [order for order in open_orders if order.get('type') in ['STOP_MARKET', 'TAKE_PROFIT_MARKET']]
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error checking trade status on Binance for {coin_symbol}: {e}")
+            return {'error': str(e)}
+
+    async def validate_trade_for_followup(self, trade_id: int, action: str) -> Tuple[bool, Dict[str, Any], str]:
+        """
+        Validate that a trade exists and has the necessary data for follow-up actions.
+
+        Returns:
+            (is_valid, trade_data, error_message)
+        """
+        # Get trade from database
+        active_trade = await self.db_manager.get_trade_by_id(trade_id)
+        if not active_trade:
+            return False, {}, f"Trade {trade_id} not found in database"
+
+        # Check if trade has basic required data
+        coin_symbol = active_trade.get('coin_symbol')
+        if not coin_symbol:
+            return False, active_trade, f"Trade {trade_id} missing coin_symbol"
+
+        # Check if trade was successfully executed (has exchange order)
+        exchange_order_id = active_trade.get('exchange_order_id')
+        binance_response = active_trade.get('binance_response', '')
+
+        # Parse binance response to get order ID if not in exchange_order_id
+        if not exchange_order_id and binance_response:
+            try:
+                import json
+                if isinstance(binance_response, str):
+                    response_data = json.loads(binance_response)
+                    exchange_order_id = response_data.get('orderId')
+            except:
+                pass
+
+        if not exchange_order_id:
+            return False, active_trade, f"Trade {trade_id} has no exchange order ID - original trade likely failed"
+
+        # Validate against live Binance data and get position size for position-requiring actions
+        try:
+            binance_status = await self.check_trade_status_on_binance(coin_symbol, exchange_order_id)
+
+            # Check position size for actions that require an open position
+            position_requiring_actions = ['stop_loss_hit', 'take_profit_1', 'stops_to_be', 'tp1and_sl_to_be', 'position_closed']
+            if action in position_requiring_actions:
+                if 'error' in binance_status:
+                    # Fallback to stored position_size if Binance check fails
+                    logger.warning(f"Could not get live position data from Binance for {coin_symbol}: {binance_status['error']}. Using stored position_size.")
+                    position_size = float(active_trade.get('position_size') or 0.0)
+                else:
+                    position_size = binance_status.get('position_size', 0.0)
+                    logger.info(f"Using live Binance position size: {position_size} for {coin_symbol}")
+
+                if position_size <= 0:
+                    return False, active_trade, f"Trade {trade_id} has zero position size - cannot execute {action}"
+
+            if 'error' in binance_status:
+                logger.warning(f"Could not validate trade {trade_id} against Binance: {binance_status['error']}")
+                return True, active_trade, ""  # Allow action but log warning
+
+            # For position-closing actions, we need an active position
+            if action in ['stop_loss_hit', 'take_profit_1', 'position_closed']:
+                if not binance_status['has_position']:
+                    return False, active_trade, f"No active position found on Binance for {coin_symbol}USDT - cannot execute {action}"
+
+                # Update the trade data with current position size from Binance
+                active_trade['current_binance_position_size'] = binance_status['position_size']
+                active_trade['current_binance_side'] = binance_status['position_side']
+
+            # For stop loss updates, we need either a position or existing stop order
+            if action in ['stops_to_be', 'tp1and_sl_to_be']:
+                if not binance_status['has_position'] and len(binance_status['stop_orders']) == 0:
+                    return False, active_trade, f"No active position or stop orders found for {coin_symbol}USDT - cannot update stops"
+
+            # For order cancellations, check if there are orders to cancel
+            if action in ['limit_order_cancelled']:
+                if not binance_status['has_open_orders']:
+                    logger.warning(f"No open orders found for {coin_symbol}USDT - order may already be cancelled")
+                    # Don't fail this, just log warning as order might already be cancelled
+
+            logger.info(f"Trade {trade_id} validation passed for action {action}. Binance status: Position={binance_status['has_position']}, Size={binance_status['position_size']}")
+            return True, active_trade, ""
+
+        except Exception as e:
+            logger.warning(f"Could not validate trade {trade_id} against Binance: {e}")
+            # If we can't validate against Binance, allow the action but log the warning
+            return True, active_trade, ""
+
     async def process_trade_update(self, trade_id: int, action: str, details: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """
         Process updates for an existing trade, like taking profit, moving stop loss, or partial close.
         """
-        active_trade = await self.db_manager.get_trade_by_id(trade_id)
+        # Validate trade before processing
+        is_valid, active_trade, error_msg = await self.validate_trade_for_followup(trade_id, action)
+        if not is_valid:
+            logger.error(f"Trade validation failed: {error_msg}")
+            return False, {"error": error_msg}
+
         if not active_trade:
             logger.error(f"Could not find an active trade for ID {trade_id} to process update.")
             return False, {"error": "Active trade not found"}
@@ -50,7 +187,7 @@ class FollowupSignalProcessor:
         parsed_signal = SignalParser.parse_parsed_signal(active_trade.get('parsed_signal'))
         coin_symbol = parsed_signal.get('coin_symbol') or active_trade.get('coin_symbol')
         position_type = parsed_signal.get('position_type') or active_trade.get('signal_type')
-        entry_price = active_trade.get('entry_price')
+        entry_price = active_trade.get('entry_price') or 0.0
         if not coin_symbol or not position_type:
             logger.error(f"Missing coin_symbol or position_type for trade {trade_id}")
             return False, {"error": f"Missing coin_symbol or position_type for trade {trade_id}"}

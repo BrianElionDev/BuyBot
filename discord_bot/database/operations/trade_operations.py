@@ -69,6 +69,16 @@ class TradeOperations:
                 'binance_response': original_response,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
+
+            # Extract and store the exchange_order_id from the response
+            if isinstance(original_response, dict) and 'order_id' in original_response:
+                updates['exchange_order_id'] = str(original_response['order_id'])
+                logger.info(f"Stored exchange_order_id {original_response['order_id']} for trade {trade_id}")
+            elif isinstance(original_response, dict) and 'orderId' in original_response:
+                # Handle direct Binance API response format
+                updates['exchange_order_id'] = str(original_response['orderId'])
+                logger.info(f"Stored exchange_order_id {original_response['orderId']} for trade {trade_id}")
+
             return await self.update_existing_trade(trade_id, updates)
         except Exception as e:
             logger.error(f"Error updating trade {trade_id} with original response: {e}")
