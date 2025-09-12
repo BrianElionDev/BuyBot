@@ -8,7 +8,7 @@ Following Clean Code principles with clear separation of concerns.
 import asyncio
 import logging
 from typing import Dict, List, Optional, Tuple, Any
-from binance import AsyncClient
+from binance.async_client import AsyncClient
 from binance.exceptions import BinanceAPIException
 from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET, ORDER_TYPE_LIMIT
 

@@ -10,9 +10,10 @@ from typing import Optional, Tuple, Any
 from supabase import Client
 
 from src.bot.trading_engine import TradingEngine
-from src.services.price_service import PriceService
+from src.services.pricing.price_service import PriceService
 from src.exchange import BinanceExchange
-from src.services.telegram_notification_service import TelegramNotificationService
+from src.exchange.kucoin import KucoinExchange
+from src.services.notifications.telegram_service import TelegramService
 from discord_bot.database import DatabaseManager
 from discord_bot.signal_processing import DiscordSignalParser
 from discord_bot.websocket import DiscordBotWebSocketManager
@@ -54,7 +55,10 @@ class BotInitializer:
             # 4. Initialize Binance exchange
             self._initialize_binance_exchange()
 
-            # 5. Initialize trading engine
+            # 5. Initialize KuCoin exchange
+            self._initialize_kucoin_exchange()
+
+            # 6. Initialize trading engine
             self._initialize_trading_engine()
 
             # 6. Initialize signal parser
@@ -118,6 +122,27 @@ class BotInitializer:
             logger.error(f"Failed to initialize Binance exchange: {e}")
             raise
 
+    def _initialize_kucoin_exchange(self) -> None:
+        """Initialize KuCoin exchange."""
+        try:
+            kucoin_config = self.config.get_kucoin_config()
+            # Only initialize if all KuCoin credentials are available
+            if all([kucoin_config['api_key'], kucoin_config['api_secret'], kucoin_config['api_passphrase']]):
+                kucoin_exchange = KucoinExchange(
+                    api_key=kucoin_config['api_key'],
+                    api_secret=kucoin_config['api_secret'],
+                    api_passphrase=kucoin_config['api_passphrase'],
+                    is_testnet=kucoin_config['is_testnet']
+                )
+                self.components['kucoin_exchange'] = kucoin_exchange
+                logger.info("KuCoin exchange initialized")
+            else:
+                logger.warning("KuCoin credentials incomplete - KuCoin exchange not initialized")
+                self.components['kucoin_exchange'] = None
+        except Exception as e:
+            logger.error(f"Failed to initialize KuCoin exchange: {e}")
+            self.components['kucoin_exchange'] = None
+
     def _initialize_trading_engine(self) -> None:
         """Initialize trading engine."""
         try:
@@ -146,10 +171,7 @@ class BotInitializer:
         """Initialize Telegram notification service."""
         try:
             telegram_config = self.config.get_telegram_config()
-            telegram_notifications = TelegramNotificationService(
-                bot_token=telegram_config['bot_token'],
-                chat_id=telegram_config['chat_id']
-            )
+            telegram_notifications = TelegramService()
             self.components['telegram_notifications'] = telegram_notifications
             logger.info("Telegram notification service initialized")
         except Exception as e:
@@ -167,7 +189,8 @@ class BotInitializer:
             logger.info("WebSocket manager initialized")
         except Exception as e:
             logger.error(f"Failed to initialize WebSocket manager: {e}")
-            raise
+            # Don't raise here, just log the error and continue
+            self.components['websocket_manager'] = None
 
     def get_component(self, component_name: str) -> Any:
         """Get a specific component by name."""

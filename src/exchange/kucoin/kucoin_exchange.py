@@ -107,12 +107,21 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            # Implementation would use KuCoin SDK to get account info
-            # This is a placeholder - actual implementation depends on SDK methods
-            spot_api = self.client.get_spot_service().get_account_api()
+            from kucoin_universal_sdk.generate.account.account.model_get_spot_account_list_req import GetSpotAccountListReqBuilder
 
-            # Placeholder response - replace with actual SDK call
-            return {}
+            spot_service = self.client.get_spot_service()
+            account_api = spot_service.get_account_api()
+
+            # Get all spot accounts
+            request = GetSpotAccountListReqBuilder().build()
+            response = account_api.get_spot_account_list(request)
+
+            balances = {}
+            for account in response.data:
+                if float(account.balance) > 0:
+                    balances[account.currency] = float(account.balance)
+
+            return balances
 
         except Exception as e:
             logger.error(f"Failed to get KuCoin spot balances: {e}")
@@ -126,7 +135,7 @@ class KucoinExchange(ExchangeBase):
                                  reduce_only: bool = False,
                                  close_position: bool = False) -> Dict[str, Any]:
         """
-        Create a futures order.
+        Create a futures order with comprehensive validation.
 
         Args:
             pair: Trading pair symbol
@@ -144,6 +153,39 @@ class KucoinExchange(ExchangeBase):
         """
         try:
             await self._init_client()
+
+            logger.info(f"Creating KuCoin futures order: {pair} {side} {order_type} {amount}")
+
+            # Enhanced Precision Handling and Validation
+            filters = await self.get_futures_symbol_filters(pair)
+            if filters:
+                lot_size_filter = filters.get('LOT_SIZE', {})
+                price_filter = filters.get('PRICE_FILTER', {})
+                step_size = float(lot_size_filter.get('stepSize', 0.0001))
+                tick_size = float(price_filter.get('tickSize', 0.00001))
+                min_qty = float(lot_size_filter.get('minQty', 0))
+                max_qty = float(lot_size_filter.get('maxQty', float('inf')))
+                min_notional = float(filters.get('MIN_NOTIONAL', {}).get('minNotional', 0))
+
+                # Validate quantity bounds
+                if amount < min_qty:
+                    return {'error': f'Quantity {amount} below minimum {min_qty} for {pair}', 'code': -4005}
+                if amount > max_qty:
+                    return {'error': f'Quantity {amount} above maximum {max_qty} for {pair}', 'code': -4006}
+
+                # Format quantity and price with proper precision
+                if step_size:
+                    amount = round(amount / step_size) * step_size
+                if price and tick_size:
+                    price = round(price / tick_size) * tick_size
+                if stop_price and tick_size:
+                    stop_price = round(stop_price / tick_size) * tick_size
+
+                # Validate minimum notional
+                if price:
+                    notional = amount * price
+                    if notional < min_notional:
+                        return {'error': f'Notional value {notional} below minimum {min_notional} for {pair}', 'code': -4007}
 
             # Convert to KuCoin format
             kucoin_side = "buy" if side.upper() == "BUY" else "sell"
@@ -168,13 +210,44 @@ class KucoinExchange(ExchangeBase):
                 order_params["reduceOnly"] = True
 
             # Create order using KuCoin SDK
-            futures_api = self.client.get_futures_service().get_order_api()
+            spot_service = self.client.get_spot_service()
+            order_api = spot_service.get_order_api()
 
-            # Placeholder - replace with actual SDK call
-            response = {"success": True, "orderId": "placeholder_order_id"}
+            from kucoin_universal_sdk.generate.spot.order.model_create_order_req import CreateOrderReqBuilder
 
-            logger.info(f"KuCoin futures order created: {response}")
-            return response
+            # Build the order request
+            order_request = CreateOrderReqBuilder() \
+                .set_client_oid(order_params["clientOid"]) \
+                .set_side(order_params["side"]) \
+                .set_symbol(order_params["symbol"]) \
+                .set_type(order_params["type"]) \
+                .set_size(order_params["size"])
+
+            if "price" in order_params:
+                order_request.set_price(order_params["price"])
+            if "stopPrice" in order_params:
+                order_request.set_stop_price(order_params["stopPrice"])
+
+            request = order_request.build()
+            response = order_api.create_order(request)
+
+            # Format response to match Binance format
+            formatted_response = {
+                "success": True,
+                "orderId": getattr(response, 'orderId', order_params["clientOid"]),
+                "clientOrderId": order_params["clientOid"],
+                "symbol": pair,
+                "side": side.upper(),
+                "type": order_type.upper(),
+                "origQty": str(amount),
+                "price": str(price) if price else None,
+                "stopPrice": str(stop_price) if stop_price else None,
+                "status": "NEW",
+                "time": int(asyncio.get_event_loop().time() * 1000)
+            }
+
+            logger.info(f"KuCoin futures order created: {formatted_response}")
+            return formatted_response
 
         except Exception as e:
             logger.error(f"Failed to create KuCoin futures order: {e}")
@@ -305,12 +378,20 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            market_api = self.client.get_market_service().get_market_api()
+            from kucoin_universal_sdk.generate.spot.market.model_get_ticker_req import GetTickerReqBuilder
 
-            # Placeholder - replace with actual SDK call
+            spot_service = self.client.get_spot_service()
+            market_api = spot_service.get_market_api()
             prices = {}
+
             for symbol in symbols:
-                prices[symbol] = 0.0  # Placeholder price
+                try:
+                    request = GetTickerReqBuilder().set_symbol(symbol).build()
+                    response = market_api.get_ticker(request)
+                    prices[symbol] = float(response.price) if hasattr(response, 'price') else 0.0
+                except Exception as e:
+                    logger.warning(f"Failed to get price for {symbol}: {e}")
+                    prices[symbol] = 0.0
 
             return prices
 
@@ -332,13 +413,38 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            market_api = self.client.get_market_service().get_market_api()
+            from kucoin_universal_sdk.generate.spot.market.model_get_all_symbols_req import GetAllSymbolsReqBuilder
 
-            # Placeholder - replace with actual SDK call
+            spot_service = self.client.get_spot_service()
+            market_api = spot_service.get_market_api()
+
+            # First get all symbols to find the correct format
+            symbols_request = GetAllSymbolsReqBuilder().build()
+            symbols_response = market_api.get_all_symbols(symbols_request)
+            symbols = symbols_response.data
+
+            # Find matching symbol
+            matching_symbol = None
+            for s in symbols:
+                if s.symbol == symbol:
+                    matching_symbol = s.symbol
+                    break
+
+            if not matching_symbol:
+                logger.warning(f"Symbol {symbol} not found in KuCoin symbols")
+                return None
+
+            # Try to get order book with the correct symbol
+            from kucoin_universal_sdk.generate.spot.market.model_get_part_order_book_req import GetPartOrderBookReqBuilder
+            request = GetPartOrderBookReqBuilder().set_symbol(matching_symbol).set_size(str(limit)).build()
+            response = market_api.get_part_order_book(request)
+
             return {
-                "symbol": symbol,
-                "bids": [],
-                "asks": []
+                "symbol": matching_symbol,
+                "bids": response.bids,
+                "asks": response.asks,
+                "time": response.time,
+                "sequence": response.sequence
             }
 
         except Exception as e:
@@ -359,15 +465,58 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            market_api = self.client.get_market_service().get_market_api()
+            from kucoin_universal_sdk.generate.spot.market.model_get_all_symbols_req import GetAllSymbolsReqBuilder
 
-            # Placeholder - replace with actual SDK call
-            return {
+            spot_service = self.client.get_spot_service()
+            market_api = spot_service.get_market_api()
+
+            # Get all symbols to find the specific one
+            symbols_request = GetAllSymbolsReqBuilder().build()
+            symbols_response = market_api.get_all_symbols(symbols_request)
+            symbols = symbols_response.data
+
+            # Find the specific symbol
+            symbol_info = None
+            for s in symbols:
+                if s.symbol == symbol:
+                    symbol_info = s
+                    break
+
+            if not symbol_info:
+                logger.warning(f"Symbol {symbol} not found in KuCoin symbols")
+                return None
+
+            # Extract symbol information and create filters
+            filters = {
                 "symbol": symbol,
-                "minOrderSize": "0.001",
-                "maxOrderSize": "1000",
-                "priceIncrement": "0.01"
+                "baseCurrency": getattr(symbol_info, 'baseCurrency', ''),
+                "quoteCurrency": getattr(symbol_info, 'quoteCurrency', ''),
+                "baseMinSize": getattr(symbol_info, 'baseMinSize', '0.001'),
+                "baseMaxSize": getattr(symbol_info, 'baseMaxSize', '1000000'),
+                "quoteMinSize": getattr(symbol_info, 'quoteMinSize', '0.00001'),
+                "quoteMaxSize": getattr(symbol_info, 'quoteMaxSize', '1000000'),
+                "baseIncrement": getattr(symbol_info, 'baseIncrement', '0.0001'),
+                "quoteIncrement": getattr(symbol_info, 'quoteIncrement', '0.00001'),
+                "priceIncrement": getattr(symbol_info, 'priceIncrement', '0.00001'),
+                "enableTrading": getattr(symbol_info, 'enableTrading', True),
+                "isMarginEnabled": getattr(symbol_info, 'isMarginEnabled', False),
+                # KuCoin specific filters
+                "LOT_SIZE": {
+                    "minQty": getattr(symbol_info, 'baseMinSize', '0.001'),
+                    "maxQty": getattr(symbol_info, 'baseMaxSize', '1000000'),
+                    "stepSize": getattr(symbol_info, 'baseIncrement', '0.0001')
+                },
+                "PRICE_FILTER": {
+                    "minPrice": "0.00001",
+                    "maxPrice": "1000000",
+                    "tickSize": getattr(symbol_info, 'priceIncrement', '0.00001')
+                },
+                "MIN_NOTIONAL": {
+                    "minNotional": getattr(symbol_info, 'quoteMinSize', '0.00001')
+                }
             }
+
+            return filters
 
         except Exception as e:
             logger.error(f"Failed to get KuCoin symbol filters for {symbol}: {e}")
@@ -385,11 +534,165 @@ class KucoinExchange(ExchangeBase):
         """
         try:
             filters = await self.get_futures_symbol_filters(symbol)
-            return filters is not None
+            if filters and filters.get('enableTrading', False):
+                return True
+            return False
 
         except Exception as e:
             logger.error(f"Failed to check KuCoin symbol support for {symbol}: {e}")
             return False
+
+    async def validate_trade_amount(self, symbol: str, amount: float, price: float) -> Tuple[bool, Optional[str]]:
+        """
+        Validate trade amount against symbol filters.
+
+        Args:
+            symbol: Trading pair symbol
+            amount: Trade amount
+            price: Trade price
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        try:
+            filters = await self.get_futures_symbol_filters(symbol)
+            if not filters:
+                return False, f"Symbol {symbol} not supported"
+
+            # Check minimum and maximum quantity
+            lot_size = filters.get('LOT_SIZE', {})
+            min_qty = float(lot_size.get('minQty', 0))
+            max_qty = float(lot_size.get('maxQty', float('inf')))
+            step_size = float(lot_size.get('stepSize', 0.0001))
+
+            if amount < min_qty:
+                return False, f"Amount {amount} below minimum {min_qty} for {symbol}"
+            if amount > max_qty:
+                return False, f"Amount {amount} above maximum {max_qty} for {symbol}"
+
+            # Check step size (be more lenient for KuCoin)
+            if step_size > 0:
+                remainder = amount % step_size
+                if remainder > step_size * 0.1:  # Allow 10% tolerance for step size
+                    return False, f"Amount {amount} not aligned with step size {step_size} for {symbol}"
+
+            # Check minimum notional value
+            min_notional = filters.get('MIN_NOTIONAL', {})
+            min_notional_value = float(min_notional.get('minNotional', 0))
+            notional_value = amount * price
+
+            if notional_value < min_notional_value:
+                return False, f"Notional value {notional_value} below minimum {min_notional_value} for {symbol}"
+
+            return True, None
+
+        except Exception as e:
+            logger.error(f"Error validating trade amount for {symbol}: {e}")
+            return False, f"Validation error: {str(e)}"
+
+    async def get_mark_price(self, symbol: str) -> Optional[float]:
+        """
+        Get mark price for a symbol.
+
+        Args:
+            symbol: Trading pair symbol
+
+        Returns:
+            Mark price or None if not available
+        """
+        try:
+            await self._init_client()
+
+            from kucoin_universal_sdk.generate.spot.market.model_get_ticker_req import GetTickerReqBuilder
+
+            spot_service = self.client.get_spot_service()
+            market_api = spot_service.get_market_api()
+
+            request = GetTickerReqBuilder().set_symbol(symbol).build()
+            response = market_api.get_ticker(request)
+
+            if hasattr(response, 'price'):
+                return float(response.price)
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to get KuCoin mark price for {symbol}: {e}")
+            return None
+
+    async def get_futures_account_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get futures account information.
+
+        Returns:
+            Account information or None if not available
+        """
+        try:
+            await self._init_client()
+
+            # For KuCoin, we'll use account service for account information
+            account_service = self.client.client.rest_service().get_account_service()
+            account_api = account_service.get_account_api()
+
+            from kucoin_universal_sdk.generate.account.account.model_get_spot_account_list_req import GetSpotAccountListReqBuilder
+            request = GetSpotAccountListReqBuilder().build()
+            response = account_api.get_spot_account_list(request)
+
+            # Calculate total balance
+            total_balance = 0.0
+            balances = {}
+            if response.data:
+                for account in response.data:
+                    if account.balance:
+                        balance = float(account.balance)
+                        balances[account.currency] = balance
+                        if account.currency == 'USDT':
+                            total_balance = balance
+
+            return {
+                "totalWalletBalance": total_balance,
+                "totalUnrealizedProfit": 0.0,
+                "totalMarginBalance": total_balance,
+                "totalInitialMargin": 0.0,
+                "totalMaintMargin": 0.0,
+                "maxWithdrawAmount": total_balance,
+                "balances": balances
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get KuCoin account info: {e}")
+            return None
+
+    async def calculate_max_position_size(self, symbol: str, leverage: float = 1.0) -> Optional[float]:
+        """
+        Calculate maximum position size based on account balance and leverage.
+
+        Args:
+            symbol: Trading pair symbol
+            leverage: Leverage multiplier
+
+        Returns:
+            Maximum position size or None if not available
+        """
+        try:
+            account_info = await self.get_futures_account_info()
+            if not account_info:
+                return None
+
+            # Get current price
+            current_price = await self.get_mark_price(symbol)
+            if not current_price:
+                return None
+
+            # Calculate max position size
+            max_balance = account_info.get('totalWalletBalance', 0.0)
+            max_position_value = max_balance * leverage
+            max_position_size = max_position_value / current_price
+
+            return max_position_size
+
+        except Exception as e:
+            logger.error(f"Failed to calculate max position size for {symbol}: {e}")
+            return None
 
     # Trade History
     async def get_user_trades(self, symbol: str = "", limit: int = 1000,
