@@ -11,11 +11,12 @@ from datetime import datetime
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from discord_bot.discord_endpoint import router as discord_router
+from discord_bot.endpoints.discord_endpoint import router as discord_router
 from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
     sync_trade_statuses_with_binance,
 )
+from scripts.maintenance.cleanup_scripts.cleanup_orphaned_orders import OrphanedOrdersCleanup
 
 # Configure logging for the Discord service
 logging.basicConfig(
@@ -137,6 +138,19 @@ def create_app() -> FastAPI:
         except Exception as e:
             return {"error": f"Failed to run daily sync: {e}"}
 
+    @app.post("/scheduler/test-orphaned-orders-cleanup")
+    async def test_orphaned_orders_cleanup():
+        """Manually trigger orphaned orders cleanup for testing."""
+        try:
+            bot, supabase = initialize_clients()
+            if not bot or not supabase:
+                return {"error": "Failed to initialize clients"}
+
+            result = await cleanup_orphaned_orders_automatic(bot)
+            return result
+        except Exception as e:
+            return {"error": f"Failed to run orphaned orders cleanup: {e}"}
+
     @app.get("/scheduler/status")
     async def scheduler_status():
         """Get scheduler status and next run times."""
@@ -157,16 +171,84 @@ def create_app() -> FastAPI:
                 "transaction_history": f"{transaction_interval/3600:.1f} hours",
                 "pnl_backfill": f"{pnl_interval/3600:.1f} hours",
                 "price_backfill": f"{price_interval/3600:.1f} hours",
-                "weekly_backfill": f"{weekly_interval/3600:.1f} hours"
+                "weekly_backfill": f"{weekly_interval/3600:.1f} hours",
+                "stop_loss_audit": "0.5 hours (30 minutes)",
+                "take_profit_audit": "0.5 hours (30 minutes)",
+                "orphaned_orders_cleanup": "2.0 hours"
             },
             "current_time": datetime.fromtimestamp(current_time).isoformat(),
             "endpoints": {
                 "test_transaction": "/scheduler/test-transaction-history",
-                "test_daily_sync": "/scheduler/test-daily-sync"
+                "test_daily_sync": "/scheduler/test-daily-sync",
+                "test_orphaned_orders_cleanup": "/scheduler/test-orphaned-orders-cleanup"
             }
         }
 
     return app
+
+async def cleanup_orphaned_orders_automatic(bot):
+    """
+    Automatic orphaned orders cleanup function for the scheduler.
+    Runs without user confirmation and logs results.
+    """
+    try:
+        cleanup = OrphanedOrdersCleanup()
+
+        # Initialize with the bot's existing exchange connection
+        cleanup.binance_exchange = bot.binance_exchange
+
+        # Get current state
+        orders = await cleanup.get_open_orders()
+        positions = await cleanup.get_positions()
+
+        # Identify orphaned orders
+        orphaned = cleanup.identify_orphaned_orders(orders, positions)
+
+        if not orphaned:
+            return {
+                'success': True,
+                'orphaned_orders_found': 0,
+                'orders_closed': 0,
+                'message': 'No orphaned orders found'
+            }
+
+        # Close orphaned orders automatically (no confirmation needed)
+        closed_count = 0
+        failed_count = 0
+
+        for order in orphaned:
+            try:
+                success = await cleanup.close_orphaned_order(order)
+                if success:
+                    closed_count += 1
+                else:
+                    failed_count += 1
+
+                # Small delay to avoid rate limiting
+                await asyncio.sleep(0.1)
+
+            except Exception as e:
+                logger.error(f"Error closing orphaned order {order.get('symbol')} {order.get('orderId')}: {e}")
+                failed_count += 1
+
+        # Save report
+        cleanup.save_report()
+
+        return {
+            'success': True,
+            'orphaned_orders_found': len(orphaned),
+            'orders_closed': closed_count,
+            'orders_failed': failed_count,
+            'message': f'Cleanup completed: {closed_count} closed, {failed_count} failed'
+        }
+
+    except Exception as e:
+        logger.error(f"Error in automatic orphaned orders cleanup: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'message': f'Cleanup failed: {e}'
+        }
 
 async def trade_retry_scheduler():
     """Centralized scheduler for all maintenance tasks and auto-scripts."""
@@ -189,6 +271,7 @@ async def trade_retry_scheduler():
     last_weekly_backfill = 0
     last_stop_loss_audit = 0
     last_take_profit_audit = 0
+    last_orphaned_orders_cleanup = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
@@ -198,6 +281,7 @@ async def trade_retry_scheduler():
     WEEKLY_BACKFILL_INTERVAL = 7 * 24 * 60 * 60  # 7 days
     STOP_LOSS_AUDIT_INTERVAL = 30 * 60  # 30 minutes
     TAKE_PROFIT_AUDIT_INTERVAL = 30 * 60  # 30 minutes
+    ORPHANED_ORDERS_CLEANUP_INTERVAL = 2 * 60 * 60  # 2 hours
 
     logger.info("[Scheduler] ✅ Scheduler running - monitoring for tasks")
 
@@ -286,6 +370,17 @@ async def trade_retry_scheduler():
                     except Exception as e:
                         logger.error(f"[Scheduler] Error in take profit audit: {e}")
 
+            # Orphaned orders cleanup (every 2 hours) - supervisor requirement
+            if current_time - last_orphaned_orders_cleanup >= ORPHANED_ORDERS_CLEANUP_INTERVAL:
+                logger.info("[Scheduler] Running orphaned orders cleanup...")
+                try:
+                    cleanup_results = await cleanup_orphaned_orders_automatic(bot)
+                    last_orphaned_orders_cleanup = current_time
+                    logger.info(f"[Scheduler] Orphaned orders cleanup completed: {cleanup_results}")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in orphaned orders cleanup: {e}")
+
             # Sleep for 1 second to prevent CPU overload while maintaining responsiveness
             await asyncio.sleep(1)  # 1 second sleep to prevent CPU overload
 
@@ -312,7 +407,7 @@ async def check_api_permissions(bot):
 async def auto_fill_transaction_history(bot, supabase):
     """Auto-fill transaction history from Binance income endpoint."""
     try:
-        from scripts.manual_transaction_history_fill import TransactionHistoryFiller
+        from scripts.maintenance.cleanup_scripts.manual_transaction_history_fill import TransactionHistoryFiller
         from discord_bot.database import DatabaseManager
 
         filler = TransactionHistoryFiller()
@@ -382,8 +477,6 @@ async def weekly_historical_backfill(bot, supabase):
 async def backfill_missing_prices(bot, supabase):
     """Backfill missing Binance entry and exit prices for recent trades."""
     try:
-        from scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
-
         logger.info("[Scheduler] Starting price backfill for recent trades...")
 
         # Create backfill manager with existing clients
@@ -391,15 +484,8 @@ async def backfill_missing_prices(bot, supabase):
         backfill_manager.binance_exchange = bot.binance_exchange  # Use existing exchange instance
         backfill_manager.db_manager = bot.db_manager  # Use existing database manager
 
-        # Backfill prices for last 7 days (recent trades that might have missed WebSocket updates)
-        # Phase 1: Fill missing prices only
-        await backfill_manager.backfill_from_historical_data(days=7, update_existing=False)
-        
-        # Phase 2: Update existing prices for better accuracy (every 2 hours for better accuracy)
-        from datetime import datetime
-        current_hour = datetime.now().hour
-        if current_hour % 2 == 0:  # Run every 2 hours (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22)
-            await backfill_manager.backfill_from_historical_data(days=7, update_existing=True)
+        # Backfill prices for last 24 hours (recent trades that might have missed WebSocket updates)
+        await backfill_manager.backfill_from_historical_data(days=1)
 
         logger.info("[Scheduler] Price backfill completed")
 

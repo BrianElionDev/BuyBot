@@ -15,7 +15,7 @@ from config import settings
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'websocket'))
 
-from src.websocket.binance_websocket_manager import BinanceWebSocketManager
+from src.websocket import WebSocketManager
 
 # Configure logging
 logging.basicConfig(
@@ -37,7 +37,7 @@ class WebSocketTester:
             raise ValueError("BINANCE_API_KEY and BINANCE_API_SECRET must be set")
 
         # Initialize WebSocket manager
-        self.ws_manager = BinanceWebSocketManager(
+        self.ws_manager = WebSocketManager(
             api_key=self.api_key,
             api_secret=self.api_secret,
             is_testnet=self.is_testnet
@@ -123,13 +123,13 @@ class WebSocketTester:
             logger.error(f"WebSocket Error #{self.event_counts['error']}: {error_msg}")
 
         # Register handlers
-        self.ws_manager.add_event_handler('executionReport', handle_execution_report)
-        self.ws_manager.add_event_handler('outboundAccountPosition', handle_account_position)
-        self.ws_manager.add_event_handler('balanceUpdate', handle_balance_update)
-        self.ws_manager.add_event_handler('ticker', handle_ticker)
-        self.ws_manager.add_event_handler('connection', handle_connection)
-        self.ws_manager.add_event_handler('disconnection', handle_disconnection)
-        self.ws_manager.add_event_handler('error', handle_error)
+        self.ws_manager.register_handler('executionReport', handle_execution_report)
+        self.ws_manager.register_handler('outboundAccountPosition', handle_account_position)
+        self.ws_manager.register_handler('balanceUpdate', handle_balance_update)
+        self.ws_manager.register_handler('ticker', handle_ticker)
+        self.ws_manager.register_handler('connection', handle_connection)
+        self.ws_manager.register_handler('disconnection', handle_disconnection)
+        self.ws_manager.register_handler('error', handle_error)
 
     async def run_test(self, duration: int = 60):
         """Run WebSocket test for specified duration."""

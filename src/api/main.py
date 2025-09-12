@@ -1,22 +1,10 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from discord_bot.discord_endpoint import router as discord_router
+"""
+Main API Entry Point
 
-app = FastAPI(title="Trading Bot API")
+This module serves as the main entry point for the API.
+"""
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+from src.api.core.api_server import app
 
-# Include routers
-app.include_router(discord_router, prefix="/api/v1", tags=["discord"])
-
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {"message": "Trading Bot API is running"}
+# Export the app for uvicorn
+__all__ = ["app"]

@@ -17,10 +17,6 @@ from typing import Optional, Dict, List, Tuple
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from discord_bot.discord_bot import DiscordBot
-from discord_bot.database import (
-    update_trade_pnl,
-    get_trades_needing_pnl_sync,
-)
 
 # --- Setup ---
 load_dotenv()
@@ -655,7 +651,7 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
                     order_status = matching_order.get('status')
 
                     # Import status constants
-                    from discord_bot.status_constants import map_binance_order_status
+                    from discord_bot.constants import map_binance_order_status
 
                     # Update order status
                     mapped_order_status = map_binance_order_status(order_status)
@@ -1169,10 +1165,12 @@ async def get_income_for_trade_period(
         return []
 
 
-async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bool:
+async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> Optional[bool]:
     """Backfill a single trade using order lifecycle matching with income history."""
     try:
         trade_id = trade.get('id')
+        if not trade_id:
+            return False
 
         # Use the enhanced symbol extraction function
         symbol = extract_symbol_from_trade(trade)
@@ -1188,7 +1186,10 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
             logging.warning(f"Trade {trade_id} has no valid timestamps")
             return False
 
-        # Get income records for this specific trade period
+        if end_time is None:
+            logging.warning(f"Trade {trade_id} has no valid end time")
+            return False
+
         income_records = await get_income_for_trade_period(bot, symbol, start_time, end_time)
 
         if not income_records:
@@ -1277,3 +1278,27 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
     except Exception as e:
         logging.error(f"Error backfilling trade {trade.get('id')} with lifecycle: {e}")
         return False
+
+
+def update_trade_pnl(supabase, trade_id: int, pnl_data: dict) -> bool:
+    """Update trade record with P&L data"""
+    try:
+        pnl_data['updated_at'] = datetime.now(timezone.utc).isoformat()
+        supabase.table("trades").update(pnl_data).eq("id", trade_id).execute()
+        return True
+    except Exception as e:
+        logging.error(f"Failed to update trade P&L: {e}")
+        return False
+
+
+def get_trades_needing_pnl_sync(supabase) -> list:
+    """Get trades that need P&L data sync"""
+    try:
+        # Get trades without P&L data or with old sync timestamp
+        result = supabase.table("trades").select("*").or_(
+            "entry_price.is.null,last_pnl_sync.is.null"
+        ).execute()
+        return result.data or []
+    except Exception as e:
+        logging.error(f"Failed to get trades needing P&L sync: {e}")
+        return []

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from config import settings
 import sys
 
-from src.websocket.binance_websocket_manager import BinanceWebSocketManager
+from src.websocket import WebSocketManager
 from discord_bot.database import DatabaseManager
 from supabase import create_client
 
@@ -44,7 +44,7 @@ class WebSocketDatabaseSyncTester:
         self.db_manager = DatabaseManager(self.supabase)
 
         # Initialize WebSocket manager with database sync
-        self.ws_manager = BinanceWebSocketManager(
+        self.ws_manager = WebSocketManager(
             api_key=self.api_key,
             api_secret=self.api_secret,
             is_testnet=self.is_testnet,
@@ -134,12 +134,12 @@ class WebSocketDatabaseSyncTester:
             logger.error(f"WebSocket Error #{self.event_counts['error']}: {error_msg}")
 
         # Register handlers
-        self.ws_manager.add_event_handler('executionReport', handle_execution_report)
-        self.ws_manager.add_event_handler('outboundAccountPosition', handle_account_position)
-        self.ws_manager.add_event_handler('ticker', handle_ticker)
-        self.ws_manager.add_event_handler('connection', handle_connection)
-        self.ws_manager.add_event_handler('disconnection', handle_disconnection)
-        self.ws_manager.add_event_handler('error', handle_error)
+        self.ws_manager.register_handler('executionReport', handle_execution_report)
+        self.ws_manager.register_handler('outboundAccountPosition', handle_account_position)
+        self.ws_manager.register_handler('ticker', handle_ticker)
+        self.ws_manager.register_handler('connection', handle_connection)
+        self.ws_manager.register_handler('disconnection', handle_disconnection)
+        self.ws_manager.register_handler('error', handle_error)
 
     async def _check_trade_linking(self, order_id: str, symbol: str, fill_price: float, realized_pnl: float):
         """

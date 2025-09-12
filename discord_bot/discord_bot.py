@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from datetime import datetime, timezone
 import logging
 import re
 import time
@@ -13,15 +14,17 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+from src.bot.order_management.order_creator import FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET
 from src.bot.trading_engine import TradingEngine
-from discord_bot.discord_signal_parser import DiscordSignalParser, client
+from discord_bot.signal_processing import DiscordSignalParser
+from discord_bot.signal_processing.signal_parser import client
 from discord_bot.models import InitialDiscordSignal, DiscordUpdateSignal
 from discord_bot.database import DatabaseManager
 from config import settings as config
 from supabase import create_client, Client
-from src.services.price_service import PriceService
-from src.exchange.binance_exchange import BinanceExchange
-from discord_bot.websocket_manager import DiscordBotWebSocketManager
+from src.services.pricing.price_service import PriceService
+from src.exchange import BinanceExchange
+from discord_bot.websocket import DiscordBotWebSocketManager
 from config import settings
 
 
@@ -62,8 +65,8 @@ class DiscordBot:
         self.signal_parser = DiscordSignalParser()
 
         # Initialize Telegram notification service
-        from src.services.telegram_notification_service import TelegramNotificationService
-        self.telegram_notifications = TelegramNotificationService()
+        from src.services.notifications.telegram_service import TelegramService
+        self.telegram_notifications = TelegramService()
 
         # Initialize WebSocket manager for real-time database sync
         self.websocket_manager = DiscordBotWebSocketManager(self, self.db_manager)
@@ -71,372 +74,37 @@ class DiscordBot:
         logger.info(f"DiscordBot initialized with {'AI' if client else 'simple'} Signal Parser.")
 
     def _clean_text_for_llm(self, text: str) -> str:
-        """
-        Clean text for LLM processing by removing problematic characters and formatting.
-        """
-        if not text:
-            return ""
-
-        # Remove or replace problematic characters
-        cleaned = text.replace('"', '"').replace('"', '"')  # Smart quotes to regular quotes
-        cleaned = cleaned.replace(''', "'").replace(''', "'")  # Smart apostrophes to regular apostrophes
-        cleaned = cleaned.replace('–', '-').replace('—', '-')  # Em dashes to regular dashes
-        cleaned = cleaned.replace('…', '...')  # Ellipsis to three dots
-
-        # Remove any other non-ASCII characters that might cause issues
-        cleaned = ''.join(char for char in cleaned if ord(char) < 128)
-
-        return cleaned.strip()
+        """Delegate to signal processor for text cleaning."""
+        from discord_bot.signal_processing import SignalValidator
+        validator = SignalValidator()
+        return validator.sanitize_signal_content(text)
 
     def _parse_parsed_signal(self, parsed_signal_data) -> Dict[str, Any]:
-        """
-        Safely parse parsed_signal data which can be either a dict or JSON string.
-        """
-        if isinstance(parsed_signal_data, dict):
-            return parsed_signal_data
-        elif isinstance(parsed_signal_data, str):
-            try:
-                return json.loads(parsed_signal_data)
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse parsed_signal JSON: {parsed_signal_data}")
-                return {}
-        else:
-            logger.warning(f"Unexpected parsed_signal type: {type(parsed_signal_data)}")
-            return {}
+        """Delegate to signal processor for parsing."""
+        from discord_bot.signal_processing import SignalProcessor
+        processor = SignalProcessor()
+        return processor.parse_parsed_signal(parsed_signal_data)
 
     def parse_alert_content(self, content, trade_row=None):
-        """
-        Parse alert content and determine what action(s) should be taken.
-        Returns structured data for logging. Can handle single or multiple actions.
-        """
-        content_lower = content.lower()
-
-        # Extract coin symbol from content
-        coin_symbol = self._extract_coin_symbol_from_content(content)
-
-        # Determine action type and details
-        stop_loss_regex = r"stoploss moved to ([-+]?\d*\.?\d+)"
-        stops_to_be_regex= r"\b(stops?|sl)\b.*\bbe\b"
-        stops_to_x_regex = r"\b(stop\w*|sl)\b.*\bto\b\s*(-?\d+(\.\d+)?)"
-        dca_to_entry_regex = r"\bdca\b.*\bentry\b.*?(\d+\.\d+)(?:\s|$)"
-        leverage_regex = r"leverage\s*to\s*(\d+x)"
-        trailing_sl_regex = r"trailing\s+sl\s+at\s+(\d+\.?\d*%)"
-        partial_fill_regex = r"partial\s+fill"
-        liquidation_regex = r"liquidated|liquidation"
-        position_size_regex = r"(double|increase|decrease)\s+position\s+size"
-
-        # 1. Handle liquidation events (highest priority)
-        if re.search(liquidation_regex, content_lower):
-            return {
-                "action_type": "liquidation",
-                "action_description": f"Position liquidated for {coin_symbol}",
-                "binance_action": "NO_ACTION",
-                "position_status": "LIQUIDATED",
-                "reason": "Position forcibly closed due to liquidation",
-                "coin_symbol": coin_symbol
-            }
-
-        # 2. Handle partial fills
-        if re.search(partial_fill_regex, content_lower):
-            return {
-                "action_type": "partial_fill",
-                "action_description": f"Partial fill for {coin_symbol}",
-                "binance_action": "UPDATE_POSITION_SIZE",
-                "position_status": "OPEN",
-                "reason": "Partial fill of limit order",
-                "coin_symbol": coin_symbol
-            }
-
-        # 3. Take Profit 1 with Stop Loss move to Break Even (MUST BE FIRST!)
-        if "tp1 & stops moved to be" in content_lower:
-            return {
-                "action_type": "tp1_and_sl_to_be",
-                "action_description": f"TP1 hit and stop loss moved to break even for {coin_symbol}",
-                "binance_action": "PARTIAL_SELL_AND_UPDATE_STOP_ORDER",
-                "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP1 hit and risk management - move to break even",
-                "coin_symbol": coin_symbol
-            }
-
-        # 4. Handle position closure scenarios
-        if "stopped out" in content_lower or "closed in profits" in content_lower or "closed in loss" in content_lower or "closed be/in slight loss" in content_lower:
-            return {
-                "action_type": "stop_loss_hit",
-                "action_description": f"Position closed for {coin_symbol}",
-                "binance_action": "MARKET_SELL",
-                "stop_loss": None,
-                "take_profit": None,
-                "position_status": "CLOSED",
-                "reason": "Position closed",
-                "coin_symbol": coin_symbol
-            }
-
-        # 5. Handle leverage updates
-        if re.search(leverage_regex, content_lower):
-            match = re.search(leverage_regex, content_lower)
-            leverage = int(match.group(1).replace('x', ''))
-            return {
-                "action_type": "update_leverage",
-                "action_description": f"Update leverage to {leverage}x for {coin_symbol}",
-                "binance_action": "UPDATE_LEVERAGE",
-                "position_status": "OPEN",
-                "leverage": leverage,
-                "reason": "Leverage adjustment",
-                "coin_symbol": coin_symbol
-            }
-
-        # 6. Handle trailing stop-loss
-        if re.search(trailing_sl_regex, content_lower):
-            match = re.search(trailing_sl_regex, content_lower)
-            trailing_percentage = float(match.group(1).replace('%', ''))
-            return {
-                "action_type": "trailing_stop_loss",
-                "action_description": f"Set trailing stop loss at {trailing_percentage}% for {coin_symbol}",
-                "binance_action": "SET_TRAILING_STOP",
-                "position_status": "OPEN",
-                "trailing_percentage": trailing_percentage,
-                "reason": "Trailing stop loss activation",
-                "coin_symbol": coin_symbol
-            }
-
-        # 7. Handle position size adjustments
-        if re.search(position_size_regex, content_lower):
-            match = re.search(position_size_regex, content_lower)
-            action = match.group(1)
-            multiplier = 2.0 if action == "double" else 1.5 if action == "increase" else 0.5
-            return {
-                "action_type": "adjust_position_size",
-                "action_description": f"{action.capitalize()} position size for {coin_symbol}",
-                "binance_action": "ADJUST_POSITION",
-                "position_status": "OPEN",
-                "position_multiplier": multiplier,
-                "reason": f"Position size {action}d",
-                "coin_symbol": coin_symbol
-            }
-
-        # 8. Handle limit order cancellation
-        elif "limit order cancelled" in content_lower:
-            return {
-                "action_type": "limit_order_cancelled",
-                "action_description": f"Limit order cancelld for {coin_symbol}",
-                "binance_action": "CANCEL_ORDER",
-                "position_status": "CLOSED",
-                "stop_loss": None,
-                "take_profit":None,
-                "reason": "Cancel limit order",
-                "coin_symbol": coin_symbol
-            }
-
-        # 9. Handle specific stop loss updates (excluding "move stops to" which is caught by regex)
-        elif "move stops to 1H" in content_lower or "updated stoploss" in content_lower or "updated stop loss " in content_lower:
-            return {
-                "action_type": "cancelled_stoploss_order_and_create_new",
-                "action_description": f"Limit order cancelld for {coin_symbol}",
-                "binance_action": "UPDATE_ORDER",
-                "position_status": "OPEN",
-                "stop_loss": 2,
-                "take_profit":None,
-                "reason": "Cancel SL order and create new one +-2%",
-                "coin_symbol": coin_symbol
-            }
-
-        # 10. Handle take profit scenarios
-        elif "tp1 taken" in content_lower:
-            return {
-                "action_type": "take_profit_taken_hit",
-                "action_description": f"Take Profit 2 hit for {coin_symbol}",
-                "binance_action": "PARTIAL_SELL",
-                "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP2 target reached",
-                "coin_symbol": coin_symbol
-            }
-        elif "tp1" in content_lower:
-            return {
-                "action_type": "take_profit_1",
-                "action_description": f"Take Profit 1 hit for {coin_symbol}",
-                "binance_action": "PARTIAL_SELL",
-                "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP1 target reached",
-                "coin_symbol": coin_symbol
-            }
-        elif "tp2" in content_lower:
-            return {
-                "action_type": "take_profit_2",
-                "action_description": f"Take Profit 2 hit for {coin_symbol}",
-                "binance_action": "PARTIAL_SELL",
-                "position_status": "PARTIALLY_CLOSED",
-                "reason": "TP2 target reached",
-                "coin_symbol": coin_symbol
-            }
-
-        # 11. Handle limit order filled
-        elif "limit order filled" in content_lower:
-            return {
-                "action_type": "limit_order_filled",
-                "action_description": f"Limit order filled for {coin_symbol}",
-                "binance_action": "NO_ACTION",  # Order already filled, just update status
-                "position_status": "OPEN",
-                "reason": "Limit order filled - position now open",
-                "coin_symbol": coin_symbol
-            }
-
-        # 12. Handle stop loss updates with regex patterns
-        if re.search(stops_to_be_regex, content_lower):
-            return {
-                "action_type": "stop_loss_update",
-                "action_description": f"Stop loss moved to break even for {coin_symbol}",
-                "binance_action": "UPDATE_STOP_ORDER",
-                "position_status": "OPEN",
-                "stop_loss": "BE",
-                "take_profit": None,
-                "reason": "Risk management - move to break even",
-                "coin_symbol": coin_symbol
-            }
-        elif re.search(stops_to_x_regex, content_lower):
-            match = re.search(stops_to_x_regex, content_lower)
-            if match:
-                try:
-                    entry_value = float(match.group(2))
-                    if entry_value <= 0:
-                        logger.error(f"Invalid stop loss price in alert: {content}")
-                        return {
-                            "action_type": "invalid_price",
-                            "action_description": f"Invalid stop loss price for {coin_symbol}",
-                            "binance_action": "NO_ACTION",
-                            "position_status": "UNKNOWN",
-                            "reason": "Invalid price in alert",
-                            "coin_symbol": coin_symbol
-                        }
-                    return {
-                        "action_type": "stop_loss_update",
-                        "action_description": f"Stop loss moved to {entry_value} for {coin_symbol}",
-                        "binance_action": "UPDATE_STOP_ORDER",
-                        "position_status": "OPEN",
-                        "stop_loss": entry_value,
-                        "take_profit": None,
-                        "reason": "Stop loss adjusted to specific value",
-                        "coin_symbol": coin_symbol
-                    }
-                except ValueError:
-                    logger.error(f"Invalid stop loss price in alert: {content}")
-                    return {
-                        "action_type": "invalid_price",
-                        "action_description": f"Invalid stop loss price for {coin_symbol}",
-                        "binance_action": "NO_ACTION",
-                        "position_status": "UNKNOWN",
-                        "reason": "Invalid price in alert",
-                        "coin_symbol": coin_symbol
-                    }
-        elif re.search(dca_to_entry_regex, content_lower):
-            match = re.search(dca_to_entry_regex, content_lower)
-            if match:
-                entry_value = match.group(1) # Convert the extracted string to a float
-                return {
-                "action_type": "dca_to_entry",
-                "action_description": f"Create a new order if their is no open positions {entry_value} for {coin_symbol}",
-                "binance_action": "CREATE_NEW_ORDER_IF_NONE_STOP_ORDER",
-                "position_status": "OPEN",
-                "entry": entry_value,
-                "take_profit": None,
-                "reason": "Stop loss adjusted to specific value",
-                "coin_symbol": coin_symbol
-                }
-
-        # 13. Handle ambiguous or incomplete alerts
-        else:
-            # Check if this is an ambiguous alert that needs manual review
-            ambiguous_keywords = ["update", "move", "adjust", "change", "modify"]
-            is_ambiguous = any(keyword in content_lower for keyword in ambiguous_keywords)
-
-            if is_ambiguous:
-                logger.error(f"Ambiguous alert content: {content}. Flagging for manual review.")
-                return {
-                    "action_type": "flagged_for_review",
-                    "action_description": f"Ambiguous alert for {coin_symbol}: {content}",
-                    "binance_action": "NO_ACTION",
-                    "position_status": "UNKNOWN",
-                    "reason": "Ambiguous alert content - manual review required",
-                    "coin_symbol": coin_symbol
-                }
-            else:
-                return {
-                    "action_type": "unknown_update",
-                    "action_description": f"Update for {coin_symbol}: {content}",
-                    "binance_action": "NO_ACTION",
-                    "position_status": "UNKNOWN",
-                    "reason": "Unrecognized alert type",
-                    "coin_symbol": coin_symbol
-                }
+        """Delegate to signal processor for alert content parsing."""
+        from discord_bot.signal_processing import SignalProcessor
+        processor = SignalProcessor()
+        alert_action = processor.process_alert_content(content, trade_row)
+        return alert_action.to_dict()
 
     def _generate_alert_hash(self, discord_id: str, content: str) -> str:
-        """
-        Generate a hash for alert deduplication.
-        """
-        import hashlib
-        return hashlib.sha256(f"{discord_id}:{content}".encode()).hexdigest()
+        """Generate a hash for alert deduplication."""
+        return self.db_manager.generate_alert_hash(discord_id, content)
 
     async def _is_duplicate_alert(self, alert_hash: str) -> bool:
-        """
-        Check if an alert hash already exists in the database.
-        """
-        try:
-            # Check if this alert hash has been processed recently (last 24 hours)
-            # This is a simple implementation - you might want to store this in a separate table
-            # For now, we'll use the alerts table with a hash field
-            response = await self.db_manager.supabase.table("alerts").select("id").eq("alert_hash", alert_hash).execute()
-            return len(response.data) > 0
-        except Exception as e:
-            # If the alert_hash column doesn't exist, skip duplicate checking
-            if "column alerts.alert_hash does not exist" in str(e):
-                logger.warning("alert_hash column not found in alerts table, skipping duplicate check")
-                return False
-            logger.error(f"Error checking for duplicate alert: {e}")
-            return False
+        """Check if an alert hash already exists in the database."""
+        return await self.db_manager.check_duplicate_alert(alert_hash)
 
     async def _store_alert_hash(self, alert_hash: str) -> bool:
-        """
-        Store an alert hash to prevent duplicate processing.
-        """
-        try:
-            # Store the hash in the alerts table
-            await self.db_manager.supabase.table("alerts").insert({"alert_hash": alert_hash}).execute()
-            return True
-        except Exception as e:
-            # If the alert_hash column doesn't exist, skip storing
-            if "column alerts.alert_hash does not exist" in str(e):
-                logger.warning("alert_hash column not found in alerts table, skipping hash storage")
-                return True  # Return True to not block processing
-            logger.error(f"Error storing alert hash: {e}")
-            return False
+        """Store an alert hash to prevent duplicate processing."""
+        return await self.db_manager.store_alert_hash(alert_hash)
 
-    def _extract_coin_symbol_from_content(self, content: str) -> str:
-        """
-        Extract coin symbol from alert content using regex patterns.
-        """
-        import re
 
-        # Common coin symbols pattern - look for uppercase letters at start of content
-        # Pattern: " COIN 🚀｜trades" or "COIN 🚀｜trades" or "COIN:"
-        coin_patterns = [
-            r'^\s*([A-Z0-9]{2,10})\s*[🚀📈📉]',  # COIN 🚀 at start
-            r'^\s*([A-Z0-9]{2,10}):',  # COIN: at start
-            r'^\s*([A-Z0-9]{2,10})\s+',  # COIN followed by space
-            r'\s+([A-Z0-9]{2,10})\s*[🚀📈📉]',  # COIN 🚀 anywhere
-            r'\s+([A-Z0-9]{2,10}):',  # COIN: anywhere
-        ]
-
-        for pattern in coin_patterns:
-            match = re.search(pattern, content)
-            if match:
-                coin_symbol = match.group(1).strip()
-                # Validate it's a reasonable coin symbol (2-10 chars, alphanumeric)
-                if 2 <= len(coin_symbol) <= 10 and coin_symbol.isalnum():
-                    logger.info(f"Extracted coin symbol '{coin_symbol}' from content: '{content[:50]}...'")
-                    return coin_symbol
-
-        # Fallback: try to extract from the original trade's parsed_signal
-        logger.warning(f"Could not extract coin symbol from content: '{content[:50]}...'")
-        return "UNKNOWN"
 
     async def process_initial_signal(self, signal: InitialDiscordSignal) -> Dict[str, Any]:
         """Process an initial Discord signal."""
@@ -542,13 +210,8 @@ class DiscordBot:
 
                             # Send Telegram notification for successful trade
                             try:
-                                await self.telegram_notifications.send_trade_execution_notification(
-                                    coin_symbol=coin_symbol,
-                                    position_type=position_type,
-                                    entry_price=signal_price,
-                                    quantity=float(binance_response.get('origQty', 0)),
-                                    order_id=str(binance_response.get('orderId', '')),
-                                    status="SUCCESS"
+                                await self.telegram_notifications.send_message(
+                                    message=f"Trade executed successfully for {coin_symbol}: {binance_response}"
                                 )
                             except Exception as e:
                                 logger.error(f"Failed to send Telegram notification: {e}")
@@ -577,14 +240,8 @@ class DiscordBot:
 
                         # Send Telegram notification for failed trade
                         try:
-                            await self.telegram_notifications.send_trade_execution_notification(
-                                coin_symbol=coin_symbol,
-                                position_type=position_type,
-                                entry_price=signal_price,
-                                quantity=0,
-                                order_id="",
-                                status="FAILED",
-                                error_message=str(binance_response)
+                            await self.telegram_notifications.send_message(
+                                message=f"Trade execution failed for {coin_symbol}: {binance_response}"
                             )
                         except Exception as e:
                             logger.error(f"Failed to send Telegram notification: {e}")
@@ -674,6 +331,7 @@ class DiscordBot:
                 return {"status": "skipped", "message": "Duplicate alert"}
 
             # The 'trade' field in the update signal refers to the discord_id of the original trade
+            logger.info(f"Looking for original trade with discord_id: {signal.trade}")
             trade_row = await self.db_manager.find_trade_by_discord_id(signal.trade)
             if not trade_row:
                 error_msg = f"No original trade found for discord_id: {signal.trade}"
@@ -687,7 +345,7 @@ class DiscordBot:
                 alert_updates = {
                     "parsed_alert": {
                         "original_content": signal.content,
-                        "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),  # pyright: ignore[reportUnboundVariable, reportAttributeAccessIssue]
                         "original_trade_id": trade_row['id'],
                         "coin_symbol": self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol'),
                         "trader": signal.trader,
@@ -772,7 +430,7 @@ class DiscordBot:
                     coin_symbol_exit = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
                     if coin_symbol_exit and isinstance(coin_symbol_exit, str):
                         try:
-                            from src.services.price_service import PriceService
+                            from src.services.pricing.price_service import PriceService
                             price_service = PriceService()
                             binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
                             if binance_exit_price is not None:
@@ -866,7 +524,7 @@ class DiscordBot:
                     coin_symbol_exit = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
                     if coin_symbol_exit and isinstance(coin_symbol_exit, str):
                         try:
-                            from src.services.price_service import PriceService
+                            from src.services.pricing.price_service import PriceService
                             price_service = PriceService()
                             binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
                             if binance_exit_price is not None:
@@ -1031,7 +689,7 @@ class DiscordBot:
                     new_tp_order = await self.binance_exchange.create_futures_order(
                         pair=trading_pair,
                         side=tp_side,
-                        order_type_market='TAKE_PROFIT_MARKET',
+                        order_type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
                         amount=current_position_size,
                         stop_price=new_tp_price,
                         reduce_only=True
@@ -1119,7 +777,7 @@ class DiscordBot:
                         logger.info(f"PnL for this action: {newly_realized_pnl:.2f}. Total realized PnL for trade: {total_pnl:.2f}")
 
                 # Extract Binance execution timestamp if available for accurate updated_at
-                binance_execution_time = None
+                binance_execution_time_str = None
                 if isinstance(binance_response_log, dict) and 'updateTime' in binance_response_log:
                     execution_timestamp = binance_response_log['updateTime']
                     binance_execution_time = datetime.fromtimestamp(execution_timestamp / 1000, tz=timezone.utc).isoformat()
@@ -1130,7 +788,7 @@ class DiscordBot:
                     await self.db_manager.update_existing_trade(
                         trade_id=trade_row["id"],
                         updates=trade_updates,
-                        binance_execution_time=binance_execution_time
+                        binance_execution_time=binance_execution_time_str
                     )
                     logger.info(f"Updated trade {trade_row['id']} with: {trade_updates}")
             elif binance_response_log: # Action was attempted but failed
@@ -1141,7 +799,7 @@ class DiscordBot:
             alert_updates = {
                 "parsed_alert": {
                     "original_content": signal.content,
-                    "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),  # pyright: ignore[reportPossiblyUnboundVariable]
                     "action_determined": parsed_action,
                     "original_trade_id": trade_row['id'],
                     "coin_symbol": parsed_action.get('coin_symbol', self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')),
@@ -1187,7 +845,8 @@ class DiscordBot:
 
             # Update alert status to ERROR if we can find the alert
             try:
-                if 'signal' in locals():
+                if 'signal_data' in locals():
+                    signal = DiscordUpdateSignal(**signal_data)
                     alert_response = self.db_manager.supabase.from_("alerts").select("*").eq("discord_id", signal.discord_id).limit(1).execute()
                     if alert_response.data and len(alert_response.data) > 0:
                         alert_row = alert_response.data[0]
@@ -1305,8 +964,35 @@ class DiscordBot:
                 if stop_loss and stop_loss != "BE":
                     return await self.trading_engine.update_stop_loss(trade_row, float(stop_loss))
                 else:
-                    # Handle break-even stop loss
-                    return await self.trading_engine.update_stop_loss(trade_row, "BE")
+                    # Handle break-even stop loss - calculate the break-even price first
+                    try:
+                        coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
+                        if coin_symbol:
+                            trading_pair = f"{coin_symbol}USDT"
+                            positions = await self.binance_exchange.get_futures_position_information()
+
+                            # Find the specific position
+                            position = None
+                            for pos in positions:
+                                if pos['symbol'] == trading_pair and float(pos['positionAmt']) != 0:
+                                    position = pos
+                                    break
+
+                            if position:
+                                # Use the entry price from Binance position data as break-even
+                                entry_price = float(position['entryPrice'])
+                                be_price = round(entry_price, 2)
+                                return await self.trading_engine.update_stop_loss(trade_row, be_price)
+                            else:
+                                # Fallback to database entry price
+                                original_entry_price = trade_row.get('entry_price')
+                                if original_entry_price:
+                                    be_price = round(float(original_entry_price), 2)
+                                    return await self.trading_engine.update_stop_loss(trade_row, be_price)
+                    except Exception as e:
+                        logger.error(f"Error calculating break-even price: {e}")
+
+                    return False, {"error": "Could not calculate break-even price"}
             elif action_type == "limit_order_filled":
                 # Order already filled, just log and return success
                 logger.info(f"Limit order already filled for trade {trade_row.get('id')}")

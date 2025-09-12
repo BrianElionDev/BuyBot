@@ -6,7 +6,6 @@ import asyncio
 import logging
 import sys
 import os
-from src.bot.bot_manager import BotManager
 
 def setup_logging():
     """Configure logging for the application."""
@@ -49,20 +48,27 @@ def setup_logging():
     logging.getLogger('aiohttp').setLevel(logging.WARNING)
     logging.getLogger('uvicorn').setLevel(logging.WARNING)
 
-async def main():
+def main():
     """Main entry point for the trading bot."""
     try:
-        # Initialize and start the bot manager
-        bot_manager = BotManager()
-        await bot_manager.start()
+        # Import and start the Discord bot service
+        from discord_bot.main import app
+        import uvicorn
+
+        logger.info("🚀 Starting Rubicon Trading Bot (Discord Service)...")
+        logger.info("📡 Service will be available at: http://127.0.0.1:8001")
+        logger.info("🔗 API Documentation: http://127.0.0.1:8001/docs")
+
+        # Start the FastAPI server
+        uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
+
     except KeyboardInterrupt:
-        logger.info("Shutting down...")
-        await bot_manager.stop()
+        logger.info("🛑 Shutting down...")
     except Exception as e:
-        logger.error(f"Error in main: {str(e)}")
+        logger.error(f"❌ Error in main: {str(e)}")
         raise
 
 if __name__ == "__main__":
     setup_logging()
     logger = logging.getLogger(__name__)
-    asyncio.run(main())
+    main()
