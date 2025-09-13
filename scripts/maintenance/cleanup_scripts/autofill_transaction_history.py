@@ -5,6 +5,7 @@ This script runs automatically and can be scheduled to run periodically.
 """
 
 import sys
+import os
 import asyncio
 import logging
 import argparse
@@ -13,7 +14,10 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 import time
 
-sys.path.append(str(Path(__file__).parent.parent))
+# Add project root to the Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from discord_bot.discord_bot import DiscordBot
 from discord_bot.database import DatabaseManager
@@ -140,9 +144,14 @@ class AutoTransactionHistoryFiller:
             asset = income_record.get('asset', '')
             symbol = income_record.get('symbol', '')
 
+            # Convert millisecond timestamp to timestampz format for database
+            from datetime import datetime, timezone
+            dt = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc)
+            time_timestampz = dt.isoformat()  # This gives us: 2025-09-05T19:00:00+00:00
+
             # Create transaction record
             transaction = {
-                'time': time_ms,
+                'time': time_timestampz,  # Use timestampz format instead of milliseconds
                 'type': income_type,
                 'amount': amount,
                 'asset': asset,

@@ -5,13 +5,17 @@ This script allows manual control over the data fetching and insertion process.
 """
 
 import sys
+import os
 import asyncio
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
-sys.path.append(str(Path(__file__).parent.parent))
+# Add project root to path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from discord_bot.discord_bot import DiscordBot
 from discord_bot.database import DatabaseManager
@@ -46,7 +50,7 @@ class TransactionHistoryFiller:
             last_sync_time = await self.db_manager.get_last_transaction_sync_time()
             
             # If we have existing transactions, start from the last one + 1ms
-            if last_sync_time > 0 and start_time < last_sync_time:
+            if last_sync_time and last_sync_time > 0 and start_time < last_sync_time:
                 start_time = last_sync_time + 1
                 logger.info(f"Starting sync from last transaction time: {start_time} ({datetime.fromtimestamp(start_time/1000, tz=timezone.utc)})")
 
@@ -85,9 +89,15 @@ class TransactionHistoryFiller:
             asset = income_record.get('asset', '')
             symbol = income_record.get('symbol', '')
 
+            # Convert millisecond timestamp to timestampz format for database
+            # Database expects: 2025-09-03 08:00:00+00 (timestamp with timezone)
+            from datetime import datetime, timezone
+            dt = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc)
+            time_timestampz = dt.isoformat()  # This gives us: 2025-09-05T19:00:00+00:00
+
             # Create transaction record
             transaction = {
-                'time': time_ms,
+                'time': time_timestampz,  # Use timestampz format instead of milliseconds
                 'type': income_type,
                 'amount': amount,
                 'asset': asset,
@@ -387,74 +397,45 @@ class TransactionHistoryFiller:
 
 
 async def main():
-    """Main function for manual transaction history filling."""
+    """Main function for incremental transaction history filling using latest DB timestamp."""
     filler = TransactionHistoryFiller()
 
-    # Example usage - modify these parameters as needed
-    print("=== Manual Transaction History Filler ===")
-    print("1. Fill single symbol")
-    print("2. Fill all symbols")
-    print("3. Fill from specific date (e.g., 10th August)")
-    print("4. Custom parameters")
-
-    choice = input("Enter your choice (1-4): ").strip()
-
-    if choice == "1":
-        symbol = input("Enter symbol (e.g., BTCUSDT): ").strip()
-        days = int(input("Enter number of days to look back (default 30): ") or "30")
-        income_type = input("Enter income type filter (optional, press Enter to skip): ").strip() or ""
-
-        result = await filler.fill_transaction_history_manual(
-            symbol=symbol,
-            days=days,
-            income_type=income_type
-        )
-
-    elif choice == "2":
-        days = int(input("Enter number of days to look back (default 30): ") or "30")
-        income_type = input("Enter income type filter (optional, press Enter to skip): ").strip() or ""
-
+    print("=== Incremental Transaction History Filler ===")
+    print("🔄 Fetching from Binance using latest timestamp in DB as starting point...")
+    
+    try:
+        # Get current count before
+        response = filler.db_manager.supabase.table('transaction_history').select('id').execute()
+        before_count = len(response.data) if response.data else 0
+        print(f"📊 Current transaction count: {before_count}")
+        
+        # Fill all symbols using incremental approach (latest timestamp from DB)
         result = await filler.fill_all_symbols_manual(
-            days=days,
-            income_type=income_type
+            days=7,  # Look back 7 days as fallback if no existing data
+            income_type=""  # All income types
         )
-
-    elif choice == "3":
-        start_date = input("Enter start date (YYYY-MM-DD, default 2025-08-10): ").strip() or "2025-08-10"
-        symbol = input("Enter symbol (optional, press Enter to skip): ").strip() or ""
-        income_type = input("Enter income type filter (optional, press Enter to skip): ").strip() or ""
-
-        print(f"\nThis will fill transaction history from {start_date} to now.")
-        confirmation = input("Do you want to proceed? (y/N): ")
-        if confirmation.lower() != 'y':
-            print("Operation cancelled.")
-            return
-
-        result = await filler.fill_from_date(
-            start_date=start_date,
-            symbol=symbol,
-            income_type=income_type
-        )
-
-    elif choice == "4":
-        # Custom implementation
-        print("Custom implementation - modify the script as needed")
+        
+        # Get final count
+        response = filler.db_manager.supabase.table('transaction_history').select('id').execute()
+        after_count = len(response.data) if response.data else 0
+        
+        # Display results
+        print(f"\n=== Results ===")
+        print(f"✅ Success: {result.get('success', False)}")
+        print(f"📝 Message: {result.get('message', '')}")
+        print(f"📊 Processed: {result.get('total_processed', 0)}")
+        print(f"➕ Inserted: {result.get('total_inserted', 0)}")
+        print(f"⏭️ Skipped: {result.get('total_skipped', 0)}")
+        print(f"📈 Net change: +{after_count - before_count}")
+        
+        if result.get('success'):
+            print(f"🎉 Transaction history updated successfully!")
+        else:
+            print(f"❌ Error: {result.get('message', 'Unknown error')}")
+            
+    except Exception as e:
+        print(f"❌ Error running incremental fill: {e}")
         return
-
-    else:
-        print("Invalid choice")
-        return
-
-    # Display results
-    print(f"\n=== Results ===")
-    print(f"Success: {result.get('success', False)}")
-    print(f"Message: {result.get('message', '')}")
-    print(f"Processed: {result.get('processed', result.get('total_processed', 0))}")
-    print(f"Inserted: {result.get('inserted', result.get('total_inserted', 0))}")
-    print(f"Skipped: {result.get('skipped', result.get('total_skipped', 0))}")
-
-    if result.get('start_date'):
-        print(f"Date Range: {result.get('start_date')} to {result.get('end_date')}")
 
 
 if __name__ == "__main__":
