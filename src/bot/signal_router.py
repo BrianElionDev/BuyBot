@@ -304,11 +304,26 @@ class SignalRouter:
                     except json.JSONDecodeError:
                         alert_data = {}
 
-                # Get coin symbol from alert data or signal
+                # Get coin symbol from alert data, signal data, or extract from content
                 coin_symbol = alert_data.get('coin_symbol') or signal_data.get('coin_symbol')
+
+                # If not found, try to extract from content
                 if not coin_symbol:
-                    logger.error("No coin symbol found in signal data")
-                    return {"status": "error", "message": "No coin symbol found in signal data"}
+                    content = signal.content or ""
+                    # Look for coin symbol patterns like "SUI 🚀|" or "ETH |"
+                    import re
+                    coin_match = re.search(r'^([A-Z]{2,5})\s*[🚀|]', content.upper())
+                    if coin_match:
+                        coin_symbol = coin_match.group(1)
+                    else:
+                        # Fallback: try to get from the original trade
+                        trade_row = await self.binance_trading_engine.db_manager.find_trade_by_discord_id(signal.trade)
+                        if trade_row:
+                            coin_symbol = trade_row.get('coin_symbol')
+
+                if not coin_symbol:
+                    logger.error("No coin symbol found in signal data or content")
+                    return {"status": "error", "message": "No coin symbol found in signal data or content"}
 
                 # Find related orders using timestamp matching
                 related_orders = await self._find_related_orders(
