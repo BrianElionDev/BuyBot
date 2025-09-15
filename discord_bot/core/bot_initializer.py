@@ -49,14 +49,14 @@ class BotInitializer:
             # 2. Initialize database manager
             self._initialize_database_manager()
 
-            # 3. Initialize price service
-            self._initialize_price_service()
-
-            # 4. Initialize Binance exchange
+            # 3. Initialize Binance exchange
             self._initialize_binance_exchange()
 
-            # 5. Initialize KuCoin exchange
+            # 4. Initialize KuCoin exchange
             self._initialize_kucoin_exchange()
+
+            # 5. Initialize price service (needs both exchanges)
+            self._initialize_price_service()
 
             # 6. Initialize trading engine
             self._initialize_trading_engine()
@@ -100,7 +100,11 @@ class BotInitializer:
     def _initialize_price_service(self) -> None:
         """Initialize price service."""
         try:
-            price_service = PriceService()
+            # Price service needs both exchanges, which are now initialized before this
+            price_service = PriceService(
+                binance_exchange=self.components['binance_exchange'],
+                kucoin_exchange=self.components.get('kucoin_exchange')
+            )
             self.components['price_service'] = price_service
             logger.info("Price service initialized")
         except Exception as e:

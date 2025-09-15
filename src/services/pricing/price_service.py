@@ -11,10 +11,11 @@ logger = logging.getLogger(__name__)
 class PriceService:
     """Core price service for cryptocurrency price data using Binance API"""
 
-    def __init__(self, config: Optional[PriceServiceConfig] = None, binance_exchange=None):
+    def __init__(self, config: Optional[PriceServiceConfig] = None, binance_exchange=None, kucoin_exchange=None):
         """Initialize the price service"""
         self.config = config or PriceServiceConfig()
         self.binance_exchange = binance_exchange
+        self.kucoin_exchange = kucoin_exchange
         self.cache = PriceCache(self.config)
         self.validator = PriceValidator()
         self._last_call = 0
@@ -37,6 +38,18 @@ class PriceService:
             Binance trading pair (e.g., 'BTCUSDT')
         """
         return f"{symbol.upper()}USDT"
+
+    def _get_kucoin_symbol(self, symbol: str) -> str:
+        """
+        Convert symbol to KuCoin trading pair format
+
+        Args:
+            symbol: Trading symbol (e.g., 'BTC')
+
+        Returns:
+            KuCoin trading pair (e.g., 'BTC-USDT')
+        """
+        return f"{symbol.upper()}-USDT"
 
     async def get_price(self, symbol: str) -> Optional[float]:
         """
@@ -69,9 +82,9 @@ class PriceService:
             logger.error(f"Failed to get price for {symbol}: {e}")
             return None
 
-    async def get_coin_price(self, symbol: str) -> Optional[float]:
+    async def get_price_from_kucoin(self, symbol: str) -> Optional[float]:
         """
-        Get price by symbol (combines symbol conversion and price fetch)
+        Get price for a specific symbol using KuCoin API
 
         Args:
             symbol: Trading symbol (e.g., 'BTC')
@@ -79,13 +92,51 @@ class PriceService:
         Returns:
             Current price in USD or None if failed
         """
-        # Check cache first
+        if not self.kucoin_exchange:
+            logger.error("KuCoin exchange not initialized")
+            return None
+
+        await self._rate_limit()
+
+        try:
+            kucoin_symbol = self._get_kucoin_symbol(symbol)
+            # Use KuCoin's get_current_prices method
+            prices = await self.kucoin_exchange.get_current_prices([kucoin_symbol])
+
+            if kucoin_symbol in prices and prices[kucoin_symbol] > 0:
+                price = float(prices[kucoin_symbol])
+                logger.info(f"KuCoin price for {symbol}: ${price}")
+                return price
+            else:
+                logger.warning(f"Invalid price received from KuCoin for {symbol}: {prices.get(kucoin_symbol)}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to get price from KuCoin for {symbol}: {e}")
+            return None
+
+    async def get_coin_price(self, symbol: str, exchange: str = "binance") -> Optional[float]:
+        """
+        Get price by symbol from specified exchange
+
+        Args:
+            symbol: Trading symbol (e.g., 'BTC')
+            exchange: Exchange to use ('binance' or 'kucoin')
+
+        Returns:
+            Current price in USD or None if failed
+        """
+        # Check cache first (cache is exchange-agnostic for now)
         cached_price = self.cache.get_cached_price(symbol)
         if cached_price:
             return cached_price
 
-        # Get price from Binance
-        price = await self.get_price(symbol)
+        # Get price from specified exchange
+        if exchange.lower() == "kucoin":
+            price = await self.get_price_from_kucoin(symbol)
+        else:  # Default to binance
+            price = await self.get_price(symbol)
+
         if price:
             # Cache the price
             self.cache.set_cached_price(symbol, price)

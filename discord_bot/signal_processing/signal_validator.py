@@ -42,7 +42,7 @@ class SignalValidator:
 
         # Common coin symbol patterns
         patterns = [
-            r'\b(BTC|ETH|SOL|ADA|DOT|LINK|UNI|AAVE|MATIC|AVAX|NEAR|FTM|ALGO|ATOM|XRP)\b',
+            r'\b(BTC|ETH|SOL|ADA|DOT|LINK|UNI|AAVE|MATIC|AVAX|NEAR|FTM|ALGO|ATOM|XRP|VELVET)\b',
             r'\b(DOGE|SHIB|PEPE|BONK|WIF|FLOKI|TOSHI|TURBO|HYPE|FARTCOIN)\b',
             r'\b([A-Z]{2,10})\b'  # Generic 2-10 letter uppercase pattern
         ]
@@ -157,8 +157,21 @@ class SignalValidator:
         for char in zero_width_chars:
             sanitized = sanitized.replace(char, '')
 
-        # Remove any other non-ASCII characters that might cause issues
-        sanitized = ''.join(char for char in sanitized if ord(char) < 128)
+        # Remove any other problematic Unicode characters but keep basic ASCII and common symbols
+        # Keep: letters, numbers, basic punctuation, spaces, and common trading symbols
+        sanitized = ''.join(char for char in sanitized if (
+            ord(char) < 128 or  # Basic ASCII
+            char in '₿$€£¥₹' or  # Currency symbols
+            char.isalpha() or   # Letters (including accented)
+            char.isdigit() or   # Numbers
+            char.isspace()      # Whitespace
+        ))
+
+        # Additional cleanup for common trading patterns
+        sanitized = re.sub(r'[^\w\s\.\,\-\+\$\%\(\)\[\]\:\|\/]', '', sanitized)
+
+        # Clean up multiple spaces
+        sanitized = re.sub(r'\s+', ' ', sanitized)
 
         return sanitized.strip()
 

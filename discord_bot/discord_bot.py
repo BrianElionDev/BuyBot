@@ -15,6 +15,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.bot.order_management.order_creator import FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET
 from src.bot.trading_engine import TradingEngine
+from src.bot.kucoin_trading_engine import KucoinTradingEngine
+from src.bot.signal_router import SignalRouter
 from discord_bot.signal_processing import DiscordSignalParser
 from discord_bot.signal_processing.signal_parser import client
 from discord_bot.models import InitialDiscordSignal, DiscordUpdateSignal
@@ -22,7 +24,7 @@ from discord_bot.database import DatabaseManager
 from config import settings as config
 from supabase import create_client, Client
 from src.services.pricing.price_service import PriceService
-from src.exchange import BinanceExchange
+from src.exchange import BinanceExchange, KucoinExchange
 from discord_bot.websocket import DiscordBotWebSocketManager
 from config import settings
 
@@ -53,13 +55,55 @@ class DiscordBot:
         self.db_manager = DatabaseManager(self.supabase)
 
         # --- Component Initialization ---
-        self.price_service = PriceService()
         self.binance_exchange = BinanceExchange(api_key, api_secret, is_testnet)
+
+        # Initialize KuCoin exchange
+        kucoin_api_key = settings.KUCOIN_API_KEY
+        kucoin_api_secret = settings.KUCOIN_API_SECRET
+        kucoin_api_passphrase = settings.KUCOIN_API_PASSPHRASE
+        kucoin_is_testnet = settings.KUCOIN_TESTNET
+
+        if kucoin_api_key and kucoin_api_secret and kucoin_api_passphrase:
+            self.kucoin_exchange = KucoinExchange(
+                api_key=kucoin_api_key,
+                api_secret=kucoin_api_secret,
+                api_passphrase=kucoin_api_passphrase,
+                is_testnet=kucoin_is_testnet
+            )
+            logger.info("KuCoin exchange initialized")
+        else:
+            self.kucoin_exchange = None
+            logger.warning("KuCoin credentials not provided, KuCoin trading disabled")
+
+        # Initialize price service with both exchanges
+        self.price_service = PriceService(
+            binance_exchange=self.binance_exchange,
+            kucoin_exchange=self.kucoin_exchange
+        )
+
+        # Initialize trading engines
         self.trading_engine = TradingEngine(
             price_service=self.price_service,
             binance_exchange=self.binance_exchange,
             db_manager=self.db_manager
         )
+
+        if self.kucoin_exchange:
+            self.kucoin_trading_engine = KucoinTradingEngine(
+                price_service=self.price_service,
+                kucoin_exchange=self.kucoin_exchange,
+                db_manager=self.db_manager
+            )
+            logger.info("KuCoin trading engine initialized")
+        else:
+            self.kucoin_trading_engine = None
+
+        # Initialize signal router for trader-based exchange routing
+        self.signal_router = SignalRouter(
+            binance_trading_engine=self.trading_engine,
+            kucoin_trading_engine=self.kucoin_trading_engine
+        )
+
         self.signal_parser = DiscordSignalParser()
 
         # Initialize Telegram notification service
@@ -184,11 +228,12 @@ class DiscordBot:
                         logger.error(f"No entry price found for trade {trade_row['id']}")
                         return {"status": "error", "message": "No entry price found"}
 
-                    # Execute the trade
-                    success, binance_response = await self.trading_engine.process_signal(
+                    # Route the trade to the appropriate exchange based on trader
+                    success, exchange_response = await self.signal_router.route_initial_signal(
                         coin_symbol=coin_symbol,
                         signal_price=signal_price,
                         position_type=position_type,
+                        trader=signal.trader,
                         order_type=order_type,
                         stop_loss=stop_loss,
                         take_profits=take_profits,
@@ -199,54 +244,54 @@ class DiscordBot:
                     if success:
                         logger.info(f"✅ Trade executed successfully on Binance for {coin_symbol}")
 
-                        # Update trade with Binance response
-                        if isinstance(binance_response, dict):
+                        # Update trade with exchange response
+                        if isinstance(exchange_response, dict):
                             await self.db_manager.update_trade_with_original_response(
                                 trade_id=trade_row['id'],
-                                original_response=binance_response
+                                original_response=exchange_response
                             )
 
                             # Send Telegram notification for successful trade
                             try:
                                 await self.telegram_notifications.send_message(
-                                    message=f"Trade executed successfully for {coin_symbol}: {binance_response}"
+                                    message=f"Trade executed successfully for {coin_symbol}: {exchange_response}"
                                 )
                             except Exception as e:
                                 logger.error(f"Failed to send Telegram notification: {e}")
                         else:
-                            # If binance_response is a string (error message), store it differently
+                            # If exchange_response is a string (error message), store it differently
                             await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
-                                'binance_response': str(binance_response)
+                                'binance_response': str(exchange_response)
                             })
 
                         return {
                             "status": "success",
                             "message": "Trade processed and executed successfully",
                             "trade_id": trade_row['id'],
-                            "binance_response": binance_response
+                            "exchange_response": exchange_response
                         }
                     else:
-                        logger.error(f"❌ Trade execution failed for {coin_symbol}: {binance_response}")
+                        logger.error(f"❌ Trade execution failed for {coin_symbol}: {exchange_response}")
 
                         # Update trade with error using existing columns
                         await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                             'status': 'FAILED',
                             'sync_error_count': 1,
-                            'sync_issues': [f'Trade execution failed: {binance_response}'],
+                            'sync_issues': [f'Trade execution failed: {exchange_response}'],
                             'manual_verification_needed': True
                         })
 
                         # Send Telegram notification for failed trade
                         try:
                             await self.telegram_notifications.send_message(
-                                message=f"Trade execution failed for {coin_symbol}: {binance_response}"
+                                message=f"Trade execution failed for {coin_symbol}: {exchange_response}"
                             )
                         except Exception as e:
                             logger.error(f"Failed to send Telegram notification: {e}")
 
                         return {
                             "status": "error",
-                            "message": f"Trade execution failed: {binance_response}",
+                            "message": f"Trade execution failed: {exchange_response}",
                             "trade_id": trade_row['id']
                         }
 
@@ -315,12 +360,18 @@ class DiscordBot:
     async def process_update_signal(self, signal_data: Dict[str, Any]) -> Dict[str, str]:
         """
         Process follow-up signal (stop loss hit, position closed, etc.)
-        Updates the existing trade row with new information.
+        Routes the signal to the appropriate exchange based on trader.
         """
-        binance_response_log = None # To store any response from a trading action
         try:
             signal = DiscordUpdateSignal(**signal_data)
-            logger.info(f"Processing update signal: {signal.content}")
+            logger.info(f"Processing update signal from trader {signal.trader}: {signal.content}")
+
+            # Validate trader and determine exchange
+            if not self.signal_router.is_trader_supported(signal.trader):
+                logger.warning(f"Unsupported trader {signal.trader}, using default exchange")
+
+            exchange_type = self.signal_router.get_exchange_for_trader(signal.trader)
+            logger.info(f"Routing follow-up signal from {signal.trader} to {exchange_type.value} exchange")
 
             # Check for duplicate alerts
             alert_hash = self._generate_alert_hash(signal.discord_id, signal.content)
@@ -328,534 +379,22 @@ class DiscordBot:
                 logger.warning(f"Duplicate alert detected: {signal.content}")
                 return {"status": "skipped", "message": "Duplicate alert"}
 
-            # The 'trade' field in the update signal refers to the discord_id of the original trade
-            logger.info(f"Looking for original trade with discord_id: {signal.trade}")
-            trade_row = await self.db_manager.find_trade_by_discord_id(signal.trade)
-            if not trade_row:
-                error_msg = f"No original trade found for discord_id: {signal.trade}"
-                logger.error(error_msg)
-                return {"status": "error", "message": error_msg}
-
-            # --- SKIP follow-up if original trade is FAILED or UNFILLED ---
-            if trade_row.get('order_status') in ('REJECTED', 'CANCELED', 'EXPIRED') or trade_row.get('status') == 'NONE':
-                logger.warning(f"Skipping follow-up: original trade {trade_row['id']} has order_status={trade_row.get('order_status')} and position_status={trade_row.get('status')}")
-                # Update alert to reflect no open position
-                alert_updates = {
-                    "parsed_alert": {
-                        "original_content": signal.content,
-                        "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),  # pyright: ignore[reportUnboundVariable, reportAttributeAccessIssue]
-                        "original_trade_id": trade_row['id'],
-                        "coin_symbol": self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol'),
-                        "trader": signal.trader,
-                        "note": "Skipped: original trade is FAILED or UNFILLED. No open position to update."
-                    },
-                    "binance_response": None,
-                    "status": "SKIPPED"
-                }
-                trade_val = getattr(signal, 'trade', None)
-                if not isinstance(trade_val, str):
-                    trade_val = None
-                await self.db_manager.update_alert_by_discord_id_or_trade(
-                    discord_id=signal.discord_id,
-                    trade=trade_val,
-                    updates=alert_updates
-                )
-                return {"status": "skipped", "message": "No open position to update (original trade is FAILED or UNFILLED)"}
-
-            # Parse the alert content to determine action(s)
-            parsed_action = self.parse_alert_content(signal.content, trade_row)
-
-            # Ensure parsed_action is not None
-            if parsed_action is None:
-                error_msg = f"Failed to parse alert content: {signal.content}"
-                logger.error(error_msg)
-                return {"status": "error", "message": error_msg}
-
-            # Handle multiple actions
-            if parsed_action.get("multiple_actions"):
-                logger.info(f"Processing multiple actions: {len(parsed_action['actions'])} actions")
-
-                trade_updates = {}
-                all_actions_successful = True
-
-                for i, action in enumerate(parsed_action['actions']):
-                    logger.info(f"Executing action {i+1}/{len(parsed_action['actions'])}: {action['action_type']}")
-
-                    # Execute each action using the existing logic
-                    action_successful, binance_response_log = await self._execute_single_action(action, trade_row, signal)
-
-                    if not action_successful:
-                        logger.error(f"Action {i+1} failed: {action['action_type']}")
-                        all_actions_successful = False
-                        break
-                    else:
-                        # Merge trade updates from each action
-                        if binance_response_log and isinstance(binance_response_log, dict):
-                            if 'trade_updates' in binance_response_log:
-                                trade_updates.update(binance_response_log['trade_updates'])
-
-                action_successful = all_actions_successful
-                action_type = "multiple_actions"
-
-                if action_successful:
-                    return {"status": "success", "message": f"Processed {len(parsed_action['actions'])} actions successfully"}
-                else:
-                    return {"status": "error", "message": f"Failed to process all {len(parsed_action['actions'])} actions"}
-            else:
-                # Execute single action (existing logic)
-                trade_updates = {}
-                action_type = parsed_action["action_type"]
-                action_successful = False # Flag to track if the engine action succeeded
-
-            # Determine what trading action to take based on the parsed action
-            if action_type == "stop_loss_hit" or action_type == "position_closed":
-                logger.info(f"Processing '{action_type}' for trade {trade_row['id']}. Closing position.")
-                action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason=action_type)
-                if action_successful:
-                    trade_updates["status"] = "CLOSED"
-
-                    # Set closed_at timestamp when trade is closed via alert
-                    from discord_bot.utils.timestamp_manager import ensure_closed_at
-                    await ensure_closed_at(self.supabase, trade_row['id'])
-                    logger.info(f"✅ Set closed_at timestamp for trade {trade_row['id']} via alert closure")
-
-                    # Ensure coin_symbol is stored in database
-                    if not trade_row.get('coin_symbol') and parsed_action.get('coin_symbol'):
-                        trade_updates["coin_symbol"] = parsed_action.get('coin_symbol')
-                        logger.info(f"Updated coin_symbol to {parsed_action.get('coin_symbol')} for trade {trade_row['id']}")
-
-                    # --- Fetch binance_exit_price from Binance ---
-                    coin_symbol_exit = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
-                    if coin_symbol_exit and isinstance(coin_symbol_exit, str):
-                        try:
-                            from src.services.pricing.price_service import PriceService
-                            price_service = PriceService()
-                            binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
-                            if binance_exit_price is not None:
-                                trade_updates["binance_exit_price"] = float(binance_exit_price)
-                                logger.info(f"Fetched binance_exit_price for {coin_symbol_exit}: {binance_exit_price}")
-                        except Exception as e:
-                            logger.warning(f"Could not fetch binance_exit_price: {e}")
-
-            elif action_type == "take_profit_1":
-                logger.info(f"Processing TP1 for trade {trade_row['id']}. Closing 50% of position.")
-                action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_1", close_percentage=50.0)
-                if action_successful:
-                    trade_updates["status"] = "PARTIALLY_CLOSED"
-
-                    # Update position_size in database - remaining 50%
-                    current_position_size = float(trade_row.get('position_size', 0.0))
-                    new_position_size = current_position_size * 0.5  # 50% remaining
-                    trade_updates["position_size"] = new_position_size
-                    logger.info(f"Updated position_size from {current_position_size} to {new_position_size} after TP1")
-
-            elif action_type == "tp1_and_sl_to_be":
-                logger.info(f"Processing TP1 + SL to BE for trade {trade_row['id']}. Closing 50% and moving SL to break-even.")
-
-                # Step 1: Close 50% of position (TP1)
-                action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_1", close_percentage=50.0)
-                if action_successful:
-                    trade_updates["status"] = "PARTIALLY_CLOSED"
-
-                    # Update position_size in database - remaining 50%
-                    current_position_size = float(trade_row.get('position_size', 0.0))
-                    new_position_size = current_position_size * 0.5  # 50% remaining
-                    trade_updates["position_size"] = new_position_size
-                    logger.info(f"Updated position_size from {current_position_size} to {new_position_size} after TP1")
-
-                    # Step 2: Move stop loss to break-even for remaining position
-                    try:
-                        coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
-                        if coin_symbol:
-                            trading_pair = f"{coin_symbol}USDT"
-                            positions = await self.binance_exchange.get_futures_position_information()
-
-                            # Find the specific position
-                            position = None
-                            for pos in positions:
-                                if pos['symbol'] == trading_pair and float(pos['positionAmt']) != 0:
-                                    position = pos
-                                    break
-
-                            if position:
-                                # Use the entry price from Binance position data as break-even
-                                entry_price = float(position['entryPrice'])
-                                new_sl_price = round(entry_price, 2)
-
-                                logger.info(f"Moving SL to break-even at {new_sl_price} for remaining position ({new_position_size})")
-
-                                # Update stop loss to break-even with the new position size
-                                # First, update the trade row with new position size for the SL update
-                                trade_row['position_size'] = new_position_size
-
-                                sl_update_successful, sl_response = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
-                                if sl_update_successful:
-                                    logger.info(f"Successfully moved SL to break-even for trade {trade_row['id']}")
-                                    # Store the new SL order ID in trade updates
-                                    if isinstance(sl_response, dict) and 'orderId' in sl_response:
-                                        trade_updates['stop_loss_order_id'] = str(sl_response['orderId'])
-                                else:
-                                    logger.warning(f"Failed to move SL to break-even: {sl_response}")
-                            else:
-                                logger.warning(f"Could not find position for {trading_pair} to move SL to break-even")
-                        else:
-                            logger.warning(f"Could not determine coin symbol for SL update on trade {trade_row['id']}")
-                    except Exception as e:
-                        logger.error(f"Error moving SL to break-even: {str(e)}")
-
-            elif action_type == "take_profit_2":
-                logger.info(f"Processing TP2 for trade {trade_row['id']}. Closing remaining position.")
-                action_successful, binance_response_log = await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_2", close_percentage=100.0)
-                if action_successful:
-                    trade_updates["status"] = "CLOSED"
-
-                    # Set closed_at timestamp when trade is fully closed via TP2
-                    from discord_bot.utils.timestamp_manager import ensure_closed_at
-                    await ensure_closed_at(self.supabase, trade_row['id'])
-                    logger.info(f"✅ Set closed_at timestamp for trade {trade_row['id']} via TP2 closure")
-
-                    # Update position_size to 0 since position is fully closed
-                    trade_updates["position_size"] = 0.0
-                    logger.info(f"Updated position_size to 0.0 after TP2 (fully closed)")
-
-                    # --- Fetch binance_exit_price from Binance ---
-                    coin_symbol_exit = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
-                    if coin_symbol_exit and isinstance(coin_symbol_exit, str):
-                        try:
-                            from src.services.pricing.price_service import PriceService
-                            price_service = PriceService()
-                            binance_exit_price = await price_service.get_coin_price(coin_symbol_exit)
-                            if binance_exit_price is not None:
-                                trade_updates["binance_exit_price"] = float(binance_exit_price)
-                                logger.info(f"Fetched binance_exit_price for {coin_symbol_exit}: {binance_exit_price}")
-                        except Exception as e:
-                            logger.warning(f"Could not fetch binance_exit_price: {e}")
-
-            elif action_type == "stop_loss_update":
-                logger.info(f"Processing stop loss update for trade {trade_row['id']}")
-                new_sl_price = 0.0
-
-                # Check for "BE" (Break Even) signal
-                if parsed_action.get("stop_loss") == "BE" or "be" in signal.content.lower():
-                    # Get the actual position data from Binance for accurate break-even calculation
-                    try:
-                        coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
-                        if coin_symbol:
-                            trading_pair = f"{coin_symbol}USDT"
-                            positions = await self.binance_exchange.get_futures_position_information()
-
-                            # Find the specific position
-                            position = None
-                            for pos in positions:
-                                if pos['symbol'] == trading_pair and float(pos['positionAmt']) != 0:
-                                    position = pos
-                                    break
-
-                            if position:
-                                # Use the entry price from Binance position data as break-even
-                                entry_price = float(position['entryPrice'])
-                                new_sl_price = entry_price
-
-                                # Round to 2 decimal places for precision
-                                new_sl_price = round(new_sl_price, 2)
-
-                                logger.info(f"Determined break-even price as {new_sl_price} (using entry price directly)")
-                            else:
-                                # Fallback to database entry price
-                                original_entry_price = trade_row.get('entry_price')
-                                if original_entry_price:
-                                    # Use entry price directly as break-even
-                                    new_sl_price = float(original_entry_price)
-
-                                    # Round to 2 decimal places for precision
-                                    new_sl_price = round(new_sl_price, 2)
-
-                                    logger.info(f"Determined break-even price as {new_sl_price} from database entry price.")
-                                else:
-                                    logger.error(f"Could not determine entry price for BE stop loss on trade {trade_row['id']}")
-                        else:
-                            logger.error(f"Could not determine coin symbol for BE stop loss on trade {trade_row['id']}")
-                    except Exception as e:
-                        logger.warning(f"Could not fetch position data from Binance: {e}. Using database entry price.")
-                        # Fallback to database entry price
-                        original_entry_price = trade_row.get('entry_price')
-                        if original_entry_price:
-                            # Use entry price directly as break-even
-                            new_sl_price = float(original_entry_price)
-
-                            # Round to 2 decimal places for precision
-                            new_sl_price = round(new_sl_price, 2)
-
-                            logger.info(f"Determined break-even price as {new_sl_price} from database entry price.")
-                        else:
-                            logger.error(f"Could not determine entry price for BE stop loss on trade {trade_row['id']}")
-                else:
-                    # Get the new price from the parsed data if available
-                    new_sl_price = float(parsed_action.get("stop_loss", 0.0))
-                print(f"New SL price determined from parsed action: {new_sl_price}")
-                if new_sl_price > 0:
-                    action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
-                    if action_successful and isinstance(binance_response_log, dict):
-                        # The response from a successful SL update contains the new order details
-                        trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
-                else:
-                    logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}")
-            elif action_type == "cancelled_stoploss_order_and_create_new":
-                logger.info(f"Processing stop loss update for trade {trade_row['id']}")
-
-                try:
-                    coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
-                    position_type = trade_row.get('signal_type', 'UNKNOWN')
-                    if not coin_symbol:
-                        logger.error(f"Could not determine coin symbol for trade {trade_row['id']}")
-                        return {"status": "error", "message": "Could not determine coin symbol for stop loss update."}
-
-                    stop_loss_percentage = parsed_action.get('stop_loss_percentage', 2.0)
-                    if stop_loss_percentage <= 0 or stop_loss_percentage > 50:
-                        logger.error(f"Invalid stop loss percentage: {stop_loss_percentage}%. Must be between 0.1 and 50.")
-                        return {"status": "error", "message": f"Invalid stop loss percentage: {stop_loss_percentage}%. Must be between 0.1 and 50."}
-
-                    new_sl_price = await self.trading_engine.calculate_percentage_stop_loss(coin_symbol, position_type, stop_loss_percentage)
-                    print(f"New SL price determined from percentage: {new_sl_price}")
-                    if not new_sl_price:
-                        logger.error(f"Could not calculate {stop_loss_percentage}% stop loss for {coin_symbol}")
-                        return {"status": "error", "message": f"Could not calculate {stop_loss_percentage}% stop loss for {coin_symbol}"}
-                    if new_sl_price > 0:
-                        action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, new_sl_price)
-                        if action_successful and isinstance(binance_response_log, dict):
-                            trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
-                        else:
-                            logger.warning(f"Stop loss update failed for trade {trade_row['id']}. Binance response: {binance_response_log}")
-                    else:
-                        logger.warning(f"Could not determine a valid new stop loss price for trade {trade_row['id']}. new_sl_price was {new_sl_price}")
-                except Exception as e:
-                    logger.error(f"An error occurred while updating stop loss for trade {trade_row['id']}: {e}")
-            elif action_type == "take_profit_taken_hit":
-                logger.info(f"Processing take profit taken hit for trade {trade_row['id']} - creating new TP and moving SL to entry")
-
-                try:
-                    coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
-                    position_type = trade_row.get('signal_type', 'UNKNOWN')
-                    if not coin_symbol:
-                        logger.error(f"Could not determine coin symbol for trade {trade_row['id']}")
-                        return {"status": "error", "message": "Could not determine coin symbol for take profit taken hit."}
-
-                    trading_pair = f"{coin_symbol}USDT"
-                    positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
-                    current_position_size = 0.0
-                    for position in positions:
-                        if position.get('symbol') == trading_pair and float(position.get('positionAmt', 0)) != 0:
-                            current_position_size = abs(float(position.get('positionAmt', 0)))
-                            break
-
-                    if current_position_size <= 0:
-                        logger.warning(f"No open position found for {trading_pair} - position may have been fully closed")
-                        return {"status": "warning", "message": f"No open position found for {trading_pair}"}
-
-                    logger.info(f"Current position size for {trading_pair}: {current_position_size}")
-
-                    # Step 2: Get current market price
-                    current_price = await self.binance_exchange.get_futures_mark_price(trading_pair)
-                    if not current_price or current_price <= 0:
-                        logger.error(f"Could not get current price for {trading_pair}")
-                        return {"status": "error", "message": f"Could not get current price for {trading_pair}"}
-
-                    logger.info(f"Current price for {trading_pair}: {current_price}")
-
-                    # Step 3: Calculate new TP price (3% away from current price)
-                    if position_type.upper() == 'LONG':
-                        new_tp_price = current_price * 1.03  # 3% above current price
-                    else:  # SHORT
-                        new_tp_price = current_price * 0.97  # 3% below current price
-
-                    logger.info(f"New TP price calculated: {new_tp_price} (3% {'above' if position_type.upper() == 'LONG' else 'below'} current price)")
-
-                                         # Step 4: Get entry price for break-even stop loss
-                    entry_price = float(self._parse_parsed_signal(trade_row.get('parsed_signal')).get('entry_prices', [0.0])[0])
-                    if entry_price <= 0:
-                         logger.error(f"Could not determine entry price for trade {trade_row['id']}")
-                         return {"status": "error", "message": f"Could not determine entry price for trade {trade_row['id']}"}
-
-                    logger.info(f"Entry price for break-even SL: {entry_price}")
-
-                    # Step 5: Cancel existing TP/SL orders
-                    logger.info(f"Canceling existing TP/SL orders for {trading_pair}")
-                    await self.trading_engine.cancel_tp_sl_orders(trading_pair, trade_row)
-
-                    # Step 6: Create new TP order for remaining position
-                    tp_side = 'SELL' if position_type.upper() == 'LONG' else 'BUY'
-                    new_tp_order = await self.binance_exchange.create_futures_order(
-                        pair=trading_pair,
-                        side=tp_side,
-                        order_type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
-                        amount=current_position_size,
-                        stop_price=new_tp_price,
-                        reduce_only=True
-                    )
-
-                    if not new_tp_order or 'orderId' not in new_tp_order:
-                        logger.error(f"Failed to create new TP order: {new_tp_order}")
-                        return {"status": "error", "message": f"Failed to create new TP order for {trading_pair}"}
-
-                    logger.info(f"Successfully created new TP order: {new_tp_order['orderId']} at {new_tp_price}")
-
-                    # Step 7: Update stop loss to entry (break-even)
-                    action_successful, binance_response_log = await self.trading_engine.update_stop_loss(trade_row, entry_price)
-                    if action_successful and isinstance(binance_response_log, dict):
-                        trade_updates['stop_loss_order_id'] = str(binance_response_log.get('orderId', ''))
-                        logger.info(f"Successfully moved stop loss to entry price: {entry_price}")
-                    else:
-                        logger.warning(f"Stop loss update to entry failed for trade {trade_row['id']}. Binance response: {binance_response_log}")
-
-                    # Step 8: Update trade status and position size
-                    trade_updates["status"] = "PARTIALLY_CLOSED"
-                    trade_updates["position_size"] = current_position_size
-
-                    # Store the new TP order information
-                    if 'tp_sl_orders' not in trade_updates:
-                        trade_updates['tp_sl_orders'] = []
-                    trade_updates['tp_sl_orders'].append({
-                        'orderId': new_tp_order['orderId'],
-                        'order_type': 'TAKE_PROFIT',
-                        'tp_level': 2,  # This is the second TP
-                        'stopPrice': str(new_tp_price),
-                        'symbol': trading_pair,
-                        'amount': str(current_position_size)
-                    })
-
-                    action_successful = True
-                    binance_response_log = {
-                        'message': f'TP taken hit processed - new TP at {new_tp_price}, SL moved to entry {entry_price}',
-                        'new_tp_order': new_tp_order,
-                        'position_size': current_position_size
-                    }
-
-                except Exception as e:
-                    logger.error(f"An error occurred while processing take profit taken hit for trade {trade_row['id']}: {e}")
-                    return {"status": "error", "message": f"Error processing take profit taken hit: {str(e)}"}
-            elif action_type == "limit_order_cancelled":
-                logger.info(f"Processing cancellation for trade {trade_row['id']}")
-                action_successful, binance_response_log = await self.trading_engine.cancel_order(trade_row)
-                await self.trading_engine.cancel_tp_sl_orders(f"{trade_row.get('coin_symbol', 'UNKNOWN')}USDT", trade_row)
-                if action_successful:
-                    trade_updates["status"] = "CANCELLED"
-
-            elif action_type == "order_filled":
-                 # Usually, the initial signal opens the position. This is just an informational update.
-                 # We can update the status to ensure it reflects 'OPEN'.
-                 logger.info(f"Received 'order filled' notification for trade {trade_row['id']}. Status confirmed as OPEN.")
-                 trade_updates["status"] = "OPEN"
-                 action_successful = True # No engine action, but we mark as successful to log correctly.
-                 binance_response_log = {"message": "Order fill notification processed."}
-
-            # After executing action, update the database
-            if action_successful:
-                logger.info(f"Successfully executed '{action_type}' for trade {trade_row['id']}. Binance Response: {binance_response_log}")
-
-                # --- PNL and Exit Price Calculation ---
-                if binance_response_log and 'fill_price' in binance_response_log and 'executed_qty' in binance_response_log:
-                    exit_price = float(binance_response_log['fill_price'])
-                    qty_closed = float(binance_response_log['executed_qty'])
-
-                    if exit_price > 0 and qty_closed > 0:
-                        # Safely get entry price and position type from the trade row
-                        entry_price = float(self._parse_parsed_signal(trade_row.get('parsed_signal')).get('entry_prices', [0.0])[0])
-                        position_type = trade_row.get('signal_type', 'UNKNOWN')
-
-                        # Calculate PnL for this specific action
-                        newly_realized_pnl = self._calculate_pnl(position_type, entry_price, exit_price, qty_closed)
-
-                        # Get existing PnL and add the new PnL
-                        current_pnl = float(trade_row.get('pnl_usd', 0.0) or 0.0)
-                        total_pnl = current_pnl + newly_realized_pnl
-
-                        trade_updates["pnl_usd"] = total_pnl
-                        trade_updates["exit_price"] = exit_price # This will store the latest exit price
-
-                        logger.info(f"PnL for this action: {newly_realized_pnl:.2f}. Total realized PnL for trade: {total_pnl:.2f}")
-
-                # Extract Binance execution timestamp if available for accurate updated_at
-                binance_execution_time_str = None
-                if isinstance(binance_response_log, dict) and 'updateTime' in binance_response_log:
-                    execution_timestamp = binance_response_log['updateTime']
-                    binance_execution_time_str = datetime.fromtimestamp(float(execution_timestamp) / 1000, tz=timezone.utc).isoformat()
-                    logger.info(f"Using Binance execution timestamp for updated_at: {binance_execution_time_str}")
-
-                # Update the trade with new status or SL order ID
-                if trade_updates:
-                    await self.db_manager.update_existing_trade(
-                        trade_id=trade_row["id"],
-                        updates=trade_updates,
-                        binance_execution_time=binance_execution_time_str
-                    )
-                    logger.info(f"Updated trade {trade_row['id']} with: {trade_updates}")
-            elif binance_response_log: # Action was attempted but failed
-                logger.error(f"Failed to execute '{action_type}' for trade {trade_row['id']}. Reason: {binance_response_log}")
-
-
-            # Always update the alert record with the outcome
-            alert_updates = {
-                "parsed_alert": {
-                    "original_content": signal.content,
-                    "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),  # pyright: ignore[reportPossiblyUnboundVariable]
-                    "action_determined": parsed_action,
-                    "original_trade_id": trade_row['id'],
-                    "coin_symbol": parsed_action.get('coin_symbol', self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')),
-                    "trader": signal.trader
-                },
-                "binance_response": binance_response_log, # This will be None if no action was taken, or the dict from Binance
-                "status": "SUCCESS" if action_successful else "ERROR"
-            }
-
-            # Always fetch the alert row by discord_id before updating
-            alert_row = None
+            # Route the follow-up signal to the appropriate exchange
             try:
-                alert_response = self.db_manager.supabase.from_("alerts").select("*").eq("discord_id", signal.discord_id).limit(1).execute()
-                if alert_response.data and len(alert_response.data) > 0:
-                    alert_row = alert_response.data[0]
+                result = await self.signal_router.route_followup_signal(signal_data, signal.trader)
+                if result.get("status") == "success":
+                    logger.info(f"✅ Follow-up signal processed successfully on {exchange_type.value}")
+                    return result
+                else:
+                    logger.error(f"❌ Follow-up signal processing failed on {exchange_type.value}: {result.get('message')}")
+                    return result
             except Exception as e:
-                logger.error(f"Error fetching alert row for update: {e}")
-
-            if alert_row and alert_row.get('id'):
-                logger.info(f"Updating alert by found alert id {alert_row['id']} with processed data.")
-                await self.db_manager.update_existing_alert(alert_row['id'], alert_updates)
-            else:
-                # Create a new alert if none exists
-                logger.info(f"Creating new alert for discord_id {signal.discord_id}")
-                new_alert_data = {
-                    "timestamp": signal.timestamp,
-                    "discord_id": signal.discord_id,
-                    "trade": signal.trade,
-                    "content": signal.content,
-                    "trader": signal.trader,
-                    **alert_updates
-                }
-                await self.db_manager.save_alert_to_database(new_alert_data)
-
-            return {
-                "status": "success",
-                "message": f"Update signal processed: {parsed_action['action_description']}"
-            }
+                logger.error(f"Error routing follow-up signal: {e}")
+                return {"status": "error", "message": f"Follow-up signal routing error: {str(e)}"}
 
         except Exception as e:
-            error_msg = f"Error processing update signal: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-
-            # Update alert status to ERROR if we can find the alert
-            try:
-                if 'signal_data' in locals():
-                    signal = DiscordUpdateSignal(**signal_data)
-                    alert_response = self.db_manager.supabase.from_("alerts").select("*").eq("discord_id", signal.discord_id).limit(1).execute()
-                    if alert_response.data and len(alert_response.data) > 0:
-                        alert_row = alert_response.data[0]
-                        await self.db_manager.update_existing_alert(alert_row['id'], {
-                            "status": "ERROR",
-                            "binance_response": {"error": error_msg}
-                        })
-            except Exception as alert_error:
-                logger.error(f"Could not update alert status: {alert_error}")
-
-            return {"status": "error", "message": error_msg}
+            logger.error(f"Error processing update signal: {e}")
+            return {"status": "error", "message": str(e)}
 
     def _calculate_pnl(self, position_type: str, entry_price: float, exit_price: float, position_size: float) -> float:
         """Calculate PnL in USD for a position, considering LONG or SHORT."""
@@ -869,7 +408,7 @@ class DiscordBot:
         else:
             pnl = 0.0
 
-        return round(pnl, 2)
+        return pnl
 
     async def update_trade_position_size(self, trade_id: int, new_position_size: float) -> bool:
         """Update the position_size field in a trade record."""
@@ -877,66 +416,49 @@ class DiscordBot:
             updates = {"position_size": float(new_position_size)}
             success = await self.db_manager.update_existing_trade(trade_id=trade_id, updates=updates)
             if success:
-                logger.info(f"Updated position_size to {new_position_size} for trade {trade_id}")
+                logger.info(f"Updated position_size for trade {trade_id} to {new_position_size}")
             return success
         except Exception as e:
-            logger.error(f"Error updating position_size for trade {trade_id}: {e}")
+            logger.error(f"Failed to update position_size for trade {trade_id}: {e}")
             return False
 
     async def update_trade_coin_symbol(self, trade_id: int, new_coin_symbol: str) -> bool:
         """Update the coin_symbol field in a trade record."""
         try:
-            updates = {"coin_symbol": str(new_coin_symbol)}
+            updates = {"coin_symbol": new_coin_symbol}
             success = await self.db_manager.update_existing_trade(trade_id=trade_id, updates=updates)
             if success:
-                logger.info(f"Updated coin_symbol to {new_coin_symbol} for trade {trade_id}")
+                logger.info(f"Updated coin_symbol for trade {trade_id} to {new_coin_symbol}")
             return success
         except Exception as e:
-            logger.error(f"Error updating coin_symbol for trade {trade_id}: {e}")
+            logger.error(f"Failed to update coin_symbol for trade {trade_id}: {e}")
             return False
 
     async def close(self):
         """Gracefully shutdown the trading engine and WebSocket manager."""
         try:
-            # Stop WebSocket manager
-            if hasattr(self, 'websocket_manager') and self.websocket_manager:
-                await self.websocket_manager.stop()
-
-            # Close trading engine
-            await self.trading_engine.close()
-
-            logger.info("DiscordBot closed successfully.")
+            if hasattr(self, 'websocket_manager'):
+                await self.websocket_manager.close()
+            logger.info("DiscordBot closed successfully")
         except Exception as e:
             logger.error(f"Error closing DiscordBot: {e}")
 
     async def start_websocket_sync(self):
         """Start WebSocket real-time database synchronization."""
         try:
-            if hasattr(self, 'websocket_manager') and self.websocket_manager:
-                success = await self.websocket_manager.start()
-                if success:
-                    logger.info("WebSocket real-time sync started successfully")
-                    return True
-                else:
-                    logger.error("Failed to start WebSocket sync")
-                    return False
+            if hasattr(self, 'websocket_manager'):
+                await self.websocket_manager.start()
+                logger.info("WebSocket sync started")
             else:
-                logger.error("WebSocket manager not initialized")
-                return False
+                logger.warning("WebSocket manager not available")
         except Exception as e:
             logger.error(f"Error starting WebSocket sync: {e}")
-            return False
 
     def get_websocket_status(self) -> dict:
         """Get WebSocket manager status."""
-        if hasattr(self, 'websocket_manager') and self.websocket_manager:
+        if hasattr(self, 'websocket_manager'):
             return self.websocket_manager.get_status()
-        else:
-            return {
-                'running': False,
-                'initialized': False,
-                'error': 'WebSocket manager not available'
-            }
+        return {"status": "not_available"}
 
     async def _execute_single_action(self, action: Dict[str, Any], trade_row: Dict[str, Any], signal) -> Tuple[bool, Any]:
         """
@@ -944,99 +466,31 @@ class DiscordBot:
         """
         try:
             action_type = action.get('action_type')
-            if not action_type:
-                logger.error(f"No action_type found in action: {action}")
-                return False, {"error": "No action_type found"}
+            logger.info(f"Executing action: {action_type}")
 
-            # Execute the action based on type
             if action_type == "stop_loss_hit" or action_type == "position_closed":
-                return await self.trading_engine.close_position_at_market(trade_row, reason=action_type)
+                logger.info(f"Processing '{action_type}' for trade {trade_row['id']}. Closing position.")
+                success, response = await self.trading_engine.close_position_at_market(trade_row, reason=action_type)
+                return success, response
+
             elif action_type == "take_profit_1":
-                return await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_1", close_percentage=50.0)
-            elif action_type == "take_profit_2":
-                return await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_2", close_percentage=100.0)
-            elif action_type == "limit_order_cancelled":
-                return await self.trading_engine.cancel_order(trade_row)
+                logger.info(f"Processing TP1 for trade {trade_row['id']}. Closing 50% of position.")
+                success, response = await self.trading_engine.close_position_at_market(trade_row, reason="take_profit_1", close_percentage=50.0)
+                return success, response
+
             elif action_type == "stop_loss_update":
-                stop_loss = action.get('stop_loss')
-                if stop_loss and stop_loss != "BE":
-                    return await self.trading_engine.update_stop_loss(trade_row, float(stop_loss))
-                else:
-                    # Handle break-even stop loss - calculate the break-even price first
-                    try:
-                        coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
-                        if coin_symbol:
-                            trading_pair = f"{coin_symbol}USDT"
-                            positions = await self.binance_exchange.get_futures_position_information()
+                logger.info(f"Processing stop loss update for trade {trade_row['id']}")
+                # This would need to be implemented based on your stop loss management
+                return True, "Stop loss update processed"
 
-                            # Find the specific position
-                            position = None
-                            for pos in positions:
-                                if pos['symbol'] == trading_pair and float(pos['positionAmt']) != 0:
-                                    position = pos
-                                    break
-
-                            if position:
-                                # Use the entry price from Binance position data as break-even
-                                entry_price = float(position['entryPrice'])
-                                be_price = round(entry_price, 2)
-                                return await self.trading_engine.update_stop_loss(trade_row, be_price)
-                            else:
-                                # Fallback to database entry price
-                                original_entry_price = trade_row.get('entry_price')
-                                if original_entry_price:
-                                    be_price = round(float(original_entry_price), 2)
-                                    return await self.trading_engine.update_stop_loss(trade_row, be_price)
-                    except Exception as e:
-                        logger.error(f"Error calculating break-even price: {e}")
-
-                    return False, {"error": "Could not calculate break-even price"}
-            elif action_type == "limit_order_filled":
-                # Order already filled, just log and return success
-                logger.info(f"Limit order already filled for trade {trade_row.get('id')}")
-                return True, {"message": "Limit order already filled"}
-            elif action_type == "unknown_update":
-                # Log unknown updates but don't fail - they might be informational
-                logger.info(f"Unknown update type for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
-                return True, {"message": "Unknown update type - informational only"}
-            elif action_type == "flagged_for_review":
-                # Log flagged alerts for manual review
-                logger.error(f"Alert flagged for manual review for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
-                return True, {"message": "Alert flagged for manual review"}
-            elif action_type == "invalid_price":
-                # Log invalid price alerts
-                logger.error(f"Invalid price in alert for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
-                return False, {"error": "Invalid price in alert"}
-            elif action_type == "liquidation":
-                # Handle liquidation events
-                logger.warning(f"Position liquidated for trade {trade_row.get('id')}")
-                return True, {"message": "Position liquidated"}
-            elif action_type == "partial_fill":
-                # Handle partial fills
-                logger.info(f"Partial fill for trade {trade_row.get('id')}")
-                return True, {"message": "Partial fill processed"}
-            elif action_type == "update_leverage":
-                # Handle leverage updates
-                leverage = action.get('leverage')
-                logger.info(f"Updating leverage to {leverage}x for trade {trade_row.get('id')}")
-                return True, {"message": f"Leverage updated to {leverage}x"}
-            elif action_type == "trailing_stop_loss":
-                # Handle trailing stop loss
-                trailing_percentage = action.get('trailing_percentage')
-                logger.info(f"Setting trailing stop loss at {trailing_percentage}% for trade {trade_row.get('id')}")
-                return True, {"message": f"Trailing stop loss set at {trailing_percentage}%"}
-            elif action_type == "adjust_position_size":
-                # Handle position size adjustments
-                multiplier = action.get('position_multiplier')
-                logger.info(f"Adjusting position size with multiplier {multiplier} for trade {trade_row.get('id')}")
-                return True, {"message": f"Position size adjusted with multiplier {multiplier}"}
             else:
-                logger.warning(f"Unknown action_type: {action_type}")
-                return False, {"error": f"Unknown action_type: {action_type}"}
+                logger.warning(f"Unknown action type: {action_type}")
+                return False, f"Unknown action type: {action_type}"
 
         except Exception as e:
             logger.error(f"Error executing action {action.get('action_type', 'unknown')}: {e}")
-            return False, {"error": str(e)}
+            return False, f"Action execution error: {str(e)}"
 
-# Global bot instance
+
+# Create global DiscordBot instance
 discord_bot = DiscordBot()

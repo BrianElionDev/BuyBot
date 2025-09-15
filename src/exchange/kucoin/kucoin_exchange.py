@@ -213,10 +213,10 @@ class KucoinExchange(ExchangeBase):
             spot_service = self.client.get_spot_service()
             order_api = spot_service.get_order_api()
 
-            from kucoin_universal_sdk.generate.spot.order.model_create_order_req import CreateOrderReqBuilder
+            from kucoin_universal_sdk.generate.spot.order.model_add_order_req import AddOrderReqBuilder
 
             # Build the order request
-            order_request = CreateOrderReqBuilder() \
+            order_request = AddOrderReqBuilder() \
                 .set_client_oid(order_params["clientOid"]) \
                 .set_side(order_params["side"]) \
                 .set_symbol(order_params["symbol"]) \
@@ -229,7 +229,7 @@ class KucoinExchange(ExchangeBase):
                 order_request.set_stop_price(order_params["stopPrice"])
 
             request = order_request.build()
-            response = order_api.create_order(request)
+            response = order_api.add_order(request)
 
             # Format response to match Binance format
             formatted_response = {
@@ -388,7 +388,11 @@ class KucoinExchange(ExchangeBase):
                 try:
                     request = GetTickerReqBuilder().set_symbol(symbol).build()
                     response = market_api.get_ticker(request)
-                    prices[symbol] = float(response.price) if hasattr(response, 'price') else 0.0
+                    if hasattr(response, 'price') and response.price is not None:
+                        prices[symbol] = float(response.price)
+                    else:
+                        logger.warning(f"No price data received for {symbol}")
+                        prices[symbol] = 0.0
                 except Exception as e:
                     logger.warning(f"Failed to get price for {symbol}: {e}")
                     prices[symbol] = 0.0
