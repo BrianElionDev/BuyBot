@@ -49,3 +49,4 @@ coverage.xml
 # Windows
 Thumbs.db
 docs/
+.cursor/

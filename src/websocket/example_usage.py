@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from src.websocket.binance_websocket_manager import BinanceWebSocketManager
+from src.websocket import WebSocketManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class WebSocketIntegrationExample:
             raise ValueError("BINANCE_API_KEY and BINANCE_API_SECRET must be set")
 
         # Initialize WebSocket manager
-        self.ws_manager = BinanceWebSocketManager(
+        self.ws_manager = WebSocketManager(
             api_key=api_key,
             api_secret=api_secret,
             is_testnet=is_testnet
@@ -76,7 +76,7 @@ class WebSocketIntegrationExample:
                     return
 
                 # Update trade based on order status
-                updates = {
+                updates: Dict[str, Any] = {
                     'updated_at': datetime.now(timezone.utc).isoformat(),
                     'binance_response': str(data)
                 }
@@ -120,7 +120,7 @@ class WebSocketIntegrationExample:
 
                 # Extract data from ACCOUNT_UPDATE event structure
                 account_data = data.get('a', {})
-                
+
                 # Update position information in database
                 # This could be used to track unrealized PnL
                 for balance in account_data.get('B', []):
@@ -180,12 +180,12 @@ class WebSocketIntegrationExample:
             logger.error(f"WebSocket error: {error_msg}")
 
         # Register handlers
-        self.ws_manager.add_event_handler('ORDER_TRADE_UPDATE', handle_execution_report)
-        self.ws_manager.add_event_handler('outboundAccountPosition', handle_account_position)
-        self.ws_manager.add_event_handler('ticker', handle_ticker)
-        self.ws_manager.add_event_handler('connection', handle_connection)
-        self.ws_manager.add_event_handler('disconnection', handle_disconnection)
-        self.ws_manager.add_event_handler('error', handle_error)
+        self.ws_manager.register_handler('executionReport', handle_execution_report)
+        self.ws_manager.register_handler('outboundAccountPosition', handle_account_position)
+        self.ws_manager.register_handler('ticker', handle_ticker)
+        self.ws_manager.register_handler('connection', handle_connection)
+        self.ws_manager.register_handler('disconnection', handle_disconnection)
+        self.ws_manager.register_handler('error', handle_error)
 
     async def _find_trade_by_order_id(self, order_id: str):
         """Find trade in database by Binance order ID."""

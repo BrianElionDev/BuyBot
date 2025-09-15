@@ -8,6 +8,7 @@ def reload_env():
 
     # Update global variables with new values
     global BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET
+    global KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE, KUCOIN_TESTNET
     global TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE
     global TARGET_GROUP_ID, NOTIFICATION_GROUP_ID
     global SUPABASE_URL, SUPABASE_KEY
@@ -16,6 +17,11 @@ def reload_env():
     BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
     BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
     BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
+
+    KUCOIN_API_KEY = os.getenv("KUCOIN_API_KEY")
+    KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
+    KUCOIN_API_PASSPHRASE = os.getenv("KUCOIN_API_PASSPHRASE")
+    KUCOIN_TESTNET = os.getenv("KUCOIN_TESTNET", "True").lower() == "true"
 
     TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
     TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
@@ -49,6 +55,12 @@ NOTIFICATION_GROUP_ID = int(os.getenv("NOTIFICATION_GROUP_ID", "0"))
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
+
+# KuCoin
+KUCOIN_API_KEY = os.getenv("KUCOIN_API_KEY")
+KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
+KUCOIN_API_PASSPHRASE = os.getenv("KUCOIN_API_PASSPHRASE")
+KUCOIN_TESTNET = os.getenv("KUCOIN_TESTNET", "True").lower() == "true"
 
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")

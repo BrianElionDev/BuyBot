@@ -1,11 +1,8 @@
 """
 Trade Retry Utilities for Discord Bot
 
-BUSINESS LOGIC: This module ONLY processes trades and alerts from trader "@Johnny".
-All database queries are filtered to exclude trades from other traders.
-
-This ensures that when switching between testnet/mainnet accounts, only the
-authorized trader's data is processed and synced.
+This module processes trades and alerts from configured traders.
+All database queries are filtered based on trader configuration.
 """
 
 import asyncio
@@ -17,21 +14,17 @@ from typing import Optional, Dict, List, Tuple
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from discord_bot.discord_bot import DiscordBot
-from discord_bot.database import (
-    update_trade_pnl,
-    get_trades_needing_pnl_sync,
-)
+from src.config.trader_config import TraderConfig
 
 # --- Setup ---
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Business logic: Only process trades from specific trader
-ALLOWED_TRADER = "@Johnny"
-
-def get_trader_filter():
+def get_trader_filter(trader: str = None):
     """Get the trader filter for database queries."""
-    return {"trader": ALLOWED_TRADER}
+    if trader:
+        return {"trader": trader}
+    return {}
 
 def get_24hr_cutoff_iso():
   now = datetime.now(timezone.utc)
@@ -121,9 +114,18 @@ async def process_pending_trades(bot: DiscordBot, supabase: Client):
     logging.info("--- Processing pending trades ---")
     try:
         cutoff = get_24hr_cutoff_iso()
-        response = supabase.from_("trades").select("*").eq("status", "pending").eq("trader", ALLOWED_TRADER).gte("timestamp", cutoff).execute()
-        trades = response.data or []
-        logging.info(f"Found {len(trades)} pending trades from {ALLOWED_TRADER}.")
+        # Process all supported traders
+        supported_traders = TraderConfig.get_supported_traders()
+        all_trades = []
+
+        for trader in supported_traders:
+            response = supabase.from_("trades").select("*").eq("status", "pending").eq("trader", trader).gte("timestamp", cutoff).execute()
+            trader_trades = response.data or []
+            all_trades.extend(trader_trades)
+            logging.info(f"Found {len(trader_trades)} pending trades from {trader}.")
+
+        trades = all_trades
+        logging.info(f"Total pending trades from all supported traders: {len(trades)}")
     except Exception as e:
         logging.error(f"Error fetching pending trades: {e}")
         return
@@ -142,9 +144,18 @@ async def process_cooldown_trades(bot: DiscordBot, supabase: Client):
     cooldown_pattern = "Trade cooldown active for%"
     try:
         cutoff = get_24hr_cutoff_iso()
-        response = supabase.from_("trades").select("*").like("binance_response", cooldown_pattern).eq("trader", ALLOWED_TRADER).gte("timestamp", cutoff).execute()
-        trades = response.data or []
-        logging.info(f"Found {len(trades)} cooldown trades from {ALLOWED_TRADER}.")
+        # Process all supported traders
+        supported_traders = TraderConfig.get_supported_traders()
+        all_trades = []
+
+        for trader in supported_traders:
+            response = supabase.from_("trades").select("*").like("binance_response", cooldown_pattern).eq("trader", trader).gte("timestamp", cutoff).execute()
+            trader_trades = response.data or []
+            all_trades.extend(trader_trades)
+            logging.info(f"Found {len(trader_trades)} cooldown trades from {trader}.")
+
+        trades = all_trades
+        logging.info(f"Total cooldown trades from all supported traders: {len(trades)}")
     except Exception as e:
         logging.error(f"Error fetching cooldown trades: {e}")
         return
@@ -157,14 +168,23 @@ async def process_cooldown_trades(bot: DiscordBot, supabase: Client):
 
 async def process_empty_binance_response_trades(bot: DiscordBot, supabase: Client):
     """
-    Find all trades with empty binance_response from @Johnny and timestamp >= '2025-07-14T00:00:00.000Z', then retry them.
+    Find all trades with empty binance_response from all supported traders and retry them.
     """
-    logging.info("--- Processing trades with empty binance_response from @Johnny ---")
+    logging.info("--- Processing trades with empty binance_response from all supported traders ---")
     try:
         cutoff = get_24hr_cutoff_iso()
-        response = supabase.from_("trades").select("*").filter("binance_response", "eq", "").eq("trader", ALLOWED_TRADER).gte("timestamp", cutoff).execute()
-        trades = response.data or []
-        logging.info(f"Found {len(trades)} trades with empty binance_response from {ALLOWED_TRADER}.")
+        # Process all supported traders
+        supported_traders = TraderConfig.get_supported_traders()
+        all_trades = []
+
+        for trader in supported_traders:
+            response = supabase.from_("trades").select("*").filter("binance_response", "eq", "").eq("trader", trader).gte("timestamp", cutoff).execute()
+            trader_trades = response.data or []
+            all_trades.extend(trader_trades)
+            logging.info(f"Found {len(trader_trades)} trades with empty binance_response from {trader}.")
+
+        trades = all_trades
+        logging.info(f"Total trades with empty binance_response from all supported traders: {len(trades)}")
     except Exception as e:
         logging.error(f"Error fetching trades with empty binance_response: {e}")
         return
@@ -183,12 +203,21 @@ async def process_margin_insufficient_trades(bot: DiscordBot, supabase: Client):
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=24)
     cutoff_iso = cutoff.isoformat()
-    logging.info("--- Processing margin insufficient trades from @Johnny ---")
+    logging.info("--- Processing margin insufficient trades from all supported traders ---")
     pattern = '%APIError(code=-2019)%'
     try:
-        response = supabase.from_("trades").select("*").like("binance_response", pattern).eq("trader", ALLOWED_TRADER).gte("timestamp", cutoff_iso).execute()
-        trades = response.data or []
-        logging.info(f"Found {len(trades)} margin insufficient trades from {ALLOWED_TRADER}.")
+        # Process all supported traders
+        supported_traders = TraderConfig.get_supported_traders()
+        all_trades = []
+
+        for trader in supported_traders:
+            response = supabase.from_("trades").select("*").like("binance_response", pattern).eq("trader", trader).gte("timestamp", cutoff_iso).execute()
+            trader_trades = response.data or []
+            all_trades.extend(trader_trades)
+            logging.info(f"Found {len(trader_trades)} margin insufficient trades from {trader}.")
+
+        trades = all_trades
+        logging.info(f"Total margin insufficient trades from all supported traders: {len(trades)}")
     except Exception as e:
         logging.error(f"Error fetching margin insufficient trades: {e}")
         return
@@ -655,7 +684,7 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
                     order_status = matching_order.get('status')
 
                     # Import status constants
-                    from discord_bot.status_constants import map_binance_order_status
+                    from discord_bot.constants import map_binance_order_status
 
                     # Update order status
                     mapped_order_status = map_binance_order_status(order_status)
@@ -1169,10 +1198,12 @@ async def get_income_for_trade_period(
         return []
 
 
-async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bool:
+async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> Optional[bool]:
     """Backfill a single trade using order lifecycle matching with income history."""
     try:
         trade_id = trade.get('id')
+        if not trade_id:
+            return False
 
         # Use the enhanced symbol extraction function
         symbol = extract_symbol_from_trade(trade)
@@ -1188,7 +1219,10 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
             logging.warning(f"Trade {trade_id} has no valid timestamps")
             return False
 
-        # Get income records for this specific trade period
+        if end_time is None:
+            logging.warning(f"Trade {trade_id} has no valid end time")
+            return False
+
         income_records = await get_income_for_trade_period(bot, symbol, start_time, end_time)
 
         if not income_records:
@@ -1277,3 +1311,27 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> bo
     except Exception as e:
         logging.error(f"Error backfilling trade {trade.get('id')} with lifecycle: {e}")
         return False
+
+
+def update_trade_pnl(supabase, trade_id: int, pnl_data: dict) -> bool:
+    """Update trade record with P&L data"""
+    try:
+        pnl_data['updated_at'] = datetime.now(timezone.utc).isoformat()
+        supabase.table("trades").update(pnl_data).eq("id", trade_id).execute()
+        return True
+    except Exception as e:
+        logging.error(f"Failed to update trade P&L: {e}")
+        return False
+
+
+def get_trades_needing_pnl_sync(supabase) -> list:
+    """Get trades that need P&L data sync"""
+    try:
+        # Get trades without P&L data or with old sync timestamp
+        result = supabase.table("trades").select("*").or_(
+            "entry_price.is.null,last_pnl_sync.is.null"
+        ).execute()
+        return result.data or []
+    except Exception as e:
+        logging.error(f"Failed to get trades needing P&L sync: {e}")
+        return []
