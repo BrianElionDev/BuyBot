@@ -479,31 +479,22 @@ async def backfill_missing_prices(bot, supabase):
     try:
         logger.info("[Scheduler] Starting price backfill for recent trades...")
 
-        recent_trades = await bot.db_manager.get_trades_by_status("OPEN", limit=50)
+        # Create backfill manager with existing clients
+        backfill_manager = HistoricalTradeBackfillManager()
+        backfill_manager.binance_exchange = bot.binance_exchange  # Use existing exchange instance
+        backfill_manager.db_manager = bot.db_manager  # Use existing database manager
 
-        if recent_trades:
-            updated_count = 0
-            for trade in recent_trades:
-                try:
-                    if trade.get('coin_symbol'):
-                        current_price = await bot.price_service.get_coin_price(trade['coin_symbol'])
-                        if current_price:
-                            if not trade.get('binance_entry_price') and trade.get('entry_price'):
-                                await bot.db_manager.update_trade_with_original_response(
-                                    trade['id'],
-                                    {'binance_entry_price': current_price}
-                                )
-                                updated_count += 1
-                except Exception as e:
-                    logger.debug(f"Could not update price for trade {trade.get('id')}: {e}")
-                    continue
+        # Backfill prices for last 7 days (recent trades that might have missed WebSocket updates)
+        # Phase 1: Fill missing prices only
+        await backfill_manager.backfill_from_historical_data(days=7, update_existing=False)
 
-            if updated_count > 0:
-                logger.info(f"[Scheduler] Price backfill: {updated_count} trades updated")
-            else:
-                logger.info("[Scheduler] Price backfill: No trades needed updating")
-        else:
-            logger.info("[Scheduler] Price backfill: No recent trades found")
+        # Phase 2: Update existing prices for better accuracy (every 2 hours for better accuracy)
+        from datetime import datetime
+        current_hour = datetime.now().hour
+        if current_hour % 2 == 0:  # Run every 2 hours (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22)
+            await backfill_manager.backfill_from_historical_data(days=7, update_existing=True)
+
+        logger.info("[Scheduler] Price backfill completed")
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in price backfill: {e}")

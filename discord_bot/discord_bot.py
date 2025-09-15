@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from datetime import datetime, timezone
 import logging
 import re
 import time
@@ -27,6 +28,7 @@ from src.services.pricing.price_service import PriceService
 from src.exchange import BinanceExchange, KucoinExchange
 from discord_bot.websocket import DiscordBotWebSocketManager
 from config import settings
+
 
 # Setup logging
 logger = logging.getLogger(__name__)

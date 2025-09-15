@@ -6,6 +6,8 @@ Content-Type: application/json
     "timestamp": "2025-08-14T12:35:06.928Z",
     "discord_id": "1029838895535374439",
     "trader": "@-Johnny",
+    "discord_id": "1029838895535374439",
+    "trader": "@-Johnny",
     "content": "Longed eth 4670 sl 4558",
     "structured": "ETH|Entry:|4670|SL:|4558"
 }

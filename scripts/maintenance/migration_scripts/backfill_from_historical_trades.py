@@ -4,6 +4,15 @@ Backfill missing Binance entry and exit prices from historical trade data.
 
 This script uses timestamp windows (like PnL calculation) to group related orders
 that belong to the same trade, then calculates weighted average prices for entry and exit.
+
+FIXED VERSION:
+- Uses signal_type from database to determine LONG/SHORT positions (not execution timing)
+- Properly assigns entry/exit prices based on actual position type
+- LONG: BUY executions = entry price, SELL executions = exit price
+- SHORT: SELL executions = entry price, BUY executions = exit price
+- Can update existing records for better accuracy
+- Compares existing vs calculated prices and shows improvements
+- Two-phase approach: fill missing first, then update existing for accuracy
 """
 
 import asyncio
@@ -105,6 +114,23 @@ class HistoricalTradeBackfillManager:
                 logger.info(f"Extracted symbol '{symbol}' from coin_symbol for trade {trade.get('id')}")
                 return symbol
 
+            # Try to extract from parsed_signal
+            parsed_signal = trade.get('parsed_signal', '')
+            if parsed_signal:
+                try:
+                    if isinstance(parsed_signal, str):
+                        signal_data = json.loads(parsed_signal)
+                    else:
+                        signal_data = parsed_signal
+
+                    coin_symbol = signal_data.get('coin_symbol', '')
+                    if coin_symbol:
+                        symbol = f"{coin_symbol}USDT"
+                        logger.info(f"Extracted symbol '{symbol}' from parsed_signal for trade {trade.get('id')}")
+                        return symbol
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
             # Try to extract from discord_id as fallback
             discord_id = trade.get('discord_id', '')
 
@@ -128,6 +154,39 @@ class HistoricalTradeBackfillManager:
         except Exception as e:
             logger.error(f"Error extracting symbol from trade {trade.get('id')}: {e}")
             return None
+
+    def get_position_type_from_trade(self, trade: Dict[str, Any]) -> str:
+        """Get position type from trade data with proper fallback logic."""
+        try:
+            # First try to get from signal_type field (most reliable)
+            signal_type = trade.get('signal_type', '').upper()
+            if signal_type in ['LONG', 'SHORT']:
+                logger.info(f"Using signal_type '{signal_type}' for trade {trade.get('id')}")
+                return signal_type
+
+            # Try to extract from parsed_signal
+            parsed_signal = trade.get('parsed_signal', '')
+            if parsed_signal:
+                try:
+                    if isinstance(parsed_signal, str):
+                        signal_data = json.loads(parsed_signal)
+                    else:
+                        signal_data = parsed_signal
+
+                    position_type = signal_data.get('position_type', '').upper()
+                    if position_type in ['LONG', 'SHORT']:
+                        logger.info(f"Using position_type '{position_type}' from parsed_signal for trade {trade.get('id')}")
+                        return position_type
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # Default to LONG if we can't determine
+            logger.warning(f"Could not determine position type for trade {trade.get('id')}, defaulting to LONG")
+            return 'LONG'
+
+        except Exception as e:
+            logger.error(f"Error getting position type from trade {trade.get('id')}: {e}")
+            return 'LONG'
 
     async def get_executions_in_trade_window(self, symbol: str, start_time: int, end_time: int) -> Dict[str, List[Dict[str, Any]]]:
         """Get all executions that occurred within the trade's timestamp window."""
@@ -217,6 +276,67 @@ class HistoricalTradeBackfillManager:
         else:
             return 0.0
 
+    def calculate_entry_exit_prices(self, position_type: str, buy_executions: List[Dict], sell_executions: List[Dict]) -> Tuple[float, float]:
+        """Calculate entry and exit prices based on position type and executions."""
+        buy_avg_price = self.calculate_weighted_average_price(buy_executions)
+        sell_avg_price = self.calculate_weighted_average_price(sell_executions)
+
+        # Calculate total quantities
+        total_buy_qty = sum(float(execution.get('qty', 0)) for execution in buy_executions)
+        total_sell_qty = sum(float(execution.get('qty', 0)) for execution in sell_executions)
+
+        logger.info(f"Position type: {position_type}, buy_qty={total_buy_qty}, sell_qty={total_sell_qty}")
+        logger.info(f"Buy avg price: {buy_avg_price}, Sell avg price: {sell_avg_price}")
+
+        # Determine entry and exit prices based on position type
+        if position_type.upper() == 'LONG':
+            # Long position: BUY is entry, SELL is exit
+            entry_price = buy_avg_price
+            exit_price = sell_avg_price if total_sell_qty > 0 else 0.0
+            logger.info(f"LONG position: entry={entry_price} (from buys), exit={exit_price} (from sells)")
+        else:  # SHORT
+            # Short position: SELL is entry, BUY is exit
+            entry_price = sell_avg_price
+            exit_price = buy_avg_price if total_buy_qty > 0 else 0.0
+            logger.info(f"SHORT position: entry={entry_price} (from sells), exit={exit_price} (from buys)")
+
+        return entry_price, exit_price
+
+    def compare_prices(self, trade: Dict, new_entry_price: float, new_exit_price: float) -> Dict[str, Any]:
+        """Compare existing prices with newly calculated prices."""
+        try:
+            existing_entry = trade.get('binance_entry_price')
+            existing_exit = trade.get('binance_exit_price')
+
+            comparison = {
+                'entry_changed': False,
+                'exit_changed': False,
+                'entry_diff': 0.0,
+                'exit_diff': 0.0,
+                'entry_pct_diff': 0.0,
+                'exit_pct_diff': 0.0
+            }
+
+            if existing_entry and float(existing_entry) > 0:
+                existing_entry_float = float(existing_entry)
+                if abs(existing_entry_float - new_entry_price) > 0.01:  # Significant difference
+                    comparison['entry_changed'] = True
+                    comparison['entry_diff'] = new_entry_price - existing_entry_float
+                    comparison['entry_pct_diff'] = (comparison['entry_diff'] / existing_entry_float) * 100
+
+            if existing_exit and float(existing_exit) > 0:
+                existing_exit_float = float(existing_exit)
+                if abs(existing_exit_float - new_exit_price) > 0.01:  # Significant difference
+                    comparison['exit_changed'] = True
+                    comparison['exit_diff'] = new_exit_price - existing_exit_float
+                    comparison['exit_pct_diff'] = (comparison['exit_diff'] / existing_exit_float) * 100
+
+            return comparison
+
+        except Exception as e:
+            logger.error(f"Error comparing prices: {e}")
+            return {'entry_changed': False, 'exit_changed': False, 'entry_diff': 0.0, 'exit_diff': 0.0, 'entry_pct_diff': 0.0, 'exit_pct_diff': 0.0}
+
     async def update_trade_prices(self, trade_id: int, entry_price: float, exit_price: float) -> bool:
         """Update trade with calculated entry and exit prices."""
         try:
@@ -247,8 +367,8 @@ class HistoricalTradeBackfillManager:
             logger.error(f"Error updating trade {trade_id}: {e}")
             return False
 
-    async def find_trades_with_missing_prices(self, days: int = 7) -> List[Dict[str, Any]]:
-        """Find trades with missing Binance prices from the last N days."""
+    async def find_trades_with_missing_prices(self, days: int = 7, update_existing: bool = False) -> List[Dict[str, Any]]:
+        """Find trades with missing or existing Binance prices from the last N days."""
         try:
             # Calculate cutoff date
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -257,7 +377,7 @@ class HistoricalTradeBackfillManager:
             # Query for trades with missing prices
             response = self.db_manager.supabase.from_("trades").select(
                 "id, discord_id, exchange_order_id, stop_loss_order_id, status, "
-                "binance_entry_price, binance_exit_price, binance_response, created_at, coin_symbol, closed_at, updated_at"
+                "binance_entry_price, binance_exit_price, binance_response, created_at, coin_symbol, closed_at, updated_at, signal_type, parsed_signal"
             ).not_.is_("exchange_order_id", "null").gte("created_at", cutoff_iso).execute()
 
             trades_to_process = []
@@ -269,31 +389,37 @@ class HistoricalTradeBackfillManager:
                     logger.info(f"Skipping test trade {trade.get('id')} with discord_id: {discord_id}")
                     continue
 
-                # Check if prices are missing
+                # Check if prices are missing or if we should update existing ones
                 entry_price = trade.get('binance_entry_price')
                 exit_price = trade.get('binance_exit_price')
 
-                if not entry_price or float(entry_price) == 0 or not exit_price or float(exit_price) == 0:
-                    trades_to_process.append(trade)
-                    logger.info(f"Found trade {trade.get('id')} (Discord: {discord_id}) with missing prices - Entry: {entry_price}, Exit: {exit_price}")
+                missing_prices = not entry_price or float(entry_price or 0) == 0 or not exit_price or float(exit_price or 0) == 0
 
-            logger.info(f"Found {len(trades_to_process)} trades with missing prices")
+                if missing_prices or update_existing:
+                    trades_to_process.append(trade)
+                    if missing_prices:
+                        logger.info(f"Found trade {trade.get('id')} (Discord: {discord_id}) with missing prices - Entry: {entry_price}, Exit: {exit_price}")
+                    else:
+                        logger.info(f"Found trade {trade.get('id')} (Discord: {discord_id}) with existing prices - Entry: {entry_price}, Exit: {exit_price} (will recalculate for accuracy)")
+
+            logger.info(f"Found {len(trades_to_process)} trades to process ({'including existing' if update_existing else 'missing only'})")
             return trades_to_process
 
         except Exception as e:
             logger.error(f"Error finding trades with missing prices: {e}")
             return []
 
-    async def backfill_from_historical_data(self, days: int = 7):
+    async def backfill_from_historical_data(self, days: int = 7, update_existing: bool = False):
         """Backfill missing prices using timestamp windows to group related orders."""
         try:
-            logger.info(f"Starting backfill for trades from last {days} days")
+            mode = "missing and existing" if update_existing else "missing only"
+            logger.info(f"Starting backfill for trades from last {days} days ({mode})")
 
             # Initialize Binance client
             await self.binance_exchange._init_client()
 
-            # Find trades with missing prices
-            trades = await self.find_trades_with_missing_prices(days)
+            # Find trades with missing prices (and optionally existing ones)
+            trades = await self.find_trades_with_missing_prices(days, update_existing)
 
             if not trades:
                 logger.info("No trades found with missing prices")
@@ -304,7 +430,10 @@ class HistoricalTradeBackfillManager:
                 'trades_updated': 0,
                 'trades_failed': 0,
                 'entry_prices_filled': 0,
-                'exit_prices_filled': 0
+                'exit_prices_filled': 0,
+                'entry_prices_corrected': 0,
+                'exit_prices_corrected': 0,
+                'trades_with_changes': 0
             }
 
             for trade in trades:
@@ -339,60 +468,52 @@ class HistoricalTradeBackfillManager:
                     stats['trades_failed'] += 1
                     continue
 
-                # Calculate weighted average prices and total quantities
-                buy_avg_price = self.calculate_weighted_average_price(buy_executions)
-                sell_avg_price = self.calculate_weighted_average_price(sell_executions)
+                # Get position type from database (most reliable method)
+                position_type = self.get_position_type_from_trade(trade)
+                logger.info(f"Trade {trade_id} position type: {position_type}")
 
-                # Calculate total quantities
-                total_buy_qty = sum(float(execution.get('qty', 0)) for execution in buy_executions)
-                total_sell_qty = sum(float(execution.get('qty', 0)) for execution in sell_executions)
+                # Calculate entry and exit prices based on position type
+                entry_price, exit_price = self.calculate_entry_exit_prices(
+                    position_type, buy_executions, sell_executions
+                )
 
-                logger.info(f"Trade {trade_id}: buy_qty={total_buy_qty}, sell_qty={total_sell_qty}")
+                # Compare with existing prices if updating existing records
+                price_comparison = self.compare_prices(trade, entry_price, exit_price)
 
-                # Determine if this is a long or short position based on timing
-                # For longs: BUYs are entries, SELLs are exits
-                # For shorts: SELLs are entries, BUYs are exits
-                is_long = len(buy_executions) > 0 and (len(sell_executions) == 0 or
-                                     buy_executions[0]['time'] < sell_executions[0]['time'])
-
-                logger.info(f"Trade {trade_id}: is_long={is_long}, buy_price={buy_avg_price}, sell_price={sell_avg_price}")
-
-                # Check if trade is closed (quantities match)
-                is_closed = abs(total_buy_qty - total_sell_qty) < 0.000001  # Small tolerance for floating point
-
-                if is_long:
-                    # Long position: BUY is entry, SELL is exit
-                    entry_price = buy_avg_price
-                    exit_price = sell_avg_price if is_closed else 0.0
-                else:
-                    # Short position: SELL is entry, BUY is exit
-                    entry_price = sell_avg_price
-                    exit_price = buy_avg_price if is_closed else 0.0
-
-                if not is_closed:
-                    logger.warning(f"Trade {trade_id} is not closed - buy_qty={total_buy_qty}, sell_qty={total_sell_qty}")
-                    # Only set entry price, not exit price
-                    success = await self.update_trade_prices(trade_id, entry_price, 0.0)
-                else:
-                    logger.info(f"Trade {trade_id} is closed - setting both entry and exit prices")
-                    # Set both entry and exit prices
-                    success = await self.update_trade_prices(trade_id, entry_price, exit_price)
+                # Update trade with calculated prices
+                success = await self.update_trade_prices(trade_id, entry_price, exit_price)
                 if success:
                     if entry_price > 0:
                         stats['entry_prices_filled'] += 1
+                        if price_comparison['entry_changed']:
+                            stats['entry_prices_corrected'] += 1
+                            logger.info(f"Trade {trade_id}: Entry price corrected by {price_comparison['entry_diff']:.4f} ({price_comparison['entry_pct_diff']:.2f}%)")
+
                     if exit_price > 0:
                         stats['exit_prices_filled'] += 1
+                        if price_comparison['exit_changed']:
+                            stats['exit_prices_corrected'] += 1
+                            logger.info(f"Trade {trade_id}: Exit price corrected by {price_comparison['exit_diff']:.4f} ({price_comparison['exit_pct_diff']:.2f}%)")
+
+                    if price_comparison['entry_changed'] or price_comparison['exit_changed']:
+                        stats['trades_with_changes'] += 1
+
                     stats['trades_updated'] += 1
                 else:
                     stats['trades_failed'] += 1
 
             # Print summary
-            logger.info("=== Backfill Summary ===")
+            logger.info("=== Fixed Backfill Summary ===")
             logger.info(f"Total trades processed: {stats['total_trades']}")
             logger.info(f"Trades updated: {stats['trades_updated']}")
             logger.info(f"Trades failed: {stats['trades_failed']}")
             logger.info(f"Entry prices filled: {stats['entry_prices_filled']}")
             logger.info(f"Exit prices filled: {stats['exit_prices_filled']}")
+            if update_existing:
+                logger.info(f"Entry prices corrected: {stats['entry_prices_corrected']}")
+                logger.info(f"Exit prices corrected: {stats['exit_prices_corrected']}")
+                logger.info(f"Trades with price changes: {stats['trades_with_changes']}")
+            logger.info("✅ Now using signal_type from database for accurate LONG/SHORT detection")
 
         except Exception as e:
             logger.error(f"Error during backfill: {e}")
@@ -402,7 +523,15 @@ async def main():
     """Main function to run the backfill."""
     try:
         backfill_manager = HistoricalTradeBackfillManager()
-        await backfill_manager.backfill_from_historical_data(days=7)
+
+        # First run: Only fill missing prices (default behavior)
+        logger.info("=== Phase 1: Filling Missing Prices ===")
+        await backfill_manager.backfill_from_historical_data(days=7, update_existing=False)
+
+        # Second run: Update existing prices for better accuracy
+        logger.info("\n=== Phase 2: Updating Existing Prices for Accuracy ===")
+        await backfill_manager.backfill_from_historical_data(days=7, update_existing=True)
+
     except Exception as e:
         logger.error(f"Error in main: {e}")
 
