@@ -102,15 +102,4 @@ FIXED_FEE_RATE = 0.0002  # 0.02% fixed fee cap (can be 0.0002 or 0.0005)
 # Trading Leverage Configuration
 DEFAULT_LEVERAGE = float(os.getenv("LEVERAGE", "1"))  # Default leverage from .env, defaults to 1 if not found
 
-# Setup logging
-def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('logs/trading_bot.log')
-        ]
-    )
-    logging.getLogger('telethon').setLevel(logging.WARNING)
-    logging.getLogger('aiohttp').setLevel(logging.WARNING)
+# Logging is now handled by config/logging_config.py

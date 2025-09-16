@@ -14,6 +14,8 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+from config.logging_config import get_trade_logger
+
 from src.bot.order_management.order_creator import FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET
 from src.bot.trading_engine import TradingEngine
 from src.bot.kucoin_trading_engine import KucoinTradingEngine
@@ -31,7 +33,7 @@ from config import settings
 
 
 # Setup logging
-logger = logging.getLogger(__name__)
+logger = get_trade_logger()
 
 class DiscordBot:
     def __init__(self):

@@ -17,8 +17,9 @@ from .signal_models import (
     ParsedSignal, AlertAction, SignalValidationResult,
     SignalProcessingResult, SUPPORTED_ACTION_TYPES
 )
+from config.logging_config import get_trade_logger
 
-logger = logging.getLogger(__name__)
+logger = get_trade_logger()
 
 
 class SignalProcessor:

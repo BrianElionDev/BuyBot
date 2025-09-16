@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 from src.exchange import KucoinExchange
 from src.services.pricing.price_service import PriceService
 from src.exchange import FixedFeeCalculator
+from config.logging_config import get_trade_logger
 
 from src.bot.utils.signal_parser import SignalParser
 from src.bot.utils.price_calculator import PriceCalculator
@@ -41,7 +42,7 @@ from src.bot.order_management.order_update import OrderUpdater
 from config import settings as config
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_trade_logger()
 
 SIDE_BUY = 'BUY'
 SIDE_SELL = 'SELL'

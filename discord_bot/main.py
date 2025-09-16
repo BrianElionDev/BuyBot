@@ -18,15 +18,9 @@ from discord_bot.utils.trade_retry_utils import (
 )
 from scripts.maintenance.cleanup_scripts.cleanup_orphaned_orders import OrphanedOrdersCleanup
 
-# Configure logging for the Discord service
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - [DiscordSvc] - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-        # You could also add a FileHandler here for persistence
-    ]
-)
+# Configure logging for the Discord service using centralized config
+from config.logging_config import setup_production_logging
+logging_config = setup_production_logging()
 
 logger = logging.getLogger(__name__)
 
