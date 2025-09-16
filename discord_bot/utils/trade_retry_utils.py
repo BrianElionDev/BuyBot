@@ -100,7 +100,7 @@ def extract_order_info_from_binance_response(binance_response: str) -> tuple[Opt
         if order_id and symbol:
             return order_id, symbol
         else:
-            logging.debug(f"No valid order data found in response")
+            logging.info(f"No valid order data found in response")
             return None, None
 
     except Exception as e:

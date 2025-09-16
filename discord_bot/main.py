@@ -425,11 +425,11 @@ async def auto_fill_transaction_history(bot, supabase):
             if total_inserted > 0:
                 logger.info(f"[Scheduler] Transaction history: {total_inserted} new records inserted")
             else:
-                logger.debug(f"[Scheduler] Transaction history: {total_inserted} inserted, {total_skipped} skipped")
+                logger.info(f"[Scheduler] Transaction history: {total_inserted} inserted, {total_skipped} skipped")
         else:
             # Don't treat "no income records found" as an error - this is normal
             if "No income records found" in result.get('message', ''):
-                logger.debug(f"[Scheduler] Transaction history: {result.get('message', 'No new income records')}")
+                logger.info(f"[Scheduler] Transaction history: {result.get('message', 'No new income records')}")
             else:
                 logger.error(f"[Scheduler] Transaction history autofill failed: {result.get('message', 'Unknown error')}")
 
