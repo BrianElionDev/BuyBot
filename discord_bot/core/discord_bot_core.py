@@ -19,39 +19,40 @@ logger = logging.getLogger(__name__)
 class DiscordBotCore:
     """
     Main Discord bot orchestrator that coordinates all bot functionality.
-    
+
     Responsibilities:
     - Coordinate between different bot components
     - Handle high-level bot operations
     - Manage bot lifecycle
     - Provide unified interface for bot operations
     """
-    
+
     def __init__(self):
         """Initialize the Discord bot core."""
         self.config = BotConfig()
         self.initializer = BotInitializer(self.config)
         self.components = self.initializer.get_all_components()
-        
+
         # Set up component references for easy access
         self.supabase = self.components['supabase']
         self.db_manager = self.components['db_manager']
         self.price_service = self.components['price_service']
         self.binance_exchange = self.components['binance_exchange']
+        self.kucoin_exchange = self.components.get('kucoin_exchange')
         self.trading_engine = self.components['trading_engine']
         self.signal_parser = self.components['signal_parser']
         self.telegram_notifications = self.components['telegram_notifications']
         self.websocket_manager = self.components['websocket_manager']
-        
+
         # Set the bot reference in WebSocket manager
         self.websocket_manager.bot = self
-        
+
         logger.info(f"DiscordBotCore initialized with {'AI' if hasattr(self.signal_parser, 'client') and self.signal_parser.client else 'simple'} Signal Parser")
-        
+
     async def start_websocket_sync(self) -> bool:
         """
         Start WebSocket real-time sync.
-        
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -70,11 +71,11 @@ class DiscordBotCore:
         except Exception as e:
             logger.error(f"Error starting WebSocket sync: {e}")
             return False
-            
+
     def get_websocket_status(self) -> dict:
         """
         Get WebSocket manager status.
-        
+
         Returns:
             dict: WebSocket status information
         """
@@ -86,7 +87,7 @@ class DiscordBotCore:
                 'initialized': False,
                 'error': 'WebSocket manager not available'
             }
-            
+
     async def close(self) -> None:
         """Close the bot and clean up resources."""
         try:
@@ -95,35 +96,35 @@ class DiscordBotCore:
             logger.info("DiscordBotCore closed successfully")
         except Exception as e:
             logger.error(f"Error closing DiscordBotCore: {e}")
-            
+
     def get_component(self, component_name: str) -> Any:
         """
         Get a specific component by name.
-        
+
         Args:
             component_name: Name of the component to retrieve
-            
+
         Returns:
             The requested component
-            
+
         Raises:
             ValueError: If component not found
         """
         return self.initializer.get_component(component_name)
-        
+
     def is_ready(self) -> bool:
         """
         Check if the bot is ready and all components are initialized.
-        
+
         Returns:
             bool: True if ready, False otherwise
         """
         return self.initializer.is_initialized()
-        
+
     def get_status(self) -> Dict[str, Any]:
         """
         Get comprehensive bot status information.
-        
+
         Returns:
             dict: Bot status information
         """

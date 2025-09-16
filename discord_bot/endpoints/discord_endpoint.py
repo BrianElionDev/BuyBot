@@ -10,8 +10,10 @@ from typing import Optional
 import logging
 from discord_bot.discord_bot import discord_bot
 from discord_bot.models import InitialDiscordSignal
+from config.logging_config import get_endpoint_logger, get_trade_logger
 
-logger = logging.getLogger(__name__)
+logger = get_endpoint_logger()
+trade_logger = get_trade_logger()
 router = APIRouter()
 
 class DiscordUpdateSignal(BaseModel):
@@ -25,24 +27,26 @@ class DiscordUpdateSignal(BaseModel):
 async def process_initial_signal_background(signal: InitialDiscordSignal):
     """Process an initial signal in the background."""
     try:
+        logger.info(f"[ENDPOINT] Processing initial signal from {signal.trader} (ID: {signal.discord_id})")
         result = await discord_bot.process_initial_signal(signal)
         if result.get("status") != "success":
-            logger.error(f"Failed to process initial signal: {result.get('message')}")
+            logger.error(f"[ENDPOINT] Failed to process initial signal: {result.get('message')}")
         else:
-            logger.info(f"Initial signal processed successfully: {result.get('message')}")
+            logger.info(f"[ENDPOINT] Initial signal processed successfully: {result.get('message')}")
     except Exception as e:
-        logger.error(f"Error processing initial signal in background: {str(e)}")
+        logger.error(f"[ENDPOINT] Error processing initial signal in background: {str(e)}")
 
 async def process_update_signal_background(signal: DiscordUpdateSignal):
     """Process an update signal in the background."""
     try:
+        logger.info(f"[ENDPOINT] Processing update signal for trade {signal.trade} from {signal.trader}")
         result = await discord_bot.process_update_signal(signal.model_dump())
         if result.get("status") != "success":
-            logger.error(f"Failed to process update signal: {result.get('message')}")
+            logger.error(f"[ENDPOINT] Failed to process update signal: {result.get('message')}")
         else:
-            logger.info(f"Update signal processed successfully: {result.get('message')}")
+            logger.info(f"[ENDPOINT] Update signal processed successfully: {result.get('message')}")
     except Exception as e:
-        logger.error(f"Error processing update signal in background: {str(e)}")
+        logger.error(f"[ENDPOINT] Error processing update signal in background: {str(e)}")
 
 @router.post("/discord/signal", summary="Receive an initial trade signal")
 async def receive_initial_signal(signal: InitialDiscordSignal, background_tasks: BackgroundTasks):
@@ -53,14 +57,23 @@ async def receive_initial_signal(signal: InitialDiscordSignal, background_tasks:
     trade row in the database by its timestamp, parses the content using AI to determine
     trade parameters, and executes the trade via the trading engine.
     """
+    import time
+    start_time = time.time()
+
     try:
+        logger.info(f"[ENDPOINT] Received initial signal from {signal.trader} (ID: {signal.discord_id})")
         background_tasks.add_task(process_initial_signal_background, signal)
+
+        duration = time.time() - start_time
+        logger.info(f"[ENDPOINT] Initial signal queued for processing in {duration:.3f}s")
+
         return {
             "status": "success",
             "message": "Initial signal received and queued for processing"
         }
     except Exception as e:
-        logger.error(f"Error receiving initial signal: {str(e)}")
+        duration = time.time() - start_time
+        logger.error(f"[ENDPOINT] Error receiving initial signal after {duration:.3f}s: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/discord/signal/update", summary="Receive a trade update signal")
@@ -72,14 +85,23 @@ async def receive_update_signal(signal: DiscordUpdateSignal, background_tasks: B
     "stop loss hit" or "position closed". It finds the original trade using the
     `trade` (signal_id) field and updates its status in the database.
     """
+    import time
+    start_time = time.time()
+
     try:
+        logger.info(f"[ENDPOINT] Received update signal for trade {signal.trade} from {signal.trader}")
         background_tasks.add_task(process_update_signal_background, signal)
+
+        duration = time.time() - start_time
+        logger.info(f"[ENDPOINT] Update signal queued for processing in {duration:.3f}s")
+
         return {
             "status": "success",
             "message": "Update signal received and queued for processing"
         }
     except Exception as e:
-        logger.error(f"Error receiving update signal: {str(e)}")
+        duration = time.time() - start_time
+        logger.error(f"[ENDPOINT] Error receiving update signal after {duration:.3f}s: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/discord/signal/update/test", summary="Receive a trade update signal")

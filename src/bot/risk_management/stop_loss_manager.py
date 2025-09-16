@@ -21,14 +21,33 @@ class StopLossManager:
     Core class for managing stop loss orders.
     """
 
-    def __init__(self, binance_exchange):
+    def __init__(self, exchange):
         """
         Initialize the stop loss manager.
 
         Args:
-            binance_exchange: The Binance exchange instance
+            exchange: The exchange instance (Binance, KuCoin, etc.)
         """
-        self.binance_exchange = binance_exchange
+        self.exchange = exchange
+
+    def _get_trading_pair(self, coin_symbol: str) -> str:
+        """
+        Get trading pair format based on exchange type.
+
+        Args:
+            coin_symbol: The coin symbol (e.g., 'BTC')
+
+        Returns:
+            Trading pair in exchange format
+        """
+        # Check if exchange has a method to get trading pair format
+        if hasattr(self.exchange, 'get_futures_trading_pair'):
+            return self.exchange.get_futures_trading_pair(coin_symbol)
+        elif hasattr(self.exchange, 'get_trading_pair'):
+            return self.exchange.get_trading_pair(coin_symbol)
+        else:
+            # Default format for most exchanges
+            return f"{coin_symbol.upper()}USDT"
 
     async def ensure_stop_loss_for_position(
         self,
@@ -52,7 +71,7 @@ class StopLossManager:
             Tuple of (success, stop_loss_order_id)
         """
         try:
-            trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
+            trading_pair = self._get_trading_pair(coin_symbol)
 
             # Determine stop loss price
             if external_sl is not None and external_sl > 0:
@@ -74,7 +93,7 @@ class StopLossManager:
             # Create new stop loss order
             sl_side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
 
-            sl_order = await self.binance_exchange.create_futures_order(
+            sl_order = await self.exchange.create_futures_order(
                 pair=trading_pair,
                 side=sl_side,
                 order_type=FUTURE_ORDER_TYPE_STOP_MARKET,

@@ -119,7 +119,8 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
           NEVER abbreviate or truncate the coin symbol. If you see "BTC", return "BTC", not "TC".
           If you see "ETH", return "ETH", not "ET". If you see "SOL", return "SOL", not "OL".
           If you see "PUMPFUN", return "PUMPFUN", not "UMPFUN".
-          Common symbols: BTC, ETH, SOL, ADA, DOT, LINK, UNI, AAVE, MATIC, AVAX, NEAR, FTM, ALGO, ATOM, XRP, DOGE, SHIB, PEPE, BONK, WIF, FLOKI, TOSHI, TURBO, HYPE, FARTCOIN, PUMPFUN, DSYNC.
+          IMPORTANT: Single character symbols like "H" are valid and should be preserved as-is.
+          Common symbols: BTC, ETH, SOL, ADA, DOT, LINK, UNI, AAVE, MATIC, AVAX, NEAR, FTM, ALGO, ATOM, XRP, DOGE, SHIB, PEPE, BONK, WIF, FLOKI, TOSHI, TURBO, HYPE, FARTCOIN, PUMPFUN, DSYNC, VELVET, H.
 
         - 'position_type': MUST be 'LONG' or 'SHORT'. Look for these exact words:
           * LONG: "long", "longed", "buy", "bought", "going long", "longing"
@@ -182,8 +183,8 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
         # Additional validation for coin symbols
         if not active_trade and parsed_data.get('coin_symbol'):
             coin_symbol = parsed_data['coin_symbol'].upper()
-            # Check for common truncation errors
-            if len(coin_symbol) < 2:
+            # Check for common truncation errors (but allow single character symbols)
+            if len(coin_symbol) < 1:
                 logger.error(f"Coin symbol too short: {coin_symbol}")
                 return None
 

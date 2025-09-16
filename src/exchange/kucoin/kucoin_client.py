@@ -5,12 +5,12 @@ Wrapper around the KuCoin Universal SDK for simplified usage.
 Following Clean Code principles with clear client abstraction.
 """
 
-import asyncio
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Optional
 from kucoin_universal_sdk.api.client import DefaultClient
 from kucoin_universal_sdk.model.client_option import ClientOptionBuilder
-from kucoin_universal_sdk.model.constants import GLOBAL_API_ENDPOINT
+from kucoin_universal_sdk.model.constants import GLOBAL_API_ENDPOINT, GLOBAL_FUTURES_API_ENDPOINT
+from kucoin_universal_sdk.model.transport_option import TransportOptionBuilder
 
 from .kucoin_auth import KucoinAuth
 
@@ -56,8 +56,12 @@ class KucoinClient:
                 logger.error("Invalid KuCoin credentials")
                 return False
 
-            # Choose endpoint based on testnet setting
-            endpoint = GLOBAL_API_ENDPOINT if self.is_testnet else GLOBAL_API_ENDPOINT
+            # Choose endpoints based on testnet setting
+            spot_endpoint = GLOBAL_API_ENDPOINT if self.is_testnet else GLOBAL_API_ENDPOINT
+            futures_endpoint = GLOBAL_FUTURES_API_ENDPOINT if self.is_testnet else GLOBAL_FUTURES_API_ENDPOINT
+
+            # Configure transport options
+            transport_option = TransportOptionBuilder().build()
 
             # Build client options
             client_option = (
@@ -65,8 +69,9 @@ class KucoinClient:
                 .set_key(self.api_key)
                 .set_secret(self.api_secret)
                 .set_passphrase(self.api_passphrase)
-                .set_spot_endpoint(endpoint)
-                .set_futures_endpoint(endpoint)
+                .set_spot_endpoint(spot_endpoint)
+                .set_futures_endpoint(futures_endpoint)
+                .set_transport_option(transport_option)
                 .build()
             )
 
@@ -84,7 +89,7 @@ class KucoinClient:
         """Close the KuCoin client connection."""
         try:
             if self.client:
-                self.client.close()
+                self.client = None
                 logger.info("KuCoin client connection closed")
         except Exception as e:
             logger.error(f"Error closing KuCoin client: {e}")
@@ -102,10 +107,10 @@ class KucoinClient:
         return self.client.rest_service().get_futures_service()
 
     def get_market_service(self):
-        """Get market data service."""
+        """Get market data service (uses spot service for market data)."""
         if not self.client:
             raise RuntimeError("KuCoin client not initialized")
-        return self.client.rest_service().get_market_service()
+        return self.client.rest_service().get_spot_service()
 
     async def test_connection(self) -> bool:
         """

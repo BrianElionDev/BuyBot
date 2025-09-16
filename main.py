@@ -9,27 +9,10 @@ import os
 
 def setup_logging():
     """Configure logging for the application."""
-    # Create logs directory if it doesn't exist
-    os.makedirs('logs', exist_ok=True)
+    from config.logging_config import setup_production_logging
 
-    # Configure console handler with UTF-8 encoding
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-
-    # Configure file handler with UTF-8 encoding
-    file_handler = logging.FileHandler('logs/trading_bot.log', encoding='utf-8')
-    file_handler.setLevel(logging.DEBUG)
-
-    # Create formatter with emoji support
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-
-    # Configure root logger
-    logging.basicConfig(
-        level=logging.DEBUG,
-        handlers=[console_handler, file_handler]
-    )
+    # Set up production logging
+    logging_config = setup_production_logging()
 
     # Set Windows console to UTF-8 if on Windows
     if sys.platform.startswith('win'):
@@ -47,6 +30,8 @@ def setup_logging():
     logging.getLogger('telethon').setLevel(logging.WARNING)
     logging.getLogger('aiohttp').setLevel(logging.WARNING)
     logging.getLogger('uvicorn').setLevel(logging.WARNING)
+    logging.getLogger('websockets').setLevel(logging.WARNING)
+    logging.getLogger('kucoin_universal_sdk').setLevel(logging.WARNING)
 
 def main():
     """Main entry point for the trading bot."""

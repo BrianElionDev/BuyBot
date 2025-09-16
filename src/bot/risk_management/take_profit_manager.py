@@ -21,14 +21,33 @@ class TakeProfitManager:
     Core class for managing take profit orders.
     """
 
-    def __init__(self, binance_exchange):
+    def __init__(self, exchange):
         """
         Initialize the take profit manager.
 
         Args:
-            binance_exchange: The Binance exchange instance
+            exchange: The exchange instance (Binance, KuCoin, etc.)
         """
-        self.binance_exchange = binance_exchange
+        self.exchange = exchange
+
+    def _get_trading_pair(self, coin_symbol: str) -> str:
+        """
+        Get trading pair format based on exchange type.
+
+        Args:
+            coin_symbol: The coin symbol (e.g., 'BTC')
+
+        Returns:
+            Trading pair in exchange format
+        """
+        # Check if exchange has a method to get trading pair format
+        if hasattr(self.exchange, 'get_futures_trading_pair'):
+            return self.exchange.get_futures_trading_pair(coin_symbol)
+        elif hasattr(self.exchange, 'get_trading_pair'):
+            return self.exchange.get_trading_pair(coin_symbol)
+        else:
+            # Default format for most exchanges
+            return f"{coin_symbol.upper()}USDT"
 
     async def ensure_take_profit_for_position(
         self,
@@ -52,7 +71,7 @@ class TakeProfitManager:
             Tuple of (success, take_profit_order_id)
         """
         try:
-            trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
+            trading_pair = self._get_trading_pair(coin_symbol)
 
             # Determine take profit price and quantity
             if external_tp is not None and external_tp > 0:
@@ -76,7 +95,7 @@ class TakeProfitManager:
             # Create new take profit order
             tp_side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
 
-            tp_order = await self.binance_exchange.create_futures_order(
+            tp_order = await self.exchange.create_futures_order(
                 pair=trading_pair,
                 side=tp_side,
                 order_type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
@@ -109,7 +128,7 @@ class TakeProfitManager:
         """
         try:
             # Get open orders for the symbol
-            open_orders = await self.binance_exchange.get_all_open_futures_orders()
+            open_orders = await self.exchange.get_all_open_futures_orders()
 
             if not open_orders:
                 logger.info(f"No open orders found for {trading_pair}")
@@ -121,7 +140,7 @@ class TakeProfitManager:
                 if order.get('type') == 'TAKE_PROFIT_MARKET':
                     order_id = order.get('orderId')
                     if order_id:
-                        cancel_result = await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
+                        cancel_result = await self.exchange.cancel_futures_order(trading_pair, order_id)
                         if cancel_result:
                             logger.info(f"Cancelled existing take profit order: {order_id}")
                             cancelled_count += 1
@@ -146,7 +165,7 @@ class TakeProfitManager:
             logger.info("Starting take profit audit for all open positions...")
 
             # Get all open positions
-            positions = await self.binance_exchange.get_position_risk()
+            positions = await self.exchange.get_position_risk()
 
             audit_results = {
                 'total_positions': 0,
@@ -216,7 +235,7 @@ class TakeProfitManager:
             True if position has take profit orders, False otherwise
         """
         try:
-            open_orders = await self.binance_exchange.get_all_open_futures_orders()
+            open_orders = await self.exchange.get_all_open_futures_orders()
 
             if not open_orders:
                 return False

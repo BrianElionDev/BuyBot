@@ -21,7 +21,7 @@ class PriceData:
     symbol: str
     price_usd: float
     timestamp: datetime
-    source: str = "coingecko"
+    source: str = "binance"
 
 
 @dataclass

@@ -31,7 +31,7 @@ async def process_alerts():
 
     try:
         # Fetch all alerts that haven't been processed yet
-        response = supabase.table("alerts").select("*").is_("binance_response", None).eq("timestamp", "2025-09-10T17:12:21.868Z").execute()
+        response = supabase.table("alerts").select("*").is_("binance_response", None).eq("trade", "1416231183850668192").execute()
 
         if not hasattr(response, 'data') or not response.data:
             logging.info("No unprocessed alerts found.")
@@ -53,44 +53,34 @@ async def process_alerts():
                 content = alert.get("content", "").lower()
                 details = {}
                 action = None
-                # Example parsing logic (customize as needed for your alert format)
+                # Enhanced parsing logic for the specific alert formats
                 if "tp1" in content or "take profit 1" in content:
                     action = "take_profit_1"
-                    # Extract TP1 price and/or close % if present
-                    # (You may want to use regex or a parser for more robust extraction)
-                    if "close" in content and "%" in content:
-                        try:
-                            pct = int(content.split("close")[-1].split("%")[-2].split()[-1])
-                            details["close_percentage"] = pct
-                        except Exception:
-                            details["close_percentage"] = 50
-                    else:
-                        details["close_percentage"] = 50
-                    # Optionally extract TP price
+                    details["close_percentage"] = 50
                 elif "tp2" in content or "take profit 2" in content:
                     action = "take_profit_2"
                     details["close_percentage"] = 25
                 elif "tp3" in content or "take profit 3" in content:
                     action = "take_profit_3"
                     details["close_percentage"] = 25
-                elif "move stop" in content or "sl to be" in content or "stop to be" in content:
-                    action = "stop_loss_update"
+                elif "stops moved to be" in content or "moved to be" in content or "stops moved to be" in content:
+                    action = "break_even"
                     details["stop_price"] = "BE"
-                elif "stopped out" in content or "stop loss hit" in content:
+                elif "stopped be" in content or "stopped out" in content or "stop loss hit" in content:
                     action = "stop_loss_hit"
                 elif "close" in content:
                     action = "position_closed"
-                    # Try to extract close %
-                    if "%" in content:
-                        try:
-                            pct = int(content.split("close")[-1].split("%")[-2].split()[-1])
-                            details["close_percentage"] = pct
-                        except Exception:
-                            details["close_percentage"] = 100
-                    else:
-                        details["close_percentage"] = 100
+                    details["close_percentage"] = 100
                 else:
                     action = None
+
+                # Extract coin symbol from content for enhanced processing
+                coin_symbol = None
+                content_upper = alert.get("content", "").upper()
+                import re
+                coin_match = re.search(r'^([A-Z]{2,5})\s*[🚀|]', content_upper)
+                if coin_match:
+                    coin_symbol = coin_match.group(1)
 
                 # Reconstruct the signal payload from the alert row
                 signal_payload = {
@@ -100,6 +90,7 @@ async def process_alerts():
                     "discord_id": alert.get("discord_id"),
                     "trader": alert.get("trader"),
                     "structured": alert.get("structured"),
+                    "coin_symbol": coin_symbol,  # Add coin symbol for enhanced processing
                 }
 
                 # Log what is being attempted

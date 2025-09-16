@@ -101,7 +101,7 @@ async def main():
     
     processed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     print(f"Test started at {processed_at}")
-    
+
     await test_price_thresholds()
 >>>>>>> ngigin:scripts/testing/integration_tests/test.py
 if __name__ == "__main__":

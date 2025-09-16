@@ -125,7 +125,7 @@ class HistoricalTradeBackfillManager:
                         signal_data = json.loads(parsed_signal)
                     else:
                         signal_data = parsed_signal
-                    
+
                     coin_symbol = signal_data.get('coin_symbol', '')
                     if coin_symbol:
                         symbol = f"{coin_symbol}USDT"
@@ -175,7 +175,7 @@ class HistoricalTradeBackfillManager:
                         signal_data = json.loads(parsed_signal)
                     else:
                         signal_data = parsed_signal
-                    
+
                     position_type = signal_data.get('position_type', '').upper()
                     if position_type in ['LONG', 'SHORT']:
                         logger.info(f"Using position_type '{position_type}' from parsed_signal for trade {trade.get('id')}")
@@ -283,14 +283,14 @@ class HistoricalTradeBackfillManager:
         """Calculate entry and exit prices based on position type and executions."""
         buy_avg_price = self.calculate_weighted_average_price(buy_executions)
         sell_avg_price = self.calculate_weighted_average_price(sell_executions)
-        
+
         # Calculate total quantities
         total_buy_qty = sum(float(execution.get('qty', 0)) for execution in buy_executions)
         total_sell_qty = sum(float(execution.get('qty', 0)) for execution in sell_executions)
-        
+
         logger.info(f"Position type: {position_type}, buy_qty={total_buy_qty}, sell_qty={total_sell_qty}")
         logger.info(f"Buy avg price: {buy_avg_price}, Sell avg price: {sell_avg_price}")
-        
+
         # Determine entry and exit prices based on position type
         if position_type.upper() == 'LONG':
             # Long position: BUY is entry, SELL is exit
@@ -302,7 +302,7 @@ class HistoricalTradeBackfillManager:
             entry_price = sell_avg_price
             exit_price = buy_avg_price if total_buy_qty > 0 else 0.0
             logger.info(f"SHORT position: entry={entry_price} (from sells), exit={exit_price} (from buys)")
-        
+
         return entry_price, exit_price
 
     def compare_prices(self, trade: Dict, new_entry_price: float, new_exit_price: float) -> Dict[str, Any]:
@@ -310,7 +310,7 @@ class HistoricalTradeBackfillManager:
         try:
             existing_entry = trade.get('binance_entry_price')
             existing_exit = trade.get('binance_exit_price')
-            
+
             comparison = {
                 'entry_changed': False,
                 'exit_changed': False,
@@ -319,23 +319,23 @@ class HistoricalTradeBackfillManager:
                 'entry_pct_diff': 0.0,
                 'exit_pct_diff': 0.0
             }
-            
+
             if existing_entry and float(existing_entry) > 0:
                 existing_entry_float = float(existing_entry)
                 if abs(existing_entry_float - new_entry_price) > 0.01:  # Significant difference
                     comparison['entry_changed'] = True
                     comparison['entry_diff'] = new_entry_price - existing_entry_float
                     comparison['entry_pct_diff'] = (comparison['entry_diff'] / existing_entry_float) * 100
-            
+
             if existing_exit and float(existing_exit) > 0:
                 existing_exit_float = float(existing_exit)
                 if abs(existing_exit_float - new_exit_price) > 0.01:  # Significant difference
                     comparison['exit_changed'] = True
                     comparison['exit_diff'] = new_exit_price - existing_exit_float
                     comparison['exit_pct_diff'] = (comparison['exit_diff'] / existing_exit_float) * 100
-            
+
             return comparison
-            
+
         except Exception as e:
             logger.error(f"Error comparing prices: {e}")
             return {'entry_changed': False, 'exit_changed': False, 'entry_diff': 0.0, 'exit_diff': 0.0, 'entry_pct_diff': 0.0, 'exit_pct_diff': 0.0}
@@ -391,13 +391,13 @@ class HistoricalTradeBackfillManager:
                 if 'test' in str(discord_id).lower():
                     logger.info(f"Skipping test trade {trade.get('id')} with discord_id: {discord_id}")
                     continue
-                
+
                 # Check if prices are missing or if we should update existing ones
                 entry_price = trade.get('binance_entry_price')
                 exit_price = trade.get('binance_exit_price')
-                
+
                 missing_prices = not entry_price or float(entry_price or 0) == 0 or not exit_price or float(exit_price or 0) == 0
-                
+
                 if missing_prices or update_existing:
                     trades_to_process.append(trade)
                     if missing_prices:
@@ -417,10 +417,10 @@ class HistoricalTradeBackfillManager:
         try:
             mode = "missing and existing" if update_existing else "missing only"
             logger.info(f"Starting backfill for trades from last {days} days ({mode})")
-            
+
             # Initialize Binance client
             await self.binance_exchange._init_client()
-            
+
             # Find trades with missing prices (and optionally existing ones)
             trades = await self.find_trades_with_missing_prices(days, update_existing)
             if not trades:
@@ -473,15 +473,15 @@ class HistoricalTradeBackfillManager:
                 # Get position type from database (most reliable method)
                 position_type = self.get_position_type_from_trade(trade)
                 logger.info(f"Trade {trade_id} position type: {position_type}")
-                
+
                 # Calculate entry and exit prices based on position type
                 entry_price, exit_price = self.calculate_entry_exit_prices(
                     position_type, buy_executions, sell_executions
                 )
-                
+
                 # Compare with existing prices if updating existing records
                 price_comparison = self.compare_prices(trade, entry_price, exit_price)
-                
+
                 # Update trade with calculated prices
                 success = await self.update_trade_prices(trade_id, entry_price, exit_price)
                 if success:
@@ -490,16 +490,16 @@ class HistoricalTradeBackfillManager:
                         if price_comparison['entry_changed']:
                             stats['entry_prices_corrected'] += 1
                             logger.info(f"Trade {trade_id}: Entry price corrected by {price_comparison['entry_diff']:.4f} ({price_comparison['entry_pct_diff']:.2f}%)")
-                    
+
                     if exit_price > 0:
                         stats['exit_prices_filled'] += 1
                         if price_comparison['exit_changed']:
                             stats['exit_prices_corrected'] += 1
                             logger.info(f"Trade {trade_id}: Exit price corrected by {price_comparison['exit_diff']:.4f} ({price_comparison['exit_pct_diff']:.2f}%)")
-                    
+
                     if price_comparison['entry_changed'] or price_comparison['exit_changed']:
                         stats['trades_with_changes'] += 1
-                    
+
                     stats['trades_updated'] += 1
                 else:
                     stats['trades_failed'] += 1
@@ -524,15 +524,15 @@ async def main():
     """Main function to run the backfill."""
     try:
         backfill_manager = HistoricalTradeBackfillManager()
-        
+
         # First run: Only fill missing prices (default behavior)
         logger.info("=== Phase 1: Filling Missing Prices ===")
         await backfill_manager.backfill_from_historical_data(days=7, update_existing=False)
-        
+
         # Second run: Update existing prices for better accuracy
         logger.info("\n=== Phase 2: Updating Existing Prices for Accuracy ===")
         await backfill_manager.backfill_from_historical_data(days=7, update_existing=True)
-        
+
     except Exception as e:
         logger.error(f"Error in main: {e}")
 

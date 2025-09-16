@@ -20,15 +20,9 @@ from discord_bot.utils.trade_retry_utils import (
 from scripts.maintenance.cleanup_scripts.cleanup_orphaned_orders import OrphanedOrdersCleanup
 from scripts.maintenance.migration_scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
 
-# Configure logging for the Discord service
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - [DiscordSvc] - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-        # You could also add a FileHandler here for persistence
-    ]
-)
+# Configure logging for the Discord service using centralized config
+from config.logging_config import setup_production_logging
+logging_config = setup_production_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -540,7 +534,30 @@ async def weekly_historical_backfill(bot, supabase):
         logger.error(f"[Scheduler] Error in weekly_historical_backfill: {e}")
 
 
-# Removed old backfill_missing_prices function - now using advanced backfill directly
+async def backfill_missing_prices(bot, supabase):
+    """Backfill missing Binance entry and exit prices for recent trades."""
+    try:
+        logger.info("[Scheduler] Starting price backfill for recent trades...")
+
+        # Create backfill manager with existing clients
+        backfill_manager = HistoricalTradeBackfillManager()
+        backfill_manager.binance_exchange = bot.binance_exchange  # Use existing exchange instance
+        backfill_manager.db_manager = bot.db_manager  # Use existing database manager
+
+        # Backfill prices for last 7 days (recent trades that might have missed WebSocket updates)
+        # Phase 1: Fill missing prices only
+        await backfill_manager.backfill_from_historical_data(days=7, update_existing=False)
+
+        # Phase 2: Update existing prices for better accuracy (every 2 hours for better accuracy)
+        from datetime import datetime
+        current_hour = datetime.now().hour
+        if current_hour % 2 == 0:  # Run every 2 hours (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22)
+            await backfill_manager.backfill_from_historical_data(days=7, update_existing=True)
+
+        logger.info("[Scheduler] Price backfill completed")
+
+    except Exception as e:
+        logger.error(f"[Scheduler] Error in price backfill: {e}")
 
 
 app = create_app()

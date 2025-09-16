@@ -21,6 +21,6 @@ Content-Type: application/json
     "trader": "@-Johnny",
     "trade": "1029838895535374439",
     "timestamp": "2025-08-14T12:37:54.898Z",
-    "content": "ETH 🚀|  TP1  | @Johnny"
+    "content": "ETH 🚀|  stops moved to BE  | @Johnny"
 }
 
