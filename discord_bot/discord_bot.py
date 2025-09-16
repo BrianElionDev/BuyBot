@@ -88,7 +88,7 @@ class DiscordBot:
         # Initialize trading engines
         self.trading_engine = TradingEngine(
             price_service=self.price_service,
-            binance_exchange=self.binance_exchange,
+            exchange=self.binance_exchange,
             db_manager=self.db_manager
         )
 

@@ -17,6 +17,7 @@ from discord_bot.utils.trade_retry_utils import (
     sync_trade_statuses_with_binance,
 )
 from scripts.maintenance.cleanup_scripts.cleanup_orphaned_orders import OrphanedOrdersCleanup
+from scripts.maintenance.migration_scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
 
 # Configure logging for the Discord service using centralized config
 from config.logging_config import setup_production_logging

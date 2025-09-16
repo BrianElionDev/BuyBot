@@ -152,7 +152,7 @@ class BotInitializer:
         try:
             trading_engine = TradingEngine(
                 price_service=self.components['price_service'],
-                binance_exchange=self.components['binance_exchange'],
+                exchange=self.components['binance_exchange'],
                 db_manager=self.components['db_manager']
             )
             self.components['trading_engine'] = trading_engine

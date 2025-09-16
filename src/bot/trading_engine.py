@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from discord_bot.database import DatabaseManager
-from src.exchange import BinanceExchange
+from src.exchange.base import ExchangeBase
 from src.services.pricing.price_service import PriceService
 from src.exchange import FixedFeeCalculator
 
@@ -49,9 +49,9 @@ class TradingEngine:
     """
     The core logic for processing signals and executing trades.
     """
-    def __init__(self, price_service: PriceService, binance_exchange: BinanceExchange, db_manager: 'DatabaseManager'):
+    def __init__(self, price_service: PriceService, exchange: ExchangeBase, db_manager: 'DatabaseManager'):
         self.price_service = price_service
-        self.binance_exchange = binance_exchange
+        self.exchange = exchange
         self.db_manager = db_manager
         self.trade_cooldowns = {}
         # Add config attribute for signal processors
@@ -66,19 +66,19 @@ class TradingEngine:
         self.response_parser = ResponseParser()
 
         # Initialize core modules
-        self.position_manager = PositionManager(binance_exchange, db_manager)
-        self.market_data_handler = MarketDataHandler(binance_exchange, price_service)
+        self.position_manager = PositionManager(exchange, db_manager)
+        self.market_data_handler = MarketDataHandler(exchange, price_service)
         self.trade_calculator = TradeCalculator(self.fee_calculator)
 
         # Initialize risk management modules
-        self.stop_loss_manager = StopLossManager(binance_exchange)
-        self.take_profit_manager = TakeProfitManager(binance_exchange)
-        self.position_auditor = PositionAuditor(binance_exchange)
+        self.stop_loss_manager = StopLossManager(exchange)
+        self.take_profit_manager = TakeProfitManager(exchange)
+        self.position_auditor = PositionAuditor(exchange)
 
         # Initialize order management modules
-        self.order_creator = OrderCreator(binance_exchange)
-        self.order_canceller = OrderCanceller(binance_exchange)
-        self.order_updater = OrderUpdater(binance_exchange)
+        self.order_creator = OrderCreator(exchange)
+        self.order_canceller = OrderCanceller(exchange)
+        self.order_updater = OrderUpdater(exchange)
 
         # Initialize signal processing modules
         self.initial_signal_processor = InitialSignalProcessor(self)
@@ -291,8 +291,8 @@ class TradingEngine:
             dummy_trade = {"tp_sl_orders": []}
             await self.cancel_tp_sl_orders(trading_pair, dummy_trade)
 
-            # Get current position size from Binance
-            positions = await self.binance_exchange.get_futures_position_information()
+            # Get current position size from exchange
+            positions = await self.exchange.get_futures_position_information()
             position_size = 0.0
 
             for pos in positions:
@@ -347,7 +347,7 @@ class TradingEngine:
             # Determine the side for stop loss based on position type
             new_sl_side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
 
-            new_sl_order_result = await self.binance_exchange.create_futures_order(
+            new_sl_order_result = await self.exchange.create_futures_order(
                 pair=trading_pair,
                 side=new_sl_side,
                 order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
@@ -534,7 +534,7 @@ class TradingEngine:
 
     async def close(self):
         """Close all exchange connections."""
-        await self.binance_exchange.close_client()
+        await self.exchange.close_client()
         logger.info("TradingEngine connections closed.")
 
     async def close_position_at_market(self, trade_row: Dict, reason: str = "manual_close", close_percentage: float = 100.0) -> Tuple[bool, Dict]:
