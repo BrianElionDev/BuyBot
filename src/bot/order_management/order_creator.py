@@ -23,14 +23,14 @@ class OrderCreator:
     Core class for creating trading orders.
     """
 
-    def __init__(self, binance_exchange):
+    def __init__(self, exchange):
         """
         Initialize the order creator.
 
         Args:
-            binance_exchange: The Binance exchange instance
+            exchange: The exchange instance (Binance, KuCoin, etc.)
         """
-        self.binance_exchange = binance_exchange
+        self.exchange = exchange
 
     async def create_tp_sl_orders(
         self,
@@ -62,7 +62,7 @@ class OrderCreator:
             # This will make them appear in the TP/SL column in Binance
             try:
                 # Get current position to set TP/SL on it
-                positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
+                positions = await self.exchange.get_futures_position_information()
                 current_position = None
 
                 for position in positions:
@@ -75,7 +75,7 @@ class OrderCreator:
                     return await self.create_separate_tp_sl_orders(trading_pair, position_type, position_size, take_profits, stop_loss)
 
                 # Set position-based TP/SL using Binance API
-                if self.binance_exchange.client:
+                if self.exchange.client:
                     # Prepare TP/SL parameters
                     tp_sl_params = {}
 
@@ -141,7 +141,7 @@ class OrderCreator:
                         tp_price_float = float(tp_price)
 
                         # For take profits, use reduceOnly with specific amount to handle partial positions correctly
-                        tp_order = await self.binance_exchange.create_futures_order(
+                        tp_order = await self.exchange.create_futures_order(
                             pair=trading_pair,
                             side=tp_sl_side,
                             order_type='TAKE_PROFIT_MARKET',
@@ -179,7 +179,7 @@ class OrderCreator:
 
             if sl_price_float is not None:
                 try:
-                    sl_order = await self.binance_exchange.create_futures_order(
+                    sl_order = await self.exchange.create_futures_order(
                         pair=trading_pair,
                         side=tp_sl_side,
                         order_type='STOP_MARKET',
@@ -224,7 +224,7 @@ class OrderCreator:
             Order response or None if failed
         """
         try:
-            order = await self.binance_exchange.create_futures_order(
+            order = await self.exchange.create_futures_order(
                 pair=trading_pair,
                 side=side,
                 order_type='MARKET',
@@ -265,7 +265,7 @@ class OrderCreator:
             Order response or None if failed
         """
         try:
-            order = await self.binance_exchange.create_futures_order(
+            order = await self.exchange.create_futures_order(
                 pair=trading_pair,
                 side=side,
                 order_type='LIMIT',

@@ -17,14 +17,14 @@ class OrderCanceller:
     Core class for cancelling trading orders.
     """
 
-    def __init__(self, binance_exchange):
+    def __init__(self, exchange):
         """
         Initialize the order canceller.
 
         Args:
-            binance_exchange: The Binance exchange instance
+            exchange: The exchange instance (Binance, KuCoin, etc.)
         """
-        self.binance_exchange = binance_exchange
+        self.exchange = exchange
 
     async def cancel_tp_sl_orders(self, trading_pair: str, active_trade: Dict) -> bool:
         """
@@ -40,7 +40,7 @@ class OrderCanceller:
                 if stop_loss_order_id:
                     try:
                         logger.info(f"Cancelling stop loss order {stop_loss_order_id} for {trading_pair}")
-                        success, _ = await self.binance_exchange.cancel_futures_order(trading_pair, stop_loss_order_id)
+                        success, _ = await self.exchange.cancel_futures_order(trading_pair, stop_loss_order_id)
                         if success:
                             cancelled_count += 1
                             logger.info(f"Successfully cancelled stop loss order {stop_loss_order_id}")
@@ -64,7 +64,7 @@ class OrderCanceller:
                         order_type = tp_sl_order.get('order_type', 'UNKNOWN')
                         try:
                             logger.info(f"Cancelling {order_type} order {order_id} for {trading_pair}")
-                            success, _ = await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
+                            success, _ = await self.exchange.cancel_futures_order(trading_pair, order_id)
                             if success:
                                 cancelled_count += 1
                                 logger.info(f"Successfully cancelled {order_type} order {order_id}")
@@ -76,7 +76,7 @@ class OrderCanceller:
             # Fallback: if no active_trade provided or no stored order IDs, try to find and cancel TP/SL orders
             if cancelled_count == 0:
                 logger.info(f"No stored order IDs found, attempting to find and cancel TP/SL orders for {trading_pair}")
-                open_orders = await self.binance_exchange.get_all_open_futures_orders()
+                open_orders = await self.exchange.get_all_open_futures_orders()
 
                 for order in open_orders:
                     if (order['symbol'] == trading_pair and
@@ -84,7 +84,7 @@ class OrderCanceller:
                         order.get('reduceOnly', False)):
                         try:
                             logger.info(f"Cancelling TP/SL order {order['orderId']} ({order['type']}) for {trading_pair}")
-                            success, _ = await self.binance_exchange.cancel_futures_order(trading_pair, order['orderId'])
+                            success, _ = await self.exchange.cancel_futures_order(trading_pair, order['orderId'])
                             if success:
                                 cancelled_count += 1
                                 logger.info(f"Successfully cancelled TP/SL order {order['orderId']}")
@@ -116,8 +116,8 @@ class OrderCanceller:
 
             logger.info(f"Attempting to cancel order {order_id} for {coin_symbol}")
 
-            trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
-            success, response = await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
+            trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
+            success, response = await self.exchange.cancel_futures_order(trading_pair, order_id)
 
             if success:
                 logger.info(f"Successfully cancelled order {order_id} for {coin_symbol}")
@@ -137,7 +137,7 @@ class OrderCanceller:
         try:
             logger.info(f"Cancelling all orders for {trading_pair}")
 
-            open_orders = await self.binance_exchange.get_all_open_futures_orders()
+            open_orders = await self.exchange.get_all_open_futures_orders()
             cancelled_count = 0
 
             for order in open_orders:
@@ -147,7 +147,7 @@ class OrderCanceller:
                         order_type = order['type']
                         logger.info(f"Cancelling {order_type} order {order_id} for {trading_pair}")
 
-                        success, _ = await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
+                        success, _ = await self.exchange.cancel_futures_order(trading_pair, order_id)
                         if success:
                             cancelled_count += 1
                             logger.info(f"Successfully cancelled {order_type} order {order_id}")
@@ -170,7 +170,7 @@ class OrderCanceller:
         try:
             logger.info(f"Cancelling {order_types} orders for {trading_pair}")
 
-            open_orders = await self.binance_exchange.get_all_open_futures_orders()
+            open_orders = await self.exchange.get_all_open_futures_orders()
             cancelled_count = 0
 
             for order in open_orders:
@@ -181,7 +181,7 @@ class OrderCanceller:
                         order_type = order['type']
                         logger.info(f"Cancelling {order_type} order {order_id} for {trading_pair}")
 
-                        success, _ = await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
+                        success, _ = await self.exchange.cancel_futures_order(trading_pair, order_id)
                         if success:
                             cancelled_count += 1
                             logger.info(f"Successfully cancelled {order_type} order {order_id}")
@@ -204,7 +204,7 @@ class OrderCanceller:
         try:
             logger.info(f"Cancelling order {order_id} for {trading_pair}")
 
-            success, response = await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
+            success, response = await self.exchange.cancel_futures_order(trading_pair, order_id)
 
             if success:
                 logger.info(f"Successfully cancelled order {order_id} for {trading_pair}")

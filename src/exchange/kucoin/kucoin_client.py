@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 from kucoin_universal_sdk.api.client import DefaultClient
 from kucoin_universal_sdk.model.client_option import ClientOptionBuilder
-from kucoin_universal_sdk.model.constants import GLOBAL_API_ENDPOINT
+from kucoin_universal_sdk.model.constants import GLOBAL_API_ENDPOINT, GLOBAL_FUTURES_API_ENDPOINT
 from kucoin_universal_sdk.model.transport_option import TransportOptionBuilder
 
 from .kucoin_auth import KucoinAuth
@@ -56,8 +56,9 @@ class KucoinClient:
                 logger.error("Invalid KuCoin credentials")
                 return False
 
-            # Choose endpoint based on testnet setting
-            endpoint = GLOBAL_API_ENDPOINT if self.is_testnet else GLOBAL_API_ENDPOINT
+            # Choose endpoints based on testnet setting
+            spot_endpoint = GLOBAL_API_ENDPOINT if self.is_testnet else GLOBAL_API_ENDPOINT
+            futures_endpoint = GLOBAL_FUTURES_API_ENDPOINT if self.is_testnet else GLOBAL_FUTURES_API_ENDPOINT
 
             # Configure transport options
             transport_option = TransportOptionBuilder().build()
@@ -68,8 +69,8 @@ class KucoinClient:
                 .set_key(self.api_key)
                 .set_secret(self.api_secret)
                 .set_passphrase(self.api_passphrase)
-                .set_spot_endpoint(endpoint)
-                .set_futures_endpoint(endpoint)
+                .set_spot_endpoint(spot_endpoint)
+                .set_futures_endpoint(futures_endpoint)
                 .set_transport_option(transport_option)
                 .build()
             )

@@ -16,14 +16,14 @@ class PositionAuditor:
     Core class for auditing positions and risk management.
     """
 
-    def __init__(self, binance_exchange):
+    def __init__(self, exchange):
         """
         Initialize the position auditor.
 
         Args:
-            binance_exchange: The Binance exchange instance
+            exchange: The exchange instance (Binance, KuCoin, etc.)
         """
-        self.binance_exchange = binance_exchange
+        self.exchange = exchange
 
     async def audit_all_positions(self) -> Dict[str, Any]:
         """
@@ -36,7 +36,7 @@ class PositionAuditor:
             logger.info("Starting comprehensive position audit...")
 
             # Get all positions
-            positions = await self.binance_exchange.get_position_risk()
+            positions = await self.exchange.get_position_risk()
 
             audit_results = {
                 'total_positions': 0,
@@ -118,7 +118,7 @@ class PositionAuditor:
             True if position has stop loss orders, False otherwise
         """
         try:
-            open_orders = await self.binance_exchange.get_all_open_futures_orders()
+            open_orders = await self.exchange.get_all_open_futures_orders()
 
             if not open_orders:
                 return False
@@ -146,7 +146,7 @@ class PositionAuditor:
             True if position has take profit orders, False otherwise
         """
         try:
-            open_orders = await self.binance_exchange.get_all_open_futures_orders()
+            open_orders = await self.exchange.get_all_open_futures_orders()
 
             if not open_orders:
                 return False
@@ -218,7 +218,7 @@ class PositionAuditor:
             Dictionary with position summary
         """
         try:
-            positions = await self.binance_exchange.get_position_risk()
+            positions = await self.exchange.get_position_risk()
 
             summary = {
                 'total_positions': len(positions),

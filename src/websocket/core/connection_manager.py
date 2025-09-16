@@ -50,8 +50,6 @@ class ConnectionManager:
             bool: True if connection was established successfully
         """
         try:
-            logger.info(f"Creating {connection_type} connection: {connection_id}")
-
             # Create connection state
             self.connection_states[connection_id] = {
                 'url': url,
@@ -73,11 +71,12 @@ class ConnectionManager:
             # Start message handling task
             asyncio.create_task(self._handle_messages(connection_id, websocket, message_handler))
 
-            logger.info(f"Successfully established {connection_type} connection: {connection_id}")
+            # Only log successful connections
+            logger.warning(f"[WS] {connection_type} connection established: {connection_id}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to create {connection_type} connection {connection_id}: {e}")
+            logger.error(f"[WS] Failed to create {connection_type} connection {connection_id}: {e}")
             return False
 
     async def close_connection(self, connection_id: str) -> bool:

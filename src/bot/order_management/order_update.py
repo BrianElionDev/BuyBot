@@ -16,14 +16,14 @@ class OrderUpdater:
     Core class for updating trading orders.
     """
 
-    def __init__(self, binance_exchange):
+    def __init__(self, exchange):
         """
         Initialize the order updater.
 
         Args:
-            binance_exchange: The Binance exchange instance
+            exchange: The exchange instance (Binance, KuCoin, etc.)
         """
-        self.binance_exchange = binance_exchange
+        self.exchange = exchange
 
     async def update_order_status(self, trading_pair: str, order_id: str) -> Optional[Dict]:
         """
@@ -33,7 +33,7 @@ class OrderUpdater:
             logger.info(f"Getting status for order {order_id} on {trading_pair}")
 
             # Get order status from Binance
-            order_status = await self.binance_exchange.get_futures_order_status(trading_pair, order_id)
+            order_status = await self.exchange.get_futures_order_status(trading_pair, order_id)
 
             if order_status:
                 logger.info(f"Order {order_id} status: {order_status.get('status', 'UNKNOWN')}")
@@ -60,7 +60,7 @@ class OrderUpdater:
             logger.info(f"Modifying order {order_id} on {trading_pair}")
 
             # Get current order details
-            current_order = await self.binance_exchange.get_futures_order_status(trading_pair, order_id)
+            current_order = await self.exchange.get_futures_order_status(trading_pair, order_id)
             if not current_order:
                 return False, {"error": f"Could not retrieve order {order_id}"}
 
@@ -75,7 +75,7 @@ class OrderUpdater:
                 return False, {"error": "No modification parameters provided"}
 
             # Modify the order
-            modified_order = await self.binance_exchange.modify_futures_order(
+            modified_order = await self.exchange.modify_futures_order(
                 trading_pair,
                 order_id,
                 **modify_params
@@ -108,13 +108,13 @@ class OrderUpdater:
             logger.info(f"Replacing order {old_order_id} on {trading_pair}")
 
             # Cancel the old order first
-            success, cancel_response = await self.binance_exchange.cancel_futures_order(trading_pair, old_order_id)
+            success, cancel_response = await self.exchange.cancel_futures_order(trading_pair, old_order_id)
             if not success:
                 logger.warning(f"Failed to cancel old order {old_order_id}: {cancel_response}")
 
             # Create the new order
             if order_type.upper() == 'MARKET':
-                new_order = await self.binance_exchange.create_futures_order(
+                new_order = await self.exchange.create_futures_order(
                     pair=trading_pair,
                     side=new_side,
                     order_type='MARKET',
@@ -124,7 +124,7 @@ class OrderUpdater:
                 if new_price is None:
                     return False, {"error": "Price is required for LIMIT orders"}
 
-                new_order = await self.binance_exchange.create_futures_order(
+                new_order = await self.exchange.create_futures_order(
                     pair=trading_pair,
                     side=new_side,
                     order_type='LIMIT',
@@ -150,7 +150,7 @@ class OrderUpdater:
         try:
             logger.info(f"Getting order history for {trading_pair}")
 
-            order_history = await self.binance_exchange.get_futures_order_history(trading_pair, limit=limit)
+            order_history = await self.exchange.get_futures_order_history(trading_pair, limit=limit)
 
             if order_history:
                 logger.info(f"Retrieved {len(order_history)} orders for {trading_pair}")
@@ -173,7 +173,7 @@ class OrderUpdater:
             else:
                 logger.info("Getting all open orders")
 
-            open_orders = await self.binance_exchange.get_all_open_futures_orders()
+            open_orders = await self.exchange.get_all_open_futures_orders()
 
             if open_orders:
                 if trading_pair:
