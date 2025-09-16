@@ -23,7 +23,8 @@ from config import settings
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.exchange import BinanceExchange
+from src.exchange.core.exchange_factory import ExchangeFactory
+from src.exchange.core.exchange_config import ExchangeConfig
 from discord_bot.utils.trade_retry_utils import initialize_clients, safe_parse_binance_response
 # Setup logging
 logging.basicConfig(
@@ -36,8 +37,14 @@ logger = logging.getLogger(__name__)
 class BinanceHistoryBackfiller:
     """Backfills trades table with PnL and exit price data from Binance history."""
 
-    def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
-        self.binance_exchange = BinanceExchange(api_key, api_secret, testnet)
+    def __init__(self, api_key: str, api_secret: str, testnet: bool = False, exchange_type: str = "binance"):
+        config = ExchangeConfig(
+            api_key=api_key,
+            api_secret=api_secret,
+            is_testnet=testnet
+        )
+        factory = ExchangeFactory()
+        self.exchange = factory.create_exchange(exchange_type, config)
         self.results_dir = Path("logs/binance_history")
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.bot, self.supabase = initialize_clients()
@@ -45,13 +52,13 @@ class BinanceHistoryBackfiller:
             raise ValueError("Failed to initialize Supabase client")
 
     async def initialize(self):
-        """Initialize the Binance client."""
+        """Initialize the exchange client."""
         try:
-            await self.binance_exchange._init_client()
-            logger.info("✅ Binance client initialized successfully")
+            await self.exchange.initialize()
+            logger.info(f"✅ {self.exchange.__class__.__name__} client initialized successfully")
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to initialize Binance client: {e}")
+            logger.error(f"❌ Failed to initialize exchange client: {e}")
             return False
 
     def calculate_pnl(self, entry_price: float, exit_price: float, position_size: float, position_type: str, fees: float = 0.001) -> float:
@@ -122,7 +129,7 @@ class BinanceHistoryBackfiller:
                     logger.info(f"Fetching trades from {datetime.fromtimestamp(chunk_start/1000, tz=timezone.utc)} to {datetime.fromtimestamp(chunk_end/1000, tz=timezone.utc)}")
 
                     try:
-                        chunk_trades = await self.binance_exchange.get_user_trades(
+                        chunk_trades = await self.exchange.get_user_trades(
                             symbol=symbol,
                             limit=limit,
                             from_id=from_id,
@@ -137,7 +144,7 @@ class BinanceHistoryBackfiller:
                     chunk_start = chunk_end
             else:
                 # Single request without time range
-                all_trades = await self.binance_exchange.get_user_trades(
+                all_trades = await self.exchange.get_user_trades(
                     symbol=symbol,
                     limit=limit,
                     from_id=from_id,
@@ -169,7 +176,7 @@ class BinanceHistoryBackfiller:
                     logger.info(f"Fetching orders from {datetime.fromtimestamp(chunk_start/1000, tz=timezone.utc)} to {datetime.fromtimestamp(chunk_end/1000, tz=timezone.utc)}")
 
                     try:
-                        chunk_orders = await self.binance_exchange.get_all_open_futures_orders(
+                        chunk_orders = await self.exchange.get_all_open_futures_orders(
                         )
                         all_orders.extend(chunk_orders)
                         await asyncio.sleep(0.5)  # Rate limiting between chunks
@@ -179,7 +186,7 @@ class BinanceHistoryBackfiller:
                     chunk_start = chunk_end
             else:
                 # Single request without time range
-                all_orders = await self.binance_exchange.get_all_open_futures_orders(
+                all_orders = await self.exchange.get_all_open_futures_orders(
                 )
 
             logger.info(f"✅ Retrieved {len(all_orders)} order records from Binance")
@@ -363,8 +370,8 @@ class BinanceHistoryBackfiller:
         logger.info("✅ Backfill process completed!")
 
     async def close(self):
-        """Close the Binance client connection."""
-        await self.binance_exchange.close_client()
+        """Close the exchange client connection."""
+        await self.exchange.close()
 
 
 async def main():
@@ -381,7 +388,8 @@ async def main():
     backfiller = BinanceHistoryBackfiller(
         api_key=settings.BINANCE_API_KEY or "",
         api_secret=settings.BINANCE_API_SECRET or "",
-        testnet=settings.BINANCE_TESTNET
+        testnet=settings.BINANCE_TESTNET,
+        exchange_type="binance"
     )
 
     try:

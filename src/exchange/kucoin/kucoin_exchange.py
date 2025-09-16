@@ -1085,3 +1085,42 @@ class KucoinExchange(ExchangeBase):
             "STOP_LIMIT": "stop_limit"
         }
         return type_mapping.get(order_type.upper(), "limit")
+
+    async def get_all_open_futures_orders(self) -> List[Dict[str, Any]]:
+        """
+        Get all open futures orders from KuCoin.
+
+        Returns:
+            List of open order dictionaries
+        """
+        try:
+            futures_service = self.client.get_futures_service()
+            order_api = futures_service.get_order_api()
+
+            # Get all open orders
+            request = GetOrderListReqBuilder().set_status("active").build()
+            response = order_api.get_order_list(request)
+
+            orders = []
+            if response and response.data:
+                for order in response.data.items:
+                    orders.append({
+                        'orderId': order.order_id,
+                        'symbol': order.symbol,
+                        'side': order.side,
+                        'type': order.type,
+                        'status': order.status,
+                        'price': float(order.price) if order.price else None,
+                        'origQty': float(order.size) if order.size else None,
+                        'executedQty': float(order.filled_size) if order.filled_size else None,
+                        'timeInForce': order.time_in_force,
+                        'time': order.created_at,
+                        'updateTime': order.updated_at
+                    })
+
+            logger.info(f"Retrieved {len(orders)} open orders from KuCoin")
+            return orders
+
+        except Exception as e:
+            logger.error(f"Error getting open orders from KuCoin: {e}")
+            return []

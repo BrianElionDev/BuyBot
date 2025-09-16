@@ -111,6 +111,16 @@ class ExchangeBase(ABC):
         """
         pass
 
+    @abstractmethod
+    async def get_all_open_futures_orders(self) -> List[Dict[str, Any]]:
+        """
+        Get all open futures orders.
+
+        Returns:
+            List of open order dictionaries
+        """
+        pass
+
     # Position Operations
     @abstractmethod
     async def get_futures_position_information(self) -> List[Dict[str, Any]]:

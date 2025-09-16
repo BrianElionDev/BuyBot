@@ -17,20 +17,20 @@ class PositionManager:
     Core class for managing trading positions.
     """
 
-    def __init__(self, binance_exchange, db_manager):
+    def __init__(self, exchange, db_manager):
         """
         Initialize the position manager.
 
         Args:
-            binance_exchange: The Binance exchange instance
+            exchange: The exchange instance (Binance, KuCoin, etc.)
             db_manager: The database manager instance
         """
-        self.binance_exchange = binance_exchange
+        self.exchange = exchange
         self.db_manager = db_manager
 
     async def is_position_open(self, coin_symbol: str, position_side: str = 'BOTH') -> bool:
         """
-        Check if a position is open for the given symbol and side on Binance Futures.
+        Check if a position is open for the given symbol and side on the exchange.
 
         Args:
             coin_symbol: The trading symbol (e.g., 'BTC')
@@ -44,8 +44,8 @@ class PositionManager:
             return False
 
         try:
-            trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
-            pos_info = await self.binance_exchange.client.futures_position_information(symbol=trading_pair)  # type: ignore
+            trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
+            pos_info = await self.exchange.get_futures_position_information()
 
             for pos in pos_info:
                 if pos['positionSide'] == position_side and float(pos['positionAmt']) != 0:
@@ -94,7 +94,7 @@ class PositionManager:
                 return False, {"error": f"Invalid trade data for closing position. Symbol: {coin_symbol}, Size: {position_size}"}
 
             amount_to_close = position_size * (close_percentage / 100.0)
-            trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
+            trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
             is_futures = position_type in ['LONG', 'SHORT']
 
             # Cancel existing TP/SL orders before closing position
@@ -118,7 +118,7 @@ class PositionManager:
                 return False, {"error": f"Unknown position type: {position_type}"}
 
             # Create the closing order
-            close_order = await self.binance_exchange.create_futures_order(
+            close_order = await self.exchange.create_futures_order(
                 pair=trading_pair,
                 side=close_side,
                 order_type='MARKET',

@@ -28,7 +28,7 @@ class FollowupSignalProcessor:
             trading_engine: The trading engine instance
         """
         self.trading_engine = trading_engine
-        self.binance_exchange = trading_engine.binance_exchange
+        self.exchange = trading_engine.exchange
         self.db_manager = trading_engine.db_manager
 
     async def check_trade_status_on_binance(self, coin_symbol: str, exchange_order_id: Optional[str] = None) -> Dict[str, Any]:
@@ -50,7 +50,7 @@ class FollowupSignalProcessor:
             }
 
             # Check positions
-            positions = await self.binance_exchange.get_positions(symbol=symbol)
+            positions = await self.exchange.get_positions(symbol=symbol)
             for pos in positions:
                 position_amt = float(pos.get('positionAmt', 0))
                 if position_amt != 0:
@@ -63,13 +63,13 @@ class FollowupSignalProcessor:
             # Check open orders (especially stop losses)
             if exchange_order_id:
                 try:
-                    order_status = await self.binance_exchange.get_order_status(symbol, exchange_order_id)
+                    order_status = await self.exchange.get_order_status(symbol, exchange_order_id)
                     result['order_status'] = order_status
                 except:
                     pass
 
             # Get all open orders for this symbol
-            open_orders = await self.binance_exchange.get_open_orders(symbol=symbol)
+            open_orders = await self.exchange.get_open_orders(symbol=symbol)
             result['has_open_orders'] = len(open_orders) > 0
             result['stop_orders'] = [order for order in open_orders if order.get('type') in ['STOP_MARKET', 'TAKE_PROFIT_MARKET']]
 
@@ -191,7 +191,7 @@ class FollowupSignalProcessor:
         if not coin_symbol or not position_type:
             logger.error(f"Missing coin_symbol or position_type for trade {trade_id}")
             return False, {"error": f"Missing coin_symbol or position_type for trade {trade_id}"}
-        trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
+        trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
 
         # Check if position is open before acting
         is_open = await self.trading_engine.is_position_open(coin_symbol)
@@ -243,7 +243,7 @@ class FollowupSignalProcessor:
 
             # Place a LIMIT order at tp_price for amount_to_close, reduceOnly
             tp_side = 'SELL' if position_type and position_type.upper() == 'LONG' else 'BUY'
-            tp_order = await self.binance_exchange.create_futures_order(
+            tp_order = await self.exchange.create_futures_order(
                 pair=trading_pair,
                 side=tp_side,
                 order_type='LIMIT',
@@ -290,7 +290,7 @@ class FollowupSignalProcessor:
 
             # Create closing order
             close_side = 'SELL' if position_type and position_type.upper() == 'LONG' else 'BUY'
-            close_order = await self.binance_exchange.create_futures_order(
+            close_order = await self.exchange.create_futures_order(
                 pair=trading_pair,
                 side=close_side,
                 order_type='MARKET',
@@ -337,10 +337,10 @@ class FollowupSignalProcessor:
 
             # Cancel old SL order if exists
             if stop_loss_order_id:
-                await self.binance_exchange.cancel_futures_order(trading_pair, stop_loss_order_id)
+                await self.exchange.cancel_futures_order(trading_pair, stop_loss_order_id)
 
             new_sl_side = 'SELL' if position_type and position_type.upper() == 'LONG' else 'BUY'
-            new_sl_order = await self.binance_exchange.create_futures_order(
+            new_sl_order = await self.exchange.create_futures_order(
                 pair=trading_pair,
                 side=new_sl_side,
                 order_type='STOP_MARKET',

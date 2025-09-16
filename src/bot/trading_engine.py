@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from discord_bot.database import DatabaseManager
-from src.exchange.base import ExchangeBase
+from src.exchange.core.exchange_base import ExchangeBase
 from src.services.pricing.price_service import PriceService
 from src.exchange import FixedFeeCalculator
 
