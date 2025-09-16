@@ -104,6 +104,58 @@ class KucoinTradingEngine:
         logger.info(f"KuCoin TradingEngine initialized with {config.FIXED_FEE_RATE * 100}% fee cap")
         logger.info("KuCoin TradingEngine initialized with all modularized components.")
 
+    async def _calculate_trade_amount(
+        self,
+        coin_symbol: str,
+        current_price: float,
+        quantity_multiplier: Optional[int] = None
+    ) -> float:
+        """
+        Calculate the trade amount based on USDT value and current price.
+
+        Args:
+            coin_symbol: The trading symbol
+            current_price: Current market price
+            quantity_multiplier: Optional quantity multiplier
+
+        Returns:
+            Calculated trade amount
+        """
+        try:
+            # Calculate trade amount based on USDT value and current price
+            usdt_amount = self.config.TRADE_AMOUNT
+            trade_amount = usdt_amount / current_price
+            logger.info(f"Calculated trade amount: {trade_amount} {coin_symbol} (${usdt_amount:.2f} / ${current_price:.8f})")
+
+            # Apply quantity multiplier if specified (for memecoins)
+            if quantity_multiplier and quantity_multiplier > 1:
+                trade_amount *= quantity_multiplier
+                logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
+
+            # Get symbol filters for precision formatting
+            trading_pair = f"{coin_symbol.upper()}-USDT"
+            filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)
+
+            if filters:
+                lot_size_filter = filters.get('LOT_SIZE', {})
+                min_qty = float(lot_size_filter.get('minQty', 0.001))
+                max_qty = float(lot_size_filter.get('maxQty', 1000000))
+
+                # Apply precision formatting
+                step_size = float(lot_size_filter.get('stepSize', 0.0001))
+                if step_size > 0:
+                    trade_amount = round(trade_amount / step_size) * step_size
+
+                # Ensure within bounds
+                trade_amount = max(min_qty, min(max_qty, trade_amount))
+                logger.info(f"Adjusted trade amount: {trade_amount} (min: {min_qty}, max: {max_qty})")
+
+            return trade_amount
+
+        except Exception as e:
+            logger.error(f"Failed to calculate trade amount: {e}")
+            return 0.0
+
     def _handle_price_range_logic(
         self,
         entry_prices: Optional[List[float]],
@@ -206,13 +258,22 @@ class KucoinTradingEngine:
                 logger.error(f"Symbol {trading_pair} not supported on KuCoin")
                 return False, f"Symbol {trading_pair} not supported on KuCoin"
 
+            # Calculate trade amount
+            trade_amount = await self._calculate_trade_amount(
+                coin_symbol, current_price, quantity_multiplier
+            )
+
+            if trade_amount <= 0:
+                logger.error(f"Invalid trade amount calculated: {trade_amount}")
+                return False, f"Invalid trade amount calculated: {trade_amount}"
+
             # Execute the order using correct parameter names
-            logger.info(f"Executing KuCoin order: {trading_pair} {SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL} {order_type.upper()}")
+            logger.info(f"Executing KuCoin order: {trading_pair} {SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL} {order_type.upper()} amount={trade_amount}")
             result = await self.kucoin_exchange.create_futures_order(
                 pair=trading_pair,
                 side=SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL,
                 order_type=order_type.upper(),
-                amount=1.0,  # Default quantity, should be calculated based on position size
+                amount=trade_amount,
                 price=final_price if order_type.upper() == 'LIMIT' else None,
                 client_order_id=client_order_id
             )
@@ -264,11 +325,27 @@ class KucoinTradingEngine:
             position_type = trade_row.get('signal_type', 'LONG')
             side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
 
-            # Calculate quantity (simplified - should use actual position size)
-            quantity = 1.0  # This should be calculated from actual position size
+            # Get actual position size from trade data
+            position_size = float(trade_row.get('position_size', 0.0))
+
+            # If no position size in trade data, try to get it from the response
+            if position_size <= 0:
+                response_data = trade_row.get('kucoin_response', {})
+                if isinstance(response_data, dict):
+                    position_size = float(response_data.get('origQty', 0.0))
+
+            # If still no position size, use a default or return error
+            if position_size <= 0:
+                logger.error(f"No valid position size found for {coin_symbol}")
+                return False, f"No valid position size found for {coin_symbol}"
+
+            # Calculate quantity to close based on percentage
+            quantity = position_size * (close_percentage / 100.0)
+
+            logger.info(f"Closing {close_percentage}% of position: {quantity} {coin_symbol} (total: {position_size})")
 
             # Create market order to close position
-            logger.info(f"Executing KuCoin close order: {trading_pair} {side} {ORDER_TYPE_MARKET}")
+            logger.info(f"Executing KuCoin close order: {trading_pair} {side} {ORDER_TYPE_MARKET} amount={quantity}")
             result = await self.kucoin_exchange.create_futures_order(
                 pair=trading_pair,
                 side=side,

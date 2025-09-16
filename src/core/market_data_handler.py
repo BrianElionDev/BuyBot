@@ -16,16 +16,35 @@ class MarketDataHandler:
     Core class for handling market data operations.
     """
 
-    def __init__(self, binance_exchange, price_service):
+    def __init__(self, exchange, price_service):
         """
         Initialize the market data handler.
 
         Args:
-            binance_exchange: The Binance exchange instance
+            exchange: The exchange instance (Binance, KuCoin, etc.)
             price_service: The price service instance
         """
-        self.binance_exchange = binance_exchange
+        self.exchange = exchange
         self.price_service = price_service
+
+    def _get_trading_pair(self, coin_symbol: str) -> str:
+        """
+        Get trading pair format based on exchange type.
+
+        Args:
+            coin_symbol: The coin symbol (e.g., 'BTC')
+
+        Returns:
+            Trading pair in exchange format
+        """
+        # Check if exchange has a method to get trading pair format
+        if hasattr(self.exchange, 'get_futures_trading_pair'):
+            return self.exchange.get_futures_trading_pair(coin_symbol)
+        elif hasattr(self.exchange, 'get_trading_pair'):
+            return self.exchange.get_trading_pair(coin_symbol)
+        else:
+            # Default format for most exchanges
+            return f"{coin_symbol.upper()}USDT"
 
     async def get_current_market_price(self, coin_symbol: str) -> Optional[float]:
         """
@@ -38,7 +57,16 @@ class MarketDataHandler:
             Current market price or None if failed
         """
         try:
-            current_price = await self.binance_exchange.get_futures_mark_price(f'{coin_symbol.upper()}USDT')
+            # Try to get mark price first (for futures)
+            if hasattr(self.exchange, 'get_mark_price'):
+                trading_pair = self._get_trading_pair(coin_symbol)
+                current_price = await self.exchange.get_mark_price(trading_pair)
+                if current_price:
+                    logger.debug(f"Current market price for {coin_symbol}: {current_price}")
+                    return current_price
+
+            # Fallback to price service
+            current_price = await self.price_service.get_coin_price(coin_symbol)
             if current_price:
                 logger.debug(f"Current market price for {coin_symbol}: {current_price}")
                 return current_price
@@ -60,8 +88,8 @@ class MarketDataHandler:
             Order book data or None if failed
         """
         try:
-            if hasattr(self.binance_exchange, 'get_order_book'):
-                order_book = await self.binance_exchange.get_order_book(trading_pair)
+            if hasattr(self.exchange, 'get_order_book'):
+                order_book = await self.exchange.get_order_book(trading_pair)
                 if order_book and order_book.get('bids') and order_book.get('asks'):
                     logger.debug(f"Order book data retrieved for {trading_pair}")
                     return order_book
@@ -77,18 +105,22 @@ class MarketDataHandler:
 
     async def get_exchange_info(self) -> Optional[Dict[str, Any]]:
         """
-        Get exchange information from Binance.
+        Get exchange information.
 
         Returns:
             Exchange information or None if failed
         """
         try:
-            exchange_info = await self.binance_exchange.get_exchange_info()
-            if exchange_info:
-                logger.debug("Exchange info retrieved successfully")
-                return exchange_info
+            if hasattr(self.exchange, 'get_exchange_info'):
+                exchange_info = await self.exchange.get_exchange_info()
+                if exchange_info:
+                    logger.debug("Exchange info retrieved successfully")
+                    return exchange_info
+                else:
+                    logger.error("Failed to retrieve exchange info")
+                    return None
             else:
-                logger.error("Failed to retrieve exchange info")
+                logger.warning("Exchange info method not implemented")
                 return None
         except Exception as e:
             logger.error(f"Error getting exchange info: {e}")
@@ -105,12 +137,16 @@ class MarketDataHandler:
             Symbol filters or None if failed
         """
         try:
-            filters = await self.binance_exchange.get_futures_symbol_filters(trading_pair)
-            if filters:
-                logger.debug(f"Symbol filters retrieved for {trading_pair}")
-                return filters
+            if hasattr(self.exchange, 'get_futures_symbol_filters'):
+                filters = await self.exchange.get_futures_symbol_filters(trading_pair)
+                if filters:
+                    logger.debug(f"Symbol filters retrieved for {trading_pair}")
+                    return filters
+                else:
+                    logger.error(f"Could not retrieve symbol filters for {trading_pair}")
+                    return None
             else:
-                logger.error(f"Could not retrieve symbol filters for {trading_pair}")
+                logger.warning("Symbol filters method not implemented")
                 return None
         except Exception as e:
             logger.error(f"Error getting symbol filters for {trading_pair}: {e}")
@@ -128,9 +164,10 @@ class MarketDataHandler:
         """
         try:
             # Check if symbol is supported
-            is_supported = await self.binance_exchange.is_futures_symbol_supported(trading_pair)
-            if not is_supported:
-                return False, f"Symbol {trading_pair} not supported or not trading on Binance Futures."
+            if hasattr(self.exchange, 'is_futures_symbol_supported'):
+                is_supported = await self.exchange.is_futures_symbol_supported(trading_pair)
+                if not is_supported:
+                    return False, f"Symbol {trading_pair} not supported or not trading on futures."
 
             # Check if symbol is in TRADING status
             exchange_info = await self.get_exchange_info()
@@ -138,7 +175,12 @@ class MarketDataHandler:
                 from src.bot.utils.validation_utils import ValidationUtils
                 return ValidationUtils.validate_symbol_support(trading_pair, exchange_info)
             else:
-                return False, f"Could not retrieve exchange info for {trading_pair}"
+                # If no exchange info available, just check if symbol is supported
+                if hasattr(self.exchange, 'is_futures_symbol_supported'):
+                    is_supported = await self.exchange.is_futures_symbol_supported(trading_pair)
+                    return is_supported, None if is_supported else f"Symbol {trading_pair} not supported"
+                else:
+                    return True, None  # Assume supported if no validation available
 
         except Exception as e:
             logger.error(f"Error validating symbol support for {trading_pair}: {e}")
