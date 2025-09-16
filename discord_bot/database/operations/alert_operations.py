@@ -158,7 +158,7 @@ class AlertOperations:
                 if response.data and len(response.data) > 0:
                     return True
             except Exception as e:
-                logger.debug(f"alert_hash column not available, using fallback duplicate detection: {e}")
+                logger.info(f"alert_hash column not available, using fallback duplicate detection: {e}")
 
                 # In a production environment, you might want to implement content-based duplicate detection
                 return False

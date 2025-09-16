@@ -50,10 +50,10 @@ class DatabaseSync:
             # Handle both direct execution reports and ORDER_TRADE_UPDATE events
             if 'o' in data:
                 order_data = data['o']
-                logger.debug(f"Processing ORDER_TRADE_UPDATE event: {order_data}")
+                logger.info(f"Processing ORDER_TRADE_UPDATE event: {order_data}")
             else:
                 order_data = data
-                logger.debug(f"Processing direct execution report: {order_data}")
+                logger.info(f"Processing direct execution report: {order_data}")
 
             order_id = order_data.get('i')  # Binance order ID
             symbol = order_data.get('s')    # Symbol

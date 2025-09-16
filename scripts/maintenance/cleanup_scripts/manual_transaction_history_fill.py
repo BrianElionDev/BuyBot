@@ -44,7 +44,7 @@ class TransactionHistoryFiller:
         try:
             # Get the last sync time to avoid re-syncing existing transactions
             last_sync_time = await self.db_manager.get_last_transaction_sync_time()
-            
+
             # If we have existing transactions, start from the last one + 1ms
             if last_sync_time > 0 and start_time < last_sync_time:
                 start_time = last_sync_time + 1
@@ -121,7 +121,7 @@ class TransactionHistoryFiller:
             )
 
             if exists:
-                logger.debug(f"Transaction already exists, skipping: {transaction}")
+                logger.info(f"Transaction already exists, skipping: {transaction}")
                 return True
 
             # Insert new transaction

@@ -67,11 +67,11 @@ class PriceCache:
 
         # Check if cache entry is still valid
         if self._is_cache_valid(cache_entry):
-            logger.debug(f"Cache hit for {symbol}: ${cache_entry.price}")
+            logger.info(f"Cache hit for {symbol}: ${cache_entry.price}")
             return cache_entry.price
 
         # Remove expired cache entry
-        logger.debug(f"Cache expired for {symbol}, removing")
+        logger.info(f"Cache expired for {symbol}, removing")
         del self._cache[symbol]
         return None
 
@@ -90,7 +90,7 @@ class PriceCache:
         )
 
         self._cache[symbol] = cache_entry
-        logger.debug(f"Cached price for {symbol}: ${price} (TTL: {cache_ttl}s)")
+        logger.info(f"Cached price for {symbol}: ${price} (TTL: {cache_ttl}s)")
 
     def get_cached_coin_id(self, symbol: str) -> Optional[str]:
         """Get cached coin ID for a symbol"""
@@ -107,7 +107,7 @@ class PriceCache:
 
         symbol = symbol.upper().strip()
         self._coin_cache[symbol] = coin_id
-        logger.debug(f"Cached coin ID mapping: {symbol} -> {coin_id}")
+        logger.info(f"Cached coin ID mapping: {symbol} -> {coin_id}")
 
     def _is_cache_valid(self, cache_entry: PriceCacheEntry) -> bool:
         """Check if a cache entry is still valid"""

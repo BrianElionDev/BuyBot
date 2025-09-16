@@ -78,7 +78,7 @@ class FixedFeeCalculator:
             # Round to 8 decimal places (Binance precision)
             trading_fee = trading_fee.quantize(Decimal('0.00000001'), rounding=ROUND_HALF_UP)
 
-            logger.debug(f"Fixed fee calculated: {trading_fee} USDT "
+            logger.info(f"Fixed fee calculated: {trading_fee} USDT "
                         f"(margin: {margin}, leverage: {leverage}, "
                         f"fixed_rate: {self.fee_rate})")
 
@@ -138,7 +138,7 @@ class FixedFeeCalculator:
             # Round to appropriate precision
             breakeven_price = breakeven_price.quantize(Decimal('0.00000001'), rounding=ROUND_HALF_UP)
 
-            logger.debug(f"Fixed fee breakeven price calculated: {breakeven_price} "
+            logger.info(f"Fixed fee breakeven price calculated: {breakeven_price} "
                         f"(entry: {entry_price}, fixed_rate: {self.fee_rate}, "
                         f"multiplier: {breakeven_multiplier})")
 

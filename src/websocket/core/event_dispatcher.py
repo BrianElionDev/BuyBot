@@ -57,7 +57,7 @@ class EventDispatcher:
 
         if handler not in self.event_handlers[event_type]:
             self.event_handlers[event_type].append(handler)
-            logger.debug(f"Registered handler for event type: {event_type}")
+            logger.info(f"Registered handler for event type: {event_type}")
 
     def unregister_handler(self, event_type: str, handler: Callable):
         """
@@ -69,7 +69,7 @@ class EventDispatcher:
         """
         if event_type in self.event_handlers and handler in self.event_handlers[event_type]:
             self.event_handlers[event_type].remove(handler)
-            logger.debug(f"Unregistered handler for event type: {event_type}")
+            logger.info(f"Unregistered handler for event type: {event_type}")
 
     def register_middleware(self, middleware: Callable):
         """
@@ -80,7 +80,7 @@ class EventDispatcher:
         """
         if middleware not in self.middleware:
             self.middleware.append(middleware)
-            logger.debug("Registered middleware")
+            logger.info("Registered middleware")
 
     def unregister_middleware(self, middleware: Callable):
         """
@@ -91,7 +91,7 @@ class EventDispatcher:
         """
         if middleware in self.middleware:
             self.middleware.remove(middleware)
-            logger.debug("Unregistered middleware")
+            logger.info("Unregistered middleware")
 
     async def dispatch_event(self, event: WebSocketEvent):
         """
@@ -104,14 +104,14 @@ class EventDispatcher:
             # Apply middleware
             processed_event = await self._apply_middleware(event)
             if processed_event is None:
-                logger.debug("Event filtered out by middleware")
+                logger.info("Event filtered out by middleware")
                 return
 
             # Get handlers for event type
             handlers = self.event_handlers.get(processed_event.event_type, [])
 
             if not handlers:
-                logger.debug(f"No handlers registered for event type: {processed_event.event_type}")
+                logger.info(f"No handlers registered for event type: {processed_event.event_type}")
                 return
 
             # Dispatch to all handlers

@@ -58,7 +58,7 @@ class TelegramService:
             True if message sent successfully, False otherwise
         """
         if not self.config.enabled or not self.bot:
-            logger.debug(f"Telegram notification (disabled): {message[:100]}...")
+            logger.info(f"Telegram notification (disabled): {message[:100]}...")
             return False
 
         try:

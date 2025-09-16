@@ -46,7 +46,9 @@ class ProductionLoggingConfig:
 
         # Configure root logger
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.DEBUG)
+        root_logger.setLevel(logging.INFO)
+
+        # Suppress DEBUG logging from external libraries
 
         # Create formatters
         self._create_formatters()
