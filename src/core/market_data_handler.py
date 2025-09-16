@@ -62,13 +62,13 @@ class MarketDataHandler:
                 trading_pair = self._get_trading_pair(coin_symbol)
                 current_price = await self.exchange.get_mark_price(trading_pair)
                 if current_price:
-                    logger.debug(f"Current market price for {coin_symbol}: {current_price}")
+                    logger.info(f"Current market price for {coin_symbol}: {current_price}")
                     return current_price
 
             # Fallback to price service
             current_price = await self.price_service.get_coin_price(coin_symbol)
             if current_price:
-                logger.debug(f"Current market price for {coin_symbol}: {current_price}")
+                logger.info(f"Current market price for {coin_symbol}: {current_price}")
                 return current_price
             else:
                 logger.error(f"Failed to get price for {coin_symbol}")
@@ -91,7 +91,7 @@ class MarketDataHandler:
             if hasattr(self.exchange, 'get_order_book'):
                 order_book = await self.exchange.get_order_book(trading_pair)
                 if order_book and order_book.get('bids') and order_book.get('asks'):
-                    logger.debug(f"Order book data retrieved for {trading_pair}")
+                    logger.info(f"Order book data retrieved for {trading_pair}")
                     return order_book
                 else:
                     logger.warning(f"No order book depth for {trading_pair}")
@@ -114,7 +114,7 @@ class MarketDataHandler:
             if hasattr(self.exchange, 'get_exchange_info'):
                 exchange_info = await self.exchange.get_exchange_info()
                 if exchange_info:
-                    logger.debug("Exchange info retrieved successfully")
+                    logger.info("Exchange info retrieved successfully")
                     return exchange_info
                 else:
                     logger.error("Failed to retrieve exchange info")
@@ -140,7 +140,7 @@ class MarketDataHandler:
             if hasattr(self.exchange, 'get_futures_symbol_filters'):
                 filters = await self.exchange.get_futures_symbol_filters(trading_pair)
                 if filters:
-                    logger.debug(f"Symbol filters retrieved for {trading_pair}")
+                    logger.info(f"Symbol filters retrieved for {trading_pair}")
                     return filters
                 else:
                     logger.error(f"Could not retrieve symbol filters for {trading_pair}")

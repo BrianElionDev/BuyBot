@@ -296,7 +296,7 @@ class DiscordBotWebSocketManager:
             market_data_connected = status.get('market_data_connected', False)
 
             if user_data_connected and market_data_connected:
-                logger.debug("WebSocket health check: OK")
+                logger.info("WebSocket health check: OK")
                 return True
             else:
                 logger.warning(f"WebSocket health check: FAILED - User data: {user_data_connected}, Market data: {market_data_connected}")
