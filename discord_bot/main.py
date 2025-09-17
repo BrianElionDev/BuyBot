@@ -22,6 +22,7 @@ from scripts.maintenance.cleanup_scripts.backfill_pnl_and_exit_prices import Bin
 from scripts.maintenance.cleanup_scripts.backfill_coin_symbols import backfill_coin_symbols
 from scripts.maintenance.cleanup_scripts.cleanup_orphaned_orders import OrphanedOrdersCleanup
 from scripts.maintenance.migration_scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
+from scripts.maintenance.migration_scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
 
 # Configure logging for the Discord service using centralized config
 from config.logging_config import setup_production_logging
@@ -489,9 +490,13 @@ async def auto_fill_transaction_history(bot, supabase):
             if inserted_count > 0:
                 logger.info(f"[Scheduler] Transaction history: {inserted_count} records inserted")
             else:
-                logger.debug("[Scheduler] No new transactions inserted (duplicates filtered)")
+                logger.info(f"[Scheduler] Transaction history: {total_inserted} inserted, {total_skipped} skipped")
         else:
-            logger.debug(f"[Scheduler] Transaction history error: {result.get('message', 'Unknown error')}")
+            # Don't treat "no income records found" as an error - this is normal
+            if "No income records found" in result.get('message', ''):
+                logger.info(f"[Scheduler] Transaction history: {result.get('message', 'No new income records')}")
+            else:
+                logger.error(f"[Scheduler] Transaction history autofill failed: {result.get('message', 'Unknown error')}")
 
     except Exception as e:
         logger.debug(f"[Scheduler] Transaction history error: {e}")

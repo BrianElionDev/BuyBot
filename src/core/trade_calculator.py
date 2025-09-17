@@ -94,7 +94,7 @@ class TradeCalculator:
             # Calculate quantity
             quantity = notional_value / entry_price
 
-            logger.debug(f"Position quantity calculated: {quantity} (amount: {trade_amount}, price: {entry_price}, leverage: {leverage})")
+            logger.info(f"Position quantity calculated: {quantity} (amount: {trade_amount}, price: {entry_price}, leverage: {leverage})")
             return quantity
 
         except Exception as e:
@@ -120,7 +120,7 @@ class TradeCalculator:
         """
         try:
             breakeven_price = self.fee_calculator.calculate_breakeven_price(entry_price)
-            logger.debug(f"Breakeven price calculated: {breakeven_price} (entry: {entry_price})")
+            logger.info(f"Breakeven price calculated: {breakeven_price} (entry: {entry_price})")
             return float(breakeven_price)
 
         except Exception as e:
@@ -151,7 +151,7 @@ class TradeCalculator:
                 entry_price=entry_price
             )
 
-            logger.debug(f"Comprehensive fees calculated: {fee_analysis}")
+            logger.info(f"Comprehensive fees calculated: {fee_analysis}")
             return fee_analysis
 
         except Exception as e:
@@ -210,7 +210,7 @@ class TradeCalculator:
                 precision = 0
 
             rounded_quantity = round(quantity, precision)
-            logger.debug(f"Quantity rounded: {quantity} -> {rounded_quantity} (precision: {precision})")
+            logger.info(f"Quantity rounded: {quantity} -> {rounded_quantity} (precision: {precision})")
             return rounded_quantity
 
         except Exception as e:

@@ -48,6 +48,9 @@ class ProductionLoggingConfig:
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
 
+        # Suppress DEBUG logging from external libraries
+        self._suppress_external_debug_logs()
+
         # Create formatters
         self._create_formatters()
 
@@ -56,6 +59,47 @@ class ProductionLoggingConfig:
 
         # Configure specific loggers
         self._configure_specific_loggers()
+
+    def _suppress_external_debug_logs(self):
+        """Suppress DEBUG logging from external libraries."""
+        # Suppress websockets ping/pong logs
+        websockets_logger = logging.getLogger('websockets')
+        websockets_logger.setLevel(logging.WARNING)
+        websockets_logger.propagate = False
+
+        websockets_client_logger = logging.getLogger('websockets.client')
+        websockets_client_logger.setLevel(logging.WARNING)
+        websockets_client_logger.propagate = False
+
+        # Suppress HTTP/2 and hpack debug logs
+        hpack_logger = logging.getLogger('hpack')
+        hpack_logger.setLevel(logging.WARNING)
+        hpack_logger.propagate = False
+
+        httpcore_logger = logging.getLogger('httpcore')
+        httpcore_logger.setLevel(logging.WARNING)
+        httpcore_logger.propagate = False
+
+        httpcore_http2_logger = logging.getLogger('httpcore.http2')
+        httpcore_http2_logger.setLevel(logging.WARNING)
+        httpcore_http2_logger.propagate = False
+
+        httpx_logger = logging.getLogger('httpx')
+        httpx_logger.setLevel(logging.INFO)
+        httpx_logger.propagate = False
+
+        # Suppress other noisy libraries
+        urllib3_logger = logging.getLogger('urllib3')
+        urllib3_logger.setLevel(logging.WARNING)
+        urllib3_logger.propagate = False
+
+        requests_logger = logging.getLogger('requests')
+        requests_logger.setLevel(logging.WARNING)
+        requests_logger.propagate = False
+
+        aiohttp_logger = logging.getLogger('aiohttp')
+        aiohttp_logger.setLevel(logging.WARNING)
+        aiohttp_logger.propagate = False
 
     def _create_formatters(self):
         """Create formatters for different log types."""

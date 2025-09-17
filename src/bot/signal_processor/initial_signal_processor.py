@@ -29,7 +29,7 @@ class InitialSignalProcessor:
             trading_engine: The trading engine instance
         """
         self.trading_engine = trading_engine
-        self.binance_exchange = trading_engine.binance_exchange
+        self.exchange = trading_engine.exchange
         self.price_service = trading_engine.price_service
         self.fee_calculator = trading_engine.fee_calculator
         self.db_manager = trading_engine.db_manager
@@ -64,22 +64,22 @@ class InitialSignalProcessor:
 
         # --- Pair Validation and Auto-Switching ---
         is_futures = position_type.upper() in ['LONG', 'SHORT']
-        trading_pair = self.binance_exchange.get_futures_trading_pair(coin_symbol)
+        trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
 
         # Enhanced symbol validation
-        is_supported = await self.binance_exchange.is_futures_symbol_supported(trading_pair)
+        is_supported = await self.exchange.is_futures_symbol_supported(trading_pair)
         if not is_supported:
             logger.error(f"Symbol {trading_pair} not supported or not trading on Binance Futures.")
             return False, f"Symbol {trading_pair} not supported or not trading."
 
         # Get symbol filters early for validation
-        filters = await self.binance_exchange.get_futures_symbol_filters(trading_pair)
+        filters = await self.exchange.get_futures_symbol_filters(trading_pair)
         if not filters:
             logger.error(f"Could not retrieve symbol filters for {trading_pair}. Cannot proceed with trade.")
             return False, f"Could not retrieve symbol filters for {trading_pair}"
 
         # Check if symbol is in TRADING status
-        exchange_info = await self.binance_exchange.get_exchange_info()
+        exchange_info = await self.exchange.get_exchange_info()
         if exchange_info:
             symbol_info = next((s for s in exchange_info.get('symbols', []) if s['symbol'] == trading_pair), None)
             if symbol_info and symbol_info.get('status') != 'TRADING':
@@ -102,7 +102,7 @@ class InitialSignalProcessor:
             logger.info(f"Take Profits: {', '.join([f'${tp:.8f}' for tp in take_profits])}")
 
         # Get current market price
-        current_price = await self.binance_exchange.get_futures_mark_price(f'{coin_symbol.upper()}USDT')
+        current_price = await self.exchange.get_futures_mark_price(f'{coin_symbol.upper()}USDT')
         if not current_price:
             reason = f"Failed to get price for {coin_symbol}"
             logger.error(reason)
@@ -118,8 +118,8 @@ class InitialSignalProcessor:
 
         # --- Order Book Liquidity Check ---
         order_book = None
-        if hasattr(self.binance_exchange, 'get_order_book'):
-            order_book = await self.binance_exchange.get_order_book(trading_pair)
+        if hasattr(self.exchange, 'get_order_book'):
+            order_book = await self.exchange.get_order_book(trading_pair)
         if not order_book or not order_book.get('bids') or not order_book.get('asks'):
             logger.warning(f"No order book depth for {trading_pair}. Skipping order.")
             return False, {"error": f"No order book depth for {trading_pair}, order skipped."}
@@ -174,7 +174,7 @@ class InitialSignalProcessor:
                 logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
 
             # Get symbol filters for precision formatting
-            quantities = await self.binance_exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
+            quantities = await self.exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
             minQuantity = float(quantities[0])  # First element is min_qty
             maxQuantity = float(quantities[1])  # Second element is max_qty
             print(f"Min Quantity: {minQuantity}, Max Quantity: {maxQuantity}")
@@ -238,7 +238,7 @@ class InitialSignalProcessor:
         """
         try:
             # Get current positions for this symbol
-            positions = await self.binance_exchange.get_position_risk(symbol=trading_pair)
+            positions = await self.exchange.get_position_risk(symbol=trading_pair)
             current_position_size = 0.0
             actual_leverage = self.trading_engine.config.DEFAULT_LEVERAGE
 
@@ -253,8 +253,8 @@ class InitialSignalProcessor:
             new_total_size = current_position_size + trade_amount
 
             # Get account leverage info
-            if self.binance_exchange.client:
-                account_info = await self.binance_exchange.client.futures_account()
+            if hasattr(self.exchange, 'client') and self.exchange.client:
+                account_info = await self.exchange.client.futures_account()
                 max_leverage = float(account_info.get('maxLeverage', 125)) if account_info else 125
 
                 # Estimate max position size based on leverage and balance
@@ -301,14 +301,14 @@ class InitialSignalProcessor:
 
             # Create the main order
             if order_type.upper() == 'MARKET':
-                order = await self.binance_exchange.create_futures_order(
+                order = await self.exchange.create_futures_order(
                     pair=trading_pair,
                     side=order_side,
                     order_type='MARKET',
                     amount=trade_amount
                 )
             else:  # LIMIT
-                order = await self.binance_exchange.create_futures_order(
+                order = await self.exchange.create_futures_order(
                     pair=trading_pair,
                     side=order_side,
                     order_type='LIMIT',

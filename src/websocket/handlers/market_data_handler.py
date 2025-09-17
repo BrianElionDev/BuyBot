@@ -50,7 +50,7 @@ class MarketDataHandler:
                 event_type='ticker'
             )
 
-            logger.debug(f"Processed ticker event for {symbol}: {price}")
+            logger.info(f"Processed ticker event for {symbol}: {price}")
             return market_data
 
         except Exception as e:
@@ -86,7 +86,7 @@ class MarketDataHandler:
                 event_type='trade'
             )
 
-            logger.debug(f"Processed trade event for {symbol}: {price} x {quantity}")
+            logger.info(f"Processed trade event for {symbol}: {price} x {quantity}")
             return market_data
 
         except Exception as e:
@@ -119,7 +119,7 @@ class MarketDataHandler:
                 'event_type': 'depth'
             }
 
-            logger.debug(f"Processed depth event for {symbol}")
+            logger.info(f"Processed depth event for {symbol}")
             return depth_data
 
         except Exception as e:
@@ -169,8 +169,8 @@ class MarketDataHandler:
         if symbol:
             self.price_cache.pop(symbol, None)
             self.last_update.pop(symbol, None)
-            logger.debug(f"Cleared cache for {symbol}")
+            logger.info(f"Cleared cache for {symbol}")
         else:
             self.price_cache.clear()
             self.last_update.clear()
-            logger.debug("Cleared all price cache")
+            logger.info("Cleared all price cache")

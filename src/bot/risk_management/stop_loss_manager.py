@@ -126,7 +126,7 @@ class StopLossManager:
         """
         try:
             # Get open orders for the symbol
-            open_orders = await self.binance_exchange.get_all_open_futures_orders()
+            open_orders = await self.exchange.get_all_open_futures_orders()
 
             if not open_orders:
                 logger.info(f"No open orders found for {trading_pair}")
@@ -138,7 +138,7 @@ class StopLossManager:
                 if order.get('type') == 'STOP_MARKET':
                     order_id = order.get('orderId')
                     if order_id:
-                        cancel_result = await self.binance_exchange.cancel_futures_order(trading_pair, order_id)
+                        cancel_result = await self.exchange.cancel_futures_order(trading_pair, order_id)
                         if cancel_result:
                             logger.info(f"Cancelled existing stop loss order: {order_id}")
                             cancelled_count += 1
@@ -163,7 +163,7 @@ class StopLossManager:
             logger.info("Starting stop loss audit for all open positions...")
 
             # Get all open positions
-            positions = await self.binance_exchange.get_position_risk()
+            positions = await self.exchange.get_futures_position_information()
 
             audit_results = {
                 'total_positions': 0,
@@ -233,7 +233,7 @@ class StopLossManager:
             True if position has stop loss orders, False otherwise
         """
         try:
-            open_orders = await self.binance_exchange.get_all_open_futures_orders()
+            open_orders = await self.exchange.get_all_open_futures_orders()
 
             if not open_orders:
                 return False

@@ -173,10 +173,10 @@ class BinanceDatabaseSync:
 
             # Validate we got meaningful data
             if order_id and order_id != '0' and symbol:
-                logger.debug(f"Successfully extracted orderId={order_id}, symbol={symbol}")
+                logger.info(f"Successfully extracted orderId={order_id}, symbol={symbol}")
                 return order_id, symbol
             else:
-                logger.debug(f"No valid order data found in response")
+                logger.info(f"No valid order data found in response")
                 return None, None
 
         except Exception as e:
@@ -274,7 +274,7 @@ class BinanceDatabaseSync:
                 extracted_order_id = order_details.get('orderId')
                 if extracted_order_id and extracted_order_id not in db_trades_by_order_id:
                     db_trades_by_order_id[extracted_order_id] = trade
-                    logger.debug(f"Found trade {trade['id']} with order {extracted_order_id} ({order_details.get('symbol')})")
+                    logger.info(f"Found trade {trade['id']} with order {extracted_order_id} ({order_details.get('symbol')})")
 
         updates_made = 0
 

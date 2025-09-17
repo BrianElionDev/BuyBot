@@ -22,7 +22,7 @@ def test_logging_configuration():
     logger = logging.getLogger(__name__)
 
     # Test various log levels with Windows-compatible messages
-    logger.debug("[DEBUG] This is a debug message")
+    logger.info("[DEBUG] This is a debug message")
     logger.info("[INFO] This is an info message")
     logger.warning("[WARNING] This is a warning message")
     logger.error("[ERROR] This is an error message")

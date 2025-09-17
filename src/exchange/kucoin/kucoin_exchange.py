@@ -474,20 +474,128 @@ class KucoinExchange(ExchangeBase):
             await self._init_client()
 
             from kucoin_universal_sdk.generate.spot.market.model_get_ticker_req import GetTickerReqBuilder
+            from kucoin_universal_sdk.generate.futures.market.model_get_ticker_req import GetTickerReqBuilder as FuturesGetTickerReqBuilder
 
             spot_service = self.client.get_spot_service()
-            market_api = spot_service.get_market_api()
+            spot_market_api = spot_service.get_market_api()
+
+            futures_service = self.client.get_futures_service()
+            futures_market_api = futures_service.get_market_api()
+
             prices = {}
 
             for symbol in symbols:
                 try:
-                    request = GetTickerReqBuilder().set_symbol(symbol).build()
-                    response = market_api.get_ticker(request)
-                    if hasattr(response, 'price') and response.price is not None:
-                        prices[symbol] = float(response.price)
+                    # Try different symbol formats for KuCoin
+                    symbol_variants = [
+                        symbol,  # Original format (e.g., NAORIS-USDT)
+                        symbol.replace('-', ''),  # No dash (e.g., NAORISUSDT)
+                        symbol.replace('-', 'USDTM'),  # Futures format (e.g., NAORISUSDTM)
+                        symbol.split('-')[0] + 'USDTM'  # Just base + USDTM (e.g., NAORISUSDTM)
+                    ]
+
+                    price = None
+                    working_symbol = None
+
+                    for variant in symbol_variants:
+                        try:
+                            logger.info(f"Trying symbol variant: {variant}")
+
+                            # Try spot market first
+                            try:
+                                request = GetTickerReqBuilder().set_symbol(variant).build()
+                                response = spot_market_api.get_ticker(request)
+
+                                # Log the response structure
+                                logger.info(f"KuCoin spot ticker response for {variant}: {response}")
+
+                                # Check if response indicates symbol not found
+                                if hasattr(response, 'code') and response.code == '400001':
+                                    logger.info(f"Symbol {variant} not found on KuCoin spot market")
+                                    continue
+
+                                # Try different ways to access the price
+                                if hasattr(response, 'price') and response.price is not None:
+                                    price = float(response.price)
+                                elif hasattr(response, 'data') and hasattr(response.data, 'price'):
+                                    price = float(response.data.price)
+                                elif hasattr(response, 'data') and isinstance(response.data, dict) and 'price' in response.data:
+                                    price = float(response.data['price'])
+                                elif hasattr(response, 'last') and response.last is not None:
+                                    price = float(response.last)
+                                elif hasattr(response, 'data') and hasattr(response.data, 'last'):
+                                    price = float(response.data.last)
+                                elif hasattr(response, 'data') and isinstance(response.data, dict) and 'last' in response.data:
+                                    price = float(response.data['last'])
+
+                                if price and price > 0:
+                                    working_symbol = variant
+                                    break
+
+                            except Exception as e:
+                                logger.info(f"Spot market failed for {variant}: {e}")
+
+                                # Try futures market as fallback
+                                try:
+                                    futures_request = FuturesGetTickerReqBuilder().set_symbol(variant).build()
+                                    futures_response = futures_market_api.get_ticker(futures_request)
+
+                                    logger.info(f"KuCoin futures ticker response for {variant}: {futures_response}")
+
+                                    # Try different ways to access the price from futures
+                                    if hasattr(futures_response, 'price') and futures_response.price is not None:
+                                        price = float(futures_response.price)
+                                    elif hasattr(futures_response, 'data') and hasattr(futures_response.data, 'price'):
+                                        price = float(futures_response.data.price)
+                                    elif hasattr(futures_response, 'data') and isinstance(futures_response.data, dict) and 'price' in futures_response.data:
+                                        price = float(futures_response.data['price'])
+                                    elif hasattr(futures_response, 'last') and futures_response.last is not None:
+                                        price = float(futures_response.last)
+                                    elif hasattr(futures_response, 'data') and hasattr(futures_response.data, 'last'):
+                                        price = float(futures_response.data.last)
+                                    elif hasattr(futures_response, 'data') and isinstance(futures_response.data, dict) and 'last' in futures_response.data:
+                                        price = float(futures_response.data['last'])
+
+                                    if price and price > 0:
+                                        working_symbol = variant
+                                        break
+
+                                except Exception as futures_e:
+                                    logger.info(f"Futures market also failed for {variant}: {futures_e}")
+
+                        except Exception as e:
+                            logger.info(f"Symbol variant {variant} failed: {e}")
+                            continue
+
+                    if price and price > 0:
+                        prices[symbol] = price
+                        logger.info(f"KuCoin price for {symbol} (using {working_symbol}): ${price}")
                     else:
-                        logger.warning(f"No price data received for {symbol}")
-                        prices[symbol] = 0.0
+                        logger.warning(f"Symbol {symbol} not available on KuCoin - Tried variants: {symbol_variants}")
+                        # Try to get price from Binance as fallback
+                        try:
+                            from src.services.pricing.price_service import PriceService
+                            from src.exchange.binance.binance_exchange import BinanceExchange
+                            from config import settings
+
+                            # Initialize Binance exchange for fallback
+                            binance_exchange = BinanceExchange(
+                                api_key=settings.BINANCE_API_KEY,
+                                api_secret=settings.BINANCE_API_SECRET,
+                                is_testnet=settings.BINANCE_TESTNET
+                            )
+
+                            price_service = PriceService(binance_exchange=binance_exchange)
+                            binance_price = await price_service.get_price(symbol.split('-')[0])
+                            if binance_price and binance_price > 0:
+                                prices[symbol] = binance_price
+                                logger.info(f"Using Binance fallback price for {symbol}: ${binance_price}")
+                            else:
+                                prices[symbol] = 0.0
+                        except Exception as e:
+                            logger.warning(f"Binance fallback also failed for {symbol}: {e}")
+                            prices[symbol] = 0.0
+
                 except Exception as e:
                     logger.warning(f"Failed to get price for {symbol}: {e}")
                     prices[symbol] = 0.0
@@ -569,12 +677,17 @@ class KucoinExchange(ExchangeBase):
             futures_service = self.client.get_futures_service()
             market_api = futures_service.get_market_api()
 
+            # Convert symbol to KuCoin futures format (remove hyphen, no M suffix for perpetual)
+            futures_symbol = symbol.replace('-', '')
+            logger.info(f"Converting {symbol} to KuCoin futures format: {futures_symbol}")
+
             # Get specific futures symbol information
-            symbol_request = GetSymbolReqBuilder().set_symbol(symbol).build()
+            symbol_request = GetSymbolReqBuilder().set_symbol(futures_symbol).build()
             symbol_response = market_api.get_symbol(symbol_request)
 
             if not symbol_response or not symbol_response.data:
-                logger.warning(f"Symbol {symbol} not found in KuCoin futures symbols")
+                logger.warning(f"Symbol {futures_symbol} not found in KuCoin futures symbols")
+                logger.info(f"Response: {symbol_response}")
                 return None
 
             symbol_info = symbol_response.data
@@ -972,3 +1085,42 @@ class KucoinExchange(ExchangeBase):
             "STOP_LIMIT": "stop_limit"
         }
         return type_mapping.get(order_type.upper(), "limit")
+
+    async def get_all_open_futures_orders(self) -> List[Dict[str, Any]]:
+        """
+        Get all open futures orders from KuCoin.
+
+        Returns:
+            List of open order dictionaries
+        """
+        try:
+            futures_service = self.client.get_futures_service()
+            order_api = futures_service.get_order_api()
+
+            # Get all open orders
+            request = GetOrderListReqBuilder().set_status("active").build()
+            response = order_api.get_order_list(request)
+
+            orders = []
+            if response and response.data:
+                for order in response.data.items:
+                    orders.append({
+                        'orderId': order.order_id,
+                        'symbol': order.symbol,
+                        'side': order.side,
+                        'type': order.type,
+                        'status': order.status,
+                        'price': float(order.price) if order.price else None,
+                        'origQty': float(order.size) if order.size else None,
+                        'executedQty': float(order.filled_size) if order.filled_size else None,
+                        'timeInForce': order.time_in_force,
+                        'time': order.created_at,
+                        'updateTime': order.updated_at
+                    })
+
+            logger.info(f"Retrieved {len(orders)} open orders from KuCoin")
+            return orders
+
+        except Exception as e:
+            logger.error(f"Error getting open orders from KuCoin: {e}")
+            return []

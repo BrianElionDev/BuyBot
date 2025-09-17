@@ -211,7 +211,7 @@ class WebSocketManager:
                 ) as response:
                     if response.status == 200:
                         self.listen_key_expiry = datetime.now() + timedelta(minutes=60)
-                        logger.debug("Refreshed listen key")
+                        logger.info("Refreshed listen key")
                     else:
                         logger.warning(f"Failed to refresh listen key: {response.status}")
                         await self._get_listen_key()
