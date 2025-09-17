@@ -17,6 +17,9 @@ from discord_bot.utils.trade_retry_utils import (
     sync_trade_statuses_with_binance,
     backfill_trades_from_binance_history,
 )
+from scripts.maintenance.cleanup_scripts.autofill_transaction_history import AutoTransactionHistoryFiller
+from scripts.maintenance.cleanup_scripts.backfill_pnl_and_exit_prices import BinancePnLBackfiller
+from scripts.maintenance.cleanup_scripts.backfill_coin_symbols import backfill_coin_symbols
 from scripts.maintenance.cleanup_scripts.cleanup_orphaned_orders import OrphanedOrdersCleanup
 from scripts.maintenance.migration_scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
 
@@ -177,6 +180,7 @@ def create_app() -> FastAPI:
         pnl_interval = 1 * 60 * 60
         price_interval = 1 * 60 * 60
         weekly_interval = 7 * 24 * 60 * 60
+        coin_symbol_interval = 6 * 60 * 60
 
         return {
             "scheduler": "Discord Bot Scheduler",
@@ -190,7 +194,8 @@ def create_app() -> FastAPI:
                 "stop_loss_audit": "0.5 hours (30 minutes)",
                 "take_profit_audit": "0.5 hours (30 minutes)",
                 "orphaned_orders_cleanup": "2.0 hours",
-                "balance_sync": "0.08 hours (5 minutes)"
+                "balance_sync": "0.08 hours (5 minutes)",
+                "coin_symbol_backfill": f"{coin_symbol_interval/3600:.1f} hours"
             },
             "current_time": datetime.fromtimestamp(current_time).isoformat(),
             "endpoints": {
@@ -290,6 +295,7 @@ async def trade_retry_scheduler():
     last_take_profit_audit = 0
     last_orphaned_orders_cleanup = 0
     last_balance_sync = 0
+    last_coin_symbol_backfill = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
@@ -301,6 +307,7 @@ async def trade_retry_scheduler():
     TAKE_PROFIT_AUDIT_INTERVAL = 30 * 60  # 30 minutes
     ORPHANED_ORDERS_CLEANUP_INTERVAL = 2 * 60 * 60  # 2 hours
     BALANCE_SYNC_INTERVAL = 5 * 60  # 5 minutes
+    COIN_SYMBOL_BACKFILL_INTERVAL = 6 * 60 * 60  # 6 hours
 
     logger.info("[Scheduler] ✅ Scheduler running - monitoring for tasks")
 
@@ -425,6 +432,17 @@ async def trade_retry_scheduler():
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in balance sync: {e}")
 
+            # Coin symbol backfill (every 6 hours) - backfill missing coin symbols
+            if current_time - last_coin_symbol_backfill >= COIN_SYMBOL_BACKFILL_INTERVAL:
+                logger.info("[Scheduler] Running coin symbol backfill...")
+                try:
+                    backfill_coin_symbols(batch_size=100)
+                    last_coin_symbol_backfill = current_time
+                    logger.info("[Scheduler] Coin symbol backfill completed successfully")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in coin symbol backfill: {e}")
+
             # Sleep for 1 second to prevent CPU overload while maintaining responsiveness
             await asyncio.sleep(1)  # 1 second sleep to prevent CPU overload
 
@@ -449,23 +467,20 @@ async def check_api_permissions(bot):
 
 
 async def auto_fill_transaction_history(bot, supabase):
-    """Auto-fill transaction history from Binance income endpoint - incremental approach using latest timestamp."""
+    """Auto-fill transaction history from Binance income endpoint."""
     try:
-        from scripts.maintenance.cleanup_scripts.manual_transaction_history_fill import TransactionHistoryFiller
+        from discord_bot.database import DatabaseManager
         
-        filler = TransactionHistoryFiller()
-        filler.bot = bot  # Use existing bot instance
-        filler.db_manager = DatabaseManager(supabase)  # Use existing supabase instance
+        autofiller = AutoTransactionHistoryFiller()
+        autofiller.binance_exchange = bot.binance_exchange
+        autofiller.db_manager = DatabaseManager(supabase)
         
-        logger.info("[Scheduler] Auto-filling transaction history incrementally...")
+        logger.info("[Scheduler] Auto-filling transaction history...")
         
-        # Calculate time range - last 7 days
-        end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
-        start_time = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp() * 1000)
-        
-        # Use the working incremental approach
-        result = await filler.fill_all_symbols_manual(
-            days=7,  # Look back 7 days as fallback if no existing data
+        # Use the working autofill approach
+        result = await autofiller.auto_fill_transaction_history(
+            symbols=None,  # All symbols
+            days_back=7,   # Last 7 days
             income_type=""  # All income types
         )
         
@@ -485,12 +500,16 @@ async def auto_fill_transaction_history(bot, supabase):
 async def backfill_pnl_data(bot, supabase):
     """Backfill PnL and net PnL data for closed trades."""
     try:
-        from discord_bot.utils.trade_retry_utils import backfill_trades_from_binance_history
+        from discord_bot.database import DatabaseManager
+        
+        pnl_backfiller = BinancePnLBackfiller()
+        pnl_backfiller.binance_exchange = bot.binance_exchange
+        pnl_backfiller.db_manager = DatabaseManager(supabase)
 
         logger.info("[Scheduler] Starting PnL backfill for closed trades...")
 
-        # Backfill PnL data for last 7 days (more recent, faster processing)
-        await backfill_trades_from_binance_history(bot, supabase, days=7)
+        # Backfill PnL data for last 7 days
+        await pnl_backfiller.backfill_trades_with_income_history(days=7, symbol="")
 
         logger.info("[Scheduler] PnL backfill completed")
 

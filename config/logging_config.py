@@ -46,7 +46,7 @@ class ProductionLoggingConfig:
 
         # Configure root logger
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.DEBUG)
+        root_logger.setLevel(logging.INFO)
 
         # Create formatters
         self._create_formatters()
