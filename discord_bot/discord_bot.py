@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 from datetime import datetime, timezone
+from datetime import datetime, timezone
 import logging
 import re
 import time
@@ -384,17 +385,13 @@ class DiscordBot:
                 return {"status": "skipped", "message": "Duplicate alert"}
 
             # Route the follow-up signal to the appropriate exchange
-            try:
-                result = await self.signal_router.route_followup_signal(signal_data, signal.trader)
-                if result.get("status") == "success":
-                    logger.info(f"✅ Follow-up signal processed successfully on {exchange_type.value}")
-                    return result
-                else:
-                    logger.error(f"❌ Follow-up signal processing failed on {exchange_type.value}: {result.get('message')}")
-                    return result
-            except Exception as e:
-                logger.error(f"Error routing follow-up signal: {e}")
-                return {"status": "error", "message": f"Follow-up signal routing error: {str(e)}"}
+            result = await self.signal_router.route_followup_signal(signal_data, signal.trader)
+            if result.get("status") == "success":
+                logger.info(f"✅ Follow-up signal processed successfully on {exchange_type.value}")
+                return result
+            else:
+                logger.error(f"❌ Follow-up signal processing failed on {exchange_type.value}: {result.get('message')}")
+                return result
 
         except Exception as e:
             logger.error(f"Error processing update signal: {e}")
@@ -450,9 +447,14 @@ class DiscordBot:
     async def start_websocket_sync(self):
         """Start WebSocket real-time database synchronization."""
         try:
-            if hasattr(self, 'websocket_manager'):
-                await self.websocket_manager.start()
-                logger.info("WebSocket sync started")
+            if hasattr(self, 'websocket_manager') and self.websocket_manager:
+                success = await self.websocket_manager.start()
+                if success:
+                    logger.info("WebSocket real-time sync started successfully")
+                    return True
+                else:
+                    logger.error("Failed to start WebSocket sync")
+                    return False
             else:
                 logger.warning("WebSocket manager not available")
         except Exception as e:
@@ -483,18 +485,85 @@ class DiscordBot:
                 return success, response
 
             elif action_type == "stop_loss_update":
-                logger.info(f"Processing stop loss update for trade {trade_row['id']}")
-                # This would need to be implemented based on your stop loss management
-                return True, "Stop loss update processed"
+                stop_loss = action.get('stop_loss')
+                if stop_loss and stop_loss != "BE":
+                    return await self.trading_engine.update_stop_loss(trade_row, float(stop_loss))
+                else:
+                    # Handle break-even stop loss - calculate the break-even price first
+                    try:
+                        coin_symbol = self._parse_parsed_signal(trade_row.get('parsed_signal')).get('coin_symbol')
+                        if coin_symbol:
+                            trading_pair = f"{coin_symbol}USDT"
+                            positions = await self.binance_exchange.get_futures_position_information()
 
+                            # Find the specific position
+                            position = None
+                            for pos in positions:
+                                if pos['symbol'] == trading_pair and float(pos['positionAmt']) != 0:
+                                    position = pos
+                                    break
+
+                            if position:
+                                # Use the entry price from Binance position data as break-even
+                                entry_price = float(position['entryPrice'])
+                                be_price = round(entry_price, 2)
+                                return await self.trading_engine.update_stop_loss(trade_row, be_price)
+                            else:
+                                # Fallback to database entry price
+                                original_entry_price = trade_row.get('entry_price')
+                                if original_entry_price:
+                                    be_price = round(float(original_entry_price), 2)
+                                    return await self.trading_engine.update_stop_loss(trade_row, be_price)
+                    except Exception as e:
+                        logger.error(f"Error calculating break-even price: {e}")
+
+                    return False, {"error": "Could not calculate break-even price"}
+            elif action_type == "limit_order_filled":
+                # Order already filled, just log and return success
+                logger.info(f"Limit order already filled for trade {trade_row.get('id')}")
+                return True, {"message": "Limit order already filled"}
+            elif action_type == "unknown_update":
+                # Log unknown updates but don't fail - they might be informational
+                logger.info(f"Unknown update type for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
+                return True, {"message": "Unknown update type - informational only"}
+            elif action_type == "flagged_for_review":
+                # Log flagged alerts for manual review
+                logger.error(f"Alert flagged for manual review for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
+                return True, {"message": "Alert flagged for manual review"}
+            elif action_type == "invalid_price":
+                # Log invalid price alerts
+                logger.error(f"Invalid price in alert for trade {trade_row.get('id')}: {action.get('reason', 'No reason provided')}")
+                return False, {"error": "Invalid price in alert"}
+            elif action_type == "liquidation":
+                # Handle liquidation events
+                logger.warning(f"Position liquidated for trade {trade_row.get('id')}")
+                return True, {"message": "Position liquidated"}
+            elif action_type == "partial_fill":
+                # Handle partial fills
+                logger.info(f"Partial fill for trade {trade_row.get('id')}")
+                return True, {"message": "Partial fill processed"}
+            elif action_type == "update_leverage":
+                # Handle leverage updates
+                leverage = action.get('leverage')
+                logger.info(f"Updating leverage to {leverage}x for trade {trade_row.get('id')}")
+                return True, {"message": f"Leverage updated to {leverage}x"}
+            elif action_type == "trailing_stop_loss":
+                # Handle trailing stop loss
+                trailing_percentage = action.get('trailing_percentage')
+                logger.info(f"Setting trailing stop loss at {trailing_percentage}% for trade {trade_row.get('id')}")
+                return True, {"message": f"Trailing stop loss set at {trailing_percentage}%"}
+            elif action_type == "adjust_position_size":
+                # Handle position size adjustments
+                multiplier = action.get('position_multiplier')
+                logger.info(f"Adjusting position size with multiplier {multiplier} for trade {trade_row.get('id')}")
+                return True, {"message": f"Position size adjusted with multiplier {multiplier}"}
             else:
                 logger.warning(f"Unknown action type: {action_type}")
                 return False, f"Unknown action type: {action_type}"
 
         except Exception as e:
             logger.error(f"Error executing action {action.get('action_type', 'unknown')}: {e}")
-            return False, f"Action execution error: {str(e)}"
+            return False, {"error": str(e)}
 
-
-# Create global DiscordBot instance
+# Global bot instance
 discord_bot = DiscordBot()

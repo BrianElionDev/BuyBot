@@ -18,13 +18,16 @@ FIXED VERSION:
 import asyncio
 import logging
 import json
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 
 # Add project root to path
 import sys
-sys.path.append(str(Path(__file__).parent.parent))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from discord_bot.database import DatabaseManager
 from config import settings
@@ -85,7 +88,7 @@ class HistoricalTradeBackfillManager:
                     end_time = int(updated_at.timestamp() * 1000)
                 duration = end_time - start_time
 
-            logger.info(f"Trade {db_trade.get('id')} lifecycle: {start_time} to {end_time} (duration: {duration}ms)")
+            logger.debug(f"Trade {db_trade.get('id')} lifecycle: {start_time} to {end_time} (duration: {duration}ms)")
             return start_time, end_time, duration
 
         except Exception as e:
@@ -111,7 +114,7 @@ class HistoricalTradeBackfillManager:
             coin_symbol = trade.get('coin_symbol', '')
             if coin_symbol:
                 symbol = f"{coin_symbol}USDT"
-                logger.info(f"Extracted symbol '{symbol}' from coin_symbol for trade {trade.get('id')}")
+                logger.debug(f"Extracted symbol '{symbol}' from coin_symbol for trade {trade.get('id')}")
                 return symbol
 
             # Try to extract from parsed_signal
@@ -191,7 +194,7 @@ class HistoricalTradeBackfillManager:
     async def get_executions_in_trade_window(self, symbol: str, start_time: int, end_time: int) -> Dict[str, List[Dict[str, Any]]]:
         """Get all executions that occurred within the trade's timestamp window."""
         try:
-            logger.info(f"Fetching executions for {symbol} between {start_time} and {end_time}")
+            logger.debug(f"Fetching executions for {symbol}")
 
             # Convert timestamps to datetime for API calls
             start_dt = datetime.fromtimestamp(start_time / 1000, tz=timezone.utc)
@@ -204,7 +207,7 @@ class HistoricalTradeBackfillManager:
             search_start = start_dt - buffer_before
             search_end = end_dt + buffer_after
 
-            logger.info(f"Searching executions from {search_start} to {search_end}")
+            logger.debug(f"Searching executions from {search_start} to {search_end}")
 
             # Get all user trades for the symbol
             all_trades = []
@@ -239,10 +242,10 @@ class HistoricalTradeBackfillManager:
 
                     if side == 'BUY':
                         buy_executions.append(trade_exec)
-                        logger.info(f"  Buy Fill: price={price}, qty={qty}, time={trade_time}")
+                        logger.debug(f"  Buy Fill: price={price}, qty={qty}, time={trade_time}")
                     elif side == 'SELL':
                         sell_executions.append(trade_exec)
-                        logger.info(f"  Sell Fill: price={price}, qty={qty}, time={trade_time}")
+                        logger.debug(f"  Sell Fill: price={price}, qty={qty}, time={trade_time}")
 
             logger.info(f"Found {len(buy_executions)} buy and {len(sell_executions)} sell execution(s) in trade window")
 
@@ -400,9 +403,9 @@ class HistoricalTradeBackfillManager:
                     if missing_prices:
                         logger.info(f"Found trade {trade.get('id')} (Discord: {discord_id}) with missing prices - Entry: {entry_price}, Exit: {exit_price}")
                     else:
-                        logger.info(f"Found trade {trade.get('id')} (Discord: {discord_id}) with existing prices - Entry: {entry_price}, Exit: {exit_price} (will recalculate for accuracy)")
-
-            logger.info(f"Found {len(trades_to_process)} trades to process ({'including existing' if update_existing else 'missing only'})")
+                        logger.debug(f"Found trade {trade.get('id')} with existing prices - Entry: {entry_price}, Exit: {exit_price} (will recalculate for accuracy)")
+            
+            logger.debug(f"Found {len(trades_to_process)} trades to process ({'including existing' if update_existing else 'missing only'})")
             return trades_to_process
 
         except Exception as e:
@@ -420,7 +423,6 @@ class HistoricalTradeBackfillManager:
 
             # Find trades with missing prices (and optionally existing ones)
             trades = await self.find_trades_with_missing_prices(days, update_existing)
-
             if not trades:
                 logger.info("No trades found with missing prices")
                 return
@@ -440,7 +442,7 @@ class HistoricalTradeBackfillManager:
                 trade_id = trade.get('id')
                 discord_id = trade.get('discord_id', '')
 
-                logger.info(f"Processing trade {trade_id} (Discord: {discord_id})")
+                logger.debug(f"Processing trade {trade_id}")
 
                 # Extract symbol
                 symbol = self.extract_symbol_from_trade(trade)
@@ -456,7 +458,7 @@ class HistoricalTradeBackfillManager:
                     stats['trades_failed'] += 1
                     continue
 
-                logger.info(f"Trade {trade_id} lifecycle: {start_time} to {end_time} (duration: {duration}ms)")
+                logger.debug(f"Trade {trade_id} lifecycle: {start_time} to {end_time} (duration: {duration}ms)")
 
                 # Get all executions within the trade window
                 executions = await self.get_executions_in_trade_window(symbol, start_time, end_time)
@@ -467,7 +469,7 @@ class HistoricalTradeBackfillManager:
                     logger.warning(f"No executions found in trade window for trade {trade_id}")
                     stats['trades_failed'] += 1
                     continue
-
+                
                 # Get position type from database (most reliable method)
                 position_type = self.get_position_type_from_trade(trade)
                 logger.info(f"Trade {trade_id} position type: {position_type}")
@@ -514,7 +516,6 @@ class HistoricalTradeBackfillManager:
                 logger.info(f"Exit prices corrected: {stats['exit_prices_corrected']}")
                 logger.info(f"Trades with price changes: {stats['trades_with_changes']}")
             logger.info("✅ Now using signal_type from database for accurate LONG/SHORT detection")
-
         except Exception as e:
             logger.error(f"Error during backfill: {e}")
 
