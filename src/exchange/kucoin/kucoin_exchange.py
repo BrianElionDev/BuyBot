@@ -6,6 +6,7 @@ Following Clean Code principles with clear separation of concerns.
 """
 
 import asyncio
+import aiohttp
 import logging
 from typing import Dict, List, Optional, Tuple, Any
 from decimal import Decimal
@@ -18,6 +19,7 @@ from .kucoin_models import (
     KucoinOrderType, KucoinOrderSide
 )
 from .kucoin_client import KucoinClient
+from .kucoin_symbol_mapper import symbol_mapper
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +64,13 @@ class KucoinExchange(ExchangeBase):
     async def close(self) -> None:
         """Close the exchange connection and cleanup resources."""
         if self.client:
-            await self.client.close()
+            try:
+                await self.client.close()
+                logger.info("KuCoin exchange connection closed")
+            except Exception as e:
+                logger.error(f"Error closing KuCoin exchange: {e}")
+            finally:
+                self.client = None
 
     async def _init_client(self):
         """Initialize the KuCoin client."""
@@ -74,6 +82,12 @@ class KucoinExchange(ExchangeBase):
                 self.is_testnet
             )
             await self.client.initialize()
+
+    def _futures_base_url(self) -> str:
+        # KuCoin futures sandbox is currently offline, so always use production
+        if self.is_testnet:
+            logger.warning("KuCoin futures sandbox is currently offline; using production API")
+        return "https://api-futures.kucoin.com"
 
     # Account Operations
     async def get_account_balances(self) -> Dict[str, float]:
@@ -441,6 +455,20 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
+            # If amount is 0 or None, fetch live position size
+            if amount <= 0:
+                positions = await self.get_futures_position_information()
+                target_symbol = pair.replace('-', 'USDTM')  # Convert to futures format
+                for pos in positions:
+                    if pos.get('symbol') == target_symbol and pos.get('side', '').upper() == position_type.upper():
+                        amount = float(pos.get('size', 0.0))
+                        logger.info(f"Found live position size for {pair}: {amount}")
+                        break
+
+                if amount <= 0:
+                    logger.error(f"No open position found for {pair} {position_type}")
+                    return False, {"error": f"No open position found for {pair} {position_type}"}
+
             # Determine side for closing
             side = "sell" if position_type.upper() == "LONG" else "buy"
 
@@ -462,7 +490,7 @@ class KucoinExchange(ExchangeBase):
     # Market Data
     async def get_current_prices(self, symbols: List[str]) -> Dict[str, float]:
         """
-        Get current prices for symbols.
+        Get current prices for symbols using KuCoin futures API.
 
         Args:
             symbols: List of symbol strings
@@ -473,128 +501,68 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            from kucoin_universal_sdk.generate.spot.market.model_get_ticker_req import GetTickerReqBuilder
-            from kucoin_universal_sdk.generate.futures.market.model_get_ticker_req import GetTickerReqBuilder as FuturesGetTickerReqBuilder
-
-            spot_service = self.client.get_spot_service()
-            spot_market_api = spot_service.get_market_api()
-
-            futures_service = self.client.get_futures_service()
-            futures_market_api = futures_service.get_market_api()
-
             prices = {}
+
+            # First, get all available futures symbols to understand the format
+            available_symbols = set()
+            try:
+                url = f"{self._futures_base_url()}/api/v1/contracts/active"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=10) as resp:
+                        data = await resp.json()
+                        items = data.get("data") or []
+                        for it in items:
+                            sym = it.get("symbol")
+                            if sym:
+                                available_symbols.add(sym)
+                logger.info(f"Retrieved {len(available_symbols)} KuCoin futures symbols")
+            except Exception as e:
+                logger.warning(f"Failed to get all KuCoin futures symbols: {e}")
+                available_symbols = set()
+
+            # Update symbol mapper with available symbols
+            symbol_mapper.available_symbols = list(available_symbols)
 
             for symbol in symbols:
                 try:
-                    # Try different symbol formats for KuCoin
-                    symbol_variants = [
-                        symbol,  # Original format (e.g., NAORIS-USDT)
-                        symbol.replace('-', ''),  # No dash (e.g., NAORISUSDT)
-                        symbol.replace('-', 'USDTM'),  # Futures format (e.g., NAORISUSDTM)
-                        symbol.split('-')[0] + 'USDTM'  # Just base + USDTM (e.g., NAORISUSDTM)
-                    ]
+                    # Use symbol mapper to find the correct format
+                    mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, list(available_symbols))
 
                     price = None
                     working_symbol = None
 
-                    for variant in symbol_variants:
+                    if mapped_symbol:
                         try:
-                            logger.info(f"Trying symbol variant: {variant}")
+                            logger.info(f"Trying KuCoin futures ticker for: {mapped_symbol}")
+                            url = f"{self._futures_base_url()}/api/v1/ticker?symbol={mapped_symbol}"
+                            async with aiohttp.ClientSession() as session:
+                                async with session.get(url, timeout=10) as resp:
+                                    data = await resp.json()
+                                    if not isinstance(data, dict) or data.get('code') != '200000':
+                                        raise RuntimeError(f"ticker bad response for {mapped_symbol}: {data}")
+                                    td = data.get("data") or {}
+                                    # Futures getTicker returns 'price' as string
+                                    raw_price = td.get('price') or td.get('last') or td.get('bestAsk') or td.get('bestBid')
+                                    try:
+                                        price = float(raw_price) if raw_price is not None else 0.0
+                                    except Exception:
+                                        price = 0.0
 
-                            # Try spot market first
-                            try:
-                                request = GetTickerReqBuilder().set_symbol(variant).build()
-                                response = spot_market_api.get_ticker(request)
-
-                                # Log the response structure
-                                logger.info(f"KuCoin spot ticker response for {variant}: {response}")
-
-                                # Check if response indicates symbol not found
-                                if hasattr(response, 'code') and response.code == '400001':
-                                    logger.info(f"Symbol {variant} not found on KuCoin spot market")
-                                    continue
-
-                                # Try different ways to access the price
-                                if hasattr(response, 'price') and response.price is not None:
-                                    price = float(response.price)
-                                elif hasattr(response, 'data') and hasattr(response.data, 'price'):
-                                    price = float(response.data.price)
-                                elif hasattr(response, 'data') and isinstance(response.data, dict) and 'price' in response.data:
-                                    price = float(response.data['price'])
-                                elif hasattr(response, 'last') and response.last is not None:
-                                    price = float(response.last)
-                                elif hasattr(response, 'data') and hasattr(response.data, 'last'):
-                                    price = float(response.data.last)
-                                elif hasattr(response, 'data') and isinstance(response.data, dict) and 'last' in response.data:
-                                    price = float(response.data['last'])
-
-                                if price and price > 0:
-                                    working_symbol = variant
-                                    break
-
-                            except Exception as e:
-                                logger.info(f"Spot market failed for {variant}: {e}")
-
-                                # Try futures market as fallback
-                                try:
-                                    futures_request = FuturesGetTickerReqBuilder().set_symbol(variant).build()
-                                    futures_response = futures_market_api.get_ticker(futures_request)
-
-                                    logger.info(f"KuCoin futures ticker response for {variant}: {futures_response}")
-
-                                    # Try different ways to access the price from futures
-                                    if hasattr(futures_response, 'price') and futures_response.price is not None:
-                                        price = float(futures_response.price)
-                                    elif hasattr(futures_response, 'data') and hasattr(futures_response.data, 'price'):
-                                        price = float(futures_response.data.price)
-                                    elif hasattr(futures_response, 'data') and isinstance(futures_response.data, dict) and 'price' in futures_response.data:
-                                        price = float(futures_response.data['price'])
-                                    elif hasattr(futures_response, 'last') and futures_response.last is not None:
-                                        price = float(futures_response.last)
-                                    elif hasattr(futures_response, 'data') and hasattr(futures_response.data, 'last'):
-                                        price = float(futures_response.data.last)
-                                    elif hasattr(futures_response, 'data') and isinstance(futures_response.data, dict) and 'last' in futures_response.data:
-                                        price = float(futures_response.data['last'])
-
-                                    if price and price > 0:
-                                        working_symbol = variant
-                                        break
-
-                                except Exception as futures_e:
-                                    logger.info(f"Futures market also failed for {variant}: {futures_e}")
+                            if price and price > 0:
+                                working_symbol = mapped_symbol
+                                logger.info(f"Found KuCoin futures price for {mapped_symbol}: ${price}")
 
                         except Exception as e:
-                            logger.info(f"Symbol variant {variant} failed: {e}")
-                            continue
+                            logger.info(f"KuCoin futures ticker failed for {mapped_symbol}: {e}")
+                    else:
+                        logger.warning(f"Could not map {symbol} to any available KuCoin futures symbol")
 
                     if price and price > 0:
                         prices[symbol] = price
                         logger.info(f"KuCoin price for {symbol} (using {working_symbol}): ${price}")
                     else:
-                        logger.warning(f"Symbol {symbol} not available on KuCoin - Tried variants: {symbol_variants}")
-                        # Try to get price from Binance as fallback
-                        try:
-                            from src.services.pricing.price_service import PriceService
-                            from src.exchange.binance.binance_exchange import BinanceExchange
-                            from config import settings
-
-                            # Initialize Binance exchange for fallback
-                            binance_exchange = BinanceExchange(
-                                api_key=settings.BINANCE_API_KEY,
-                                api_secret=settings.BINANCE_API_SECRET,
-                                is_testnet=settings.BINANCE_TESTNET
-                            )
-
-                            price_service = PriceService(binance_exchange=binance_exchange)
-                            binance_price = await price_service.get_price(symbol.split('-')[0])
-                            if binance_price and binance_price > 0:
-                                prices[symbol] = binance_price
-                                logger.info(f"Using Binance fallback price for {symbol}: ${binance_price}")
-                            else:
-                                prices[symbol] = 0.0
-                        except Exception as e:
-                            logger.warning(f"Binance fallback also failed for {symbol}: {e}")
-                            prices[symbol] = 0.0
+                        logger.warning(f"No ticker price for {symbol} (mapped: {mapped_symbol}) on KuCoin futures")
+                        prices[symbol] = 0.0
 
                 except Exception as e:
                     logger.warning(f"Failed to get price for {symbol}: {e}")
@@ -672,60 +640,75 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            from kucoin_universal_sdk.generate.futures.market.model_get_symbol_req import GetSymbolReqBuilder
+            # Get all available symbols first
+            all_symbols = await self.get_futures_symbols()
+            symbol_mapper.available_symbols = all_symbols
 
-            futures_service = self.client.get_futures_service()
-            market_api = futures_service.get_market_api()
+            # Use symbol mapper to find the correct format
+            mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
 
-            # Convert symbol to KuCoin futures format (remove hyphen, no M suffix for perpetual)
-            futures_symbol = symbol.replace('-', '')
-            logger.info(f"Converting {symbol} to KuCoin futures format: {futures_symbol}")
-
-            # Get specific futures symbol information
-            symbol_request = GetSymbolReqBuilder().set_symbol(futures_symbol).build()
-            symbol_response = market_api.get_symbol(symbol_request)
-
-            if not symbol_response or not symbol_response.data:
-                logger.warning(f"Symbol {futures_symbol} not found in KuCoin futures symbols")
-                logger.info(f"Response: {symbol_response}")
+            if not mapped_symbol:
+                logger.warning(f"Symbol {symbol} not found in KuCoin futures symbols")
                 return None
 
-            symbol_info = symbol_response.data
+            symbol_info = None
+            working_symbol = mapped_symbol
+
+            try:
+                logger.info(f"Fetching KuCoin futures symbol details: {mapped_symbol}")
+                url = f"{self._futures_base_url()}/api/v1/contracts/{mapped_symbol}"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=10) as resp:
+                        data = await resp.json()
+                        symbol_info = (data or {}).get("data")
+                        if not symbol_info:
+                            logger.warning(f"Symbol {mapped_symbol} not found in KuCoin futures")
+                        else:
+                            logger.info(f"Found KuCoin futures symbol: {mapped_symbol}")
+
+            except Exception as e:
+                logger.error(f"Symbol {mapped_symbol} failed: {e}")
+                return None
+
+            if not symbol_info:
+                logger.warning(f"Symbol {symbol} not found in KuCoin futures symbols")
+                return None
 
             # Extract symbol information and create filters
             filters = {
                 "symbol": symbol,
-                "baseCurrency": getattr(symbol_info, 'baseCurrency', ''),
-                "quoteCurrency": getattr(symbol_info, 'quoteCurrency', ''),
-                "baseMinSize": getattr(symbol_info, 'baseMinSize', '0.001'),
-                "baseMaxSize": getattr(symbol_info, 'baseMaxSize', '1000000'),
-                "quoteMinSize": getattr(symbol_info, 'quoteMinSize', '0.00001'),
-                "quoteMaxSize": getattr(symbol_info, 'quoteMaxSize', '1000000'),
-                "baseIncrement": getattr(symbol_info, 'baseIncrement', '0.0001'),
-                "quoteIncrement": getattr(symbol_info, 'quoteIncrement', '0.00001'),
-                "priceIncrement": getattr(symbol_info, 'priceIncrement', '0.00001'),
-                "enableTrading": getattr(symbol_info, 'enableTrading', True),
+                "kucoin_symbol": working_symbol,
+                "baseCurrency": symbol_info.get('baseCurrency', ''),
+                "quoteCurrency": symbol_info.get('quoteCurrency', ''),
+                "baseMinSize": symbol_info.get('lotSize', '1'),
+                "baseMaxSize": symbol_info.get('maxOrderQty', '1000000'),
+                "quoteMinSize": symbol_info.get('minPrice', '0.00001'),
+                "quoteMaxSize": symbol_info.get('maxPrice', '1000000'),
+                "baseIncrement": symbol_info.get('lotSize', '1'),
+                "quoteIncrement": symbol_info.get('tickSize', '0.0001'),
+                "priceIncrement": symbol_info.get('tickSize', '0.0001'),
+                "enableTrading": symbol_info.get('status', '') == 'Open',
                 "isMarginEnabled": getattr(symbol_info, 'isMarginEnabled', True),
-                "contractType": getattr(symbol_info, 'type', 'FUTURES'),
-                "contractSize": getattr(symbol_info, 'contractSize', 1),
-                "multiplier": getattr(symbol_info, 'multiplier', 1),
+                "contractType": symbol_info.get('type', 'FUTURES'),
+                "contractSize": symbol_info.get('multiplier', 1),
+                "multiplier": symbol_info.get('multiplier', 1),
                 # KuCoin specific filters
                 "LOT_SIZE": {
-                    "minQty": getattr(symbol_info, 'baseMinSize', '0.001'),
-                    "maxQty": getattr(symbol_info, 'baseMaxSize', '1000000'),
-                    "stepSize": getattr(symbol_info, 'baseIncrement', '0.0001')
+                    "minQty": symbol_info.get('lotSize', '1'),
+                    "maxQty": symbol_info.get('maxOrderQty', '1000000'),
+                    "stepSize": symbol_info.get('lotSize', '1')
                 },
                 "PRICE_FILTER": {
-                    "minPrice": "0.00001",
-                    "maxPrice": "1000000",
-                    "tickSize": getattr(symbol_info, 'priceIncrement', '0.00001')
+                    "minPrice": str(symbol_info.get('minPrice', '0.00001')),
+                    "maxPrice": str(symbol_info.get('maxPrice', '1000000')),
+                    "tickSize": str(symbol_info.get('tickSize', '0.0001'))
                 },
                 "MIN_NOTIONAL": {
-                    "minNotional": getattr(symbol_info, 'quoteMinSize', '0.00001')
+                    "minNotional": str(symbol_info.get('minPrice', '0.00001'))
                 }
             }
 
-            logger.info(f"Retrieved KuCoin futures symbol filters for {symbol}")
+            logger.info(f"Retrieved KuCoin futures symbol filters for {symbol} (using {working_symbol})")
             return filters
 
         except Exception as e:
@@ -742,22 +725,17 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            futures_service = self.client.get_futures_service()
-            market_api = futures_service.get_market_api()
-
-            # Get all futures symbols
-            response = market_api.get_all_symbols()
-
-            if not response or not response.data:
-                logger.warning("No futures symbols found")
-                return []
-
-            symbols = []
-            for symbol_data in response.data:
-                if getattr(symbol_data, 'enableTrading', False):
-                    symbol = getattr(symbol_data, 'symbol', '')
-                    if symbol:
-                        symbols.append(symbol)
+            url = f"{self._futures_base_url()}/api/v1/contracts/active"
+            symbols: List[str] = []
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=10) as resp:
+                    data = await resp.json()
+                    items = data.get("data") or []
+                    for it in items:
+                        if it.get('status') == 'Open':
+                            sym = it.get('symbol')
+                            if sym:
+                                symbols.append(sym)
 
             logger.info(f"Retrieved {len(symbols)} KuCoin futures symbols")
             return symbols
@@ -780,11 +758,22 @@ class KucoinExchange(ExchangeBase):
             # First try to get symbol filters (more detailed check)
             filters = await self.get_futures_symbol_filters(symbol)
             if filters and filters.get('enableTrading', False):
+                logger.info(f"Symbol {symbol} is supported on KuCoin futures (using {filters.get('kucoin_symbol', 'unknown')})")
                 return True
 
-            # Fallback: check against list of all symbols
+            # Fallback: check against list of all symbols using symbol mapper
             all_symbols = await self.get_futures_symbols()
-            return symbol in all_symbols
+            symbol_mapper.available_symbols = all_symbols
+
+            is_supported = symbol_mapper.is_symbol_supported(symbol, all_symbols, "futures")
+
+            if is_supported:
+                mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
+                logger.info(f"Symbol {symbol} is supported on KuCoin futures (as {mapped_symbol})")
+            else:
+                logger.warning(f"Symbol {symbol} not supported on KuCoin futures")
+
+            return is_supported
 
         except Exception as e:
             logger.error(f"Failed to check KuCoin symbol support for {symbol}: {e}")
@@ -840,7 +829,7 @@ class KucoinExchange(ExchangeBase):
 
     async def get_mark_price(self, symbol: str) -> Optional[float]:
         """
-        Get mark price for a symbol.
+        Get mark price for a symbol using futures API.
 
         Args:
             symbol: Trading pair symbol
@@ -849,19 +838,21 @@ class KucoinExchange(ExchangeBase):
             Mark price or None if not available
         """
         try:
-            await self._init_client()
+            # Get mapped symbol for futures
+            all_symbols = await self.get_futures_symbols()
+            symbol_mapper.available_symbols = all_symbols
+            mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
 
-            from kucoin_universal_sdk.generate.spot.market.model_get_ticker_req import GetTickerReqBuilder
+            if not mapped_symbol:
+                logger.warning(f"Could not map {symbol} to futures symbol for mark price")
+                return None
 
-            spot_service = self.client.get_spot_service()
-            market_api = spot_service.get_market_api()
-
-            request = GetTickerReqBuilder().set_symbol(symbol).build()
-            response = market_api.get_ticker(request)
-
-            if hasattr(response, 'price'):
-                return float(response.price)
-            return None
+            url = f"{self._futures_base_url()}/api/v1/mark-price/{mapped_symbol}/current"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=10) as resp:
+                    data = await resp.json()
+                    td = data.get("data") or {}
+                    return float(td.get('value', 0.0))  # 'value' is mark price
 
         except Exception as e:
             logger.error(f"Failed to get KuCoin mark price for {symbol}: {e}")
@@ -869,7 +860,7 @@ class KucoinExchange(ExchangeBase):
 
     async def get_futures_account_info(self) -> Optional[Dict[str, Any]]:
         """
-        Get futures account information.
+        Get futures account information using futures service.
 
         Returns:
             Account information or None if not available
@@ -878,19 +869,18 @@ class KucoinExchange(ExchangeBase):
             await self._init_client()
 
             # Use futures account service for futures account information
-            account_service = self.client.client.rest_service().get_account_service()
-            account_api = account_service.get_account_api()
+            futures_service = self.client.get_futures_service()
+            account_api = futures_service.get_account_api()
 
-            from kucoin_universal_sdk.generate.account.account.model_get_futures_account_req import GetFuturesAccountReqBuilder
-            request = GetFuturesAccountReqBuilder().build()
-            response = account_api.get_futures_account(request)
+            from kucoin_universal_sdk.generate.futures.account.model_get_account_overview_req import GetAccountOverviewReqBuilder
+            request = GetAccountOverviewReqBuilder().set_currency('USDT').build()
+            response = account_api.get_account_overview(request)
 
-            if not response:
+            if not response or not response.data:
                 logger.warning("No futures account data received")
                 return None
 
-            # Handle different response structures
-            account_data = response.data if hasattr(response, 'data') else response
+            account_data = response.data
 
             # Format response to match expected format
             formatted_response = {

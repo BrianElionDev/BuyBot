@@ -253,11 +253,21 @@ class KucoinTradingEngine:
             # Convert to KuCoin trading pair format
             trading_pair = f"{coin_symbol.upper()}-USDT"
 
-            # Validate symbol is supported
+            # Validate symbol is supported and get the correct KuCoin symbol format
             is_supported = await self.kucoin_exchange.is_futures_symbol_supported(trading_pair)
             if not is_supported:
                 logger.error(f"Symbol {trading_pair} not supported on KuCoin")
                 return False, f"Symbol {trading_pair} not supported on KuCoin"
+
+            # Get the correct KuCoin symbol format for order creation
+            filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)
+            if filters and 'kucoin_symbol' in filters:
+                kucoin_symbol = filters['kucoin_symbol']
+                logger.info(f"Using KuCoin symbol format: {kucoin_symbol} for {trading_pair}")
+            else:
+                # Fallback to original format
+                kucoin_symbol = trading_pair.replace('-', '')
+                logger.warning(f"Using fallback KuCoin symbol format: {kucoin_symbol}")
 
             # Calculate trade amount
             trade_amount = await self._calculate_trade_amount(
@@ -268,10 +278,10 @@ class KucoinTradingEngine:
                 logger.error(f"Invalid trade amount calculated: {trade_amount}")
                 return False, f"Invalid trade amount calculated: {trade_amount}"
 
-            # Execute the order using correct parameter names
-            logger.info(f"Executing KuCoin order: {trading_pair} {SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL} {order_type.upper()} amount={trade_amount}")
+            # Execute the order using correct parameter names and KuCoin symbol format
+            logger.info(f"Executing KuCoin order: {kucoin_symbol} {SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL} {order_type.upper()} amount={trade_amount}")
             result = await self.kucoin_exchange.create_futures_order(
-                pair=trading_pair,
+                pair=kucoin_symbol,  # Use the correct KuCoin symbol format
                 side=SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL,
                 order_type=order_type.upper(),
                 amount=trade_amount,
@@ -335,13 +345,24 @@ class KucoinTradingEngine:
                 if isinstance(response_data, dict):
                     position_size = float(response_data.get('origQty', 0.0))
 
-            # If still no position size, use a default or return error
+            # If still no position size, fetch live positions and infer
+            if position_size <= 0:
+                positions = await self.kucoin_exchange.get_futures_position_information()
+                target_symbol = f"{coin_symbol.upper()}USDTM"
+                for pos in positions:
+                    if pos.get('symbol') == target_symbol and float(pos.get('size', 0)) > 0:
+                        position_size = float(pos.get('size', 0))
+                        break
             if position_size <= 0:
                 logger.error(f"No valid position size found for {coin_symbol}")
                 return False, f"No valid position size found for {coin_symbol}"
 
             # Calculate quantity to close based on percentage
-            quantity = position_size * (close_percentage / 100.0)
+            try:
+                quantity = float(position_size) * (float(close_percentage) / 100.0)
+            except Exception:
+                logger.error(f"Invalid position size for close: {position_size}")
+                return False, f"Invalid position size for close: {position_size}"
 
             logger.info(f"Closing {close_percentage}% of position: {quantity} {coin_symbol} (total: {position_size})")
 
@@ -402,6 +423,16 @@ class KucoinTradingEngine:
                 logger.info("Processing position close in profit")
                 success, response = await self.close_position_at_market(trade_row, "profit_close")
                 return {"status": "success" if success else "error", "message": response}
+
+            elif 'stopped be' in content.lower() or 'stopped at be' in content.lower() or 'stopped breakeven' in content.lower():
+                logger.info("Processing stop at break-even (close position)")
+                success, response = await self.close_position_at_market(trade_row, "stopped_be")
+                return {"status": "success" if success else "error", "message": response}
+
+            elif 'limit order cancelled' in content.lower() or 'limit order canceled' in content.lower():
+                logger.info("Processing limit order cancel")
+                # No-op for now, could cancel open orders if tracked
+                return {"status": "success", "message": "Limit order cancel acknowledged (KuCoin)"}
 
             elif 'limit order filled' in content.lower():
                 logger.info("Processing limit order filled")

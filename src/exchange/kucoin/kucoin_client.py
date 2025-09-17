@@ -89,6 +89,9 @@ class KucoinClient:
         """Close the KuCoin client connection."""
         try:
             if self.client:
+                # Close any active connections
+                if hasattr(self.client, 'close'):
+                    await self.client.close()
                 self.client = None
                 logger.info("KuCoin client connection closed")
         except Exception as e:

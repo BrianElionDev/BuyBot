@@ -21,7 +21,7 @@ def reload_env():
     KUCOIN_API_KEY = os.getenv("KUCOIN_API_KEY")
     KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
     KUCOIN_API_PASSPHRASE = os.getenv("KUCOIN_API_PASSPHRASE")
-    KUCOIN_TESTNET = os.getenv("KUCOIN_TESTNET", "True").lower() == "true"
+    KUCOIN_TESTNET = False
 
     TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
     TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
@@ -60,7 +60,7 @@ BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
 KUCOIN_API_KEY = os.getenv("KUCOIN_API_KEY")
 KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
 KUCOIN_API_PASSPHRASE = os.getenv("KUCOIN_API_PASSPHRASE")
-KUCOIN_TESTNET = os.getenv("KUCOIN_TESTNET", "True").lower() == "true"
+KUCOIN_TESTNET = False
 
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
