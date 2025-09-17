@@ -219,7 +219,20 @@ class DatabaseManager:
             if response.data and len(response.data) > 0:
                 last_time = response.data[0].get('time', 0)
                 logger.info(f"Last sync time from database: {last_time}")
-                return last_time
+                
+                # Handle timestampz format (ISO string timestamps)
+                if isinstance(last_time, str):
+                    try:
+                        from datetime import datetime
+                        # Parse ISO timestamp and convert to milliseconds
+                        dt = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
+                        return int(dt.timestamp() * 1000)
+                    except Exception as e:
+                        logger.error(f"Error parsing timestamp {last_time}: {e}")
+                        return 0
+                else:
+                    # Handle integer timestamps (legacy support)
+                    return int(last_time) if last_time else 0
             else:
                 # If no transactions exist, start from 30 days ago
                 from datetime import timedelta

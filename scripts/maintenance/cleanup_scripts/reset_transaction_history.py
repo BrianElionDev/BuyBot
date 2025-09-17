@@ -1,3 +1,4 @@
+\
 #!/usr/bin/env python3
 """
 Simple script to reset transaction history - delete all and add fresh data from Binance.
@@ -87,8 +88,14 @@ class TransactionHistoryResetter:
                 # Transform to transaction format
                 for income in income_records:
                     if isinstance(income, dict):
+                        # Convert millisecond timestamp to timestampz format for database
+                        time_ms = int(income.get('time', 0))
+                        from datetime import datetime, timezone
+                        dt = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc)
+                        time_timestampz = dt.isoformat()  # This gives us: 2025-09-05T19:00:00+00:00
+                        
                         transaction = {
-                            'time': int(income.get('time', 0)),
+                            'time': time_timestampz,  # Use timestampz format instead of milliseconds
                             'type': income.get('incomeType', income.get('type', '')),
                             'amount': float(income.get('income', 0.0)),
                             'asset': income.get('asset', ''),

@@ -94,10 +94,15 @@ async def test_price_thresholds():
 
 async def main():
     """Main function to run the price threshold test."""
-
+<<<<<<< HEAD:scripts/test.py
+    processed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    print(f"Test started at {processed_at}")
+=======
+    
     processed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     print(f"Test started at {processed_at}")
 
     await test_price_thresholds()
+>>>>>>> ngigin:scripts/testing/integration_tests/test.py
 if __name__ == "__main__":
     asyncio.run(main())

@@ -15,8 +15,13 @@ from discord_bot.endpoints.discord_endpoint import router as discord_router
 from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
     sync_trade_statuses_with_binance,
+    backfill_trades_from_binance_history,
 )
+from scripts.maintenance.cleanup_scripts.autofill_transaction_history import AutoTransactionHistoryFiller
+from scripts.maintenance.cleanup_scripts.backfill_pnl_and_exit_prices import BinancePnLBackfiller
+from scripts.maintenance.cleanup_scripts.backfill_coin_symbols import backfill_coin_symbols
 from scripts.maintenance.cleanup_scripts.cleanup_orphaned_orders import OrphanedOrdersCleanup
+from scripts.maintenance.migration_scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
 from scripts.maintenance.migration_scripts.backfill_from_historical_trades import HistoricalTradeBackfillManager
 
 # Configure logging for the Discord service using centralized config
@@ -47,7 +52,13 @@ async def lifespan(app: FastAPI):
             # Run initial price backfill on startup
             try:
                 logger.info("🔄 Running initial price backfill on startup...")
-                await backfill_missing_prices(bot, supabase)
+                # Use the advanced backfill that can correct existing prices
+                backfill_manager = HistoricalTradeBackfillManager()
+                backfill_manager.binance_exchange = bot.binance_exchange
+                backfill_manager.db_manager = bot.db_manager
+                
+                # Fill missing prices and correct existing ones for better accuracy
+                await backfill_manager.backfill_from_historical_data(days=1, update_existing=True)
                 logger.info("✅ Initial price backfill completed")
             except Exception as e:
                 logger.error(f"❌ Failed to run initial price backfill: {e}")
@@ -146,6 +157,19 @@ def create_app() -> FastAPI:
         except Exception as e:
             return {"error": f"Failed to run orphaned orders cleanup: {e}"}
 
+    @app.post("/scheduler/test-balance-sync")
+    async def test_balance_sync():
+        """Manually trigger balance sync for testing."""
+        try:
+            bot, supabase = initialize_clients()
+            if not bot or not supabase:
+                return {"error": "Failed to initialize clients"}
+
+            await sync_exchange_balances(supabase)
+            return {"message": "Balance sync completed successfully"}
+        except Exception as e:
+            return {"error": f"Failed to run balance sync: {e}"}
+
     @app.get("/scheduler/status")
     async def scheduler_status():
         """Get scheduler status and next run times."""
@@ -157,6 +181,7 @@ def create_app() -> FastAPI:
         pnl_interval = 1 * 60 * 60
         price_interval = 1 * 60 * 60
         weekly_interval = 7 * 24 * 60 * 60
+        coin_symbol_interval = 6 * 60 * 60
 
         return {
             "scheduler": "Discord Bot Scheduler",
@@ -169,13 +194,16 @@ def create_app() -> FastAPI:
                 "weekly_backfill": f"{weekly_interval/3600:.1f} hours",
                 "stop_loss_audit": "0.5 hours (30 minutes)",
                 "take_profit_audit": "0.5 hours (30 minutes)",
-                "orphaned_orders_cleanup": "2.0 hours"
+                "orphaned_orders_cleanup": "2.0 hours",
+                "balance_sync": "0.08 hours (5 minutes)",
+                "coin_symbol_backfill": f"{coin_symbol_interval/3600:.1f} hours"
             },
             "current_time": datetime.fromtimestamp(current_time).isoformat(),
             "endpoints": {
                 "test_transaction": "/scheduler/test-transaction-history",
                 "test_daily_sync": "/scheduler/test-daily-sync",
-                "test_orphaned_orders_cleanup": "/scheduler/test-orphaned-orders-cleanup"
+                "test_orphaned_orders_cleanup": "/scheduler/test-orphaned-orders-cleanup",
+                "test_balance_sync": "/scheduler/test-balance-sync"
             }
         }
 
@@ -267,6 +295,8 @@ async def trade_retry_scheduler():
     last_stop_loss_audit = 0
     last_take_profit_audit = 0
     last_orphaned_orders_cleanup = 0
+    last_balance_sync = 0
+    last_coin_symbol_backfill = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
@@ -277,6 +307,8 @@ async def trade_retry_scheduler():
     STOP_LOSS_AUDIT_INTERVAL = 30 * 60  # 30 minutes
     TAKE_PROFIT_AUDIT_INTERVAL = 30 * 60  # 30 minutes
     ORPHANED_ORDERS_CLEANUP_INTERVAL = 2 * 60 * 60  # 2 hours
+    BALANCE_SYNC_INTERVAL = 5 * 60  # 5 minutes
+    COIN_SYMBOL_BACKFILL_INTERVAL = 6 * 60 * 60  # 6 hours
 
     logger.info("[Scheduler] ✅ Scheduler running - monitoring for tasks")
 
@@ -296,7 +328,7 @@ async def trade_retry_scheduler():
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in daily sync: {e}")
 
-            # Transaction history autofill (every 1 minute)
+            # Transaction history autofill (every 1 hour)
             if current_time - last_transaction_sync >= TRANSACTION_SYNC_INTERVAL:
                 logger.info("[Scheduler] Running transaction history autofill...")
                 try:
@@ -318,22 +350,36 @@ async def trade_retry_scheduler():
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in PnL backfill: {e}")
 
-            # Price backfill (every 1 hour)
+            # Price backfill (every 1 hour) - includes correcting existing prices
             if current_time - last_price_backfill >= PRICE_BACKFILL_INTERVAL:
                 logger.info("[Scheduler] Running price backfill...")
                 try:
-                    await backfill_missing_prices(bot, supabase)
+                    # Use the advanced backfill that can correct existing prices
+                    backfill_manager = HistoricalTradeBackfillManager()
+                    backfill_manager.binance_exchange = bot.binance_exchange
+                    backfill_manager.db_manager = bot.db_manager
+                    
+                    # First fill missing prices, then correct existing ones
+                    await backfill_manager.backfill_from_historical_data(days=1, update_existing=True)
+                    
                     last_price_backfill = current_time
                     logger.info("[Scheduler] Price backfill completed successfully")
                     tasks_run += 1
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in price backfill: {e}")
 
-            # Weekly historical backfill (every 7 days)
+            # Weekly historical backfill (every 7 days) - includes correcting existing prices
             if current_time - last_weekly_backfill >= WEEKLY_BACKFILL_INTERVAL:
                 logger.info("[Scheduler] Running weekly historical backfill...")
                 try:
-                    await weekly_historical_backfill(bot, supabase)
+                    # Use the advanced backfill that can correct existing prices
+                    backfill_manager = HistoricalTradeBackfillManager()
+                    backfill_manager.binance_exchange = bot.binance_exchange
+                    backfill_manager.db_manager = bot.db_manager
+                    
+                    # Fill missing prices first, then correct existing ones for better accuracy
+                    await backfill_manager.backfill_from_historical_data(days=7, update_existing=True)
+                    
                     last_weekly_backfill = current_time
                     logger.info("[Scheduler] Weekly historical backfill completed successfully")
                     tasks_run += 1
@@ -376,6 +422,28 @@ async def trade_retry_scheduler():
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in orphaned orders cleanup: {e}")
 
+            # Balance sync (every 5 minutes) - fetch and store exchange balances
+            if current_time - last_balance_sync >= BALANCE_SYNC_INTERVAL:
+                logger.info("[Scheduler] Running balance sync...")
+                try:
+                    await sync_exchange_balances(supabase)
+                    last_balance_sync = current_time
+                    logger.info("[Scheduler] Balance sync completed successfully")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in balance sync: {e}")
+
+            # Coin symbol backfill (every 6 hours) - backfill missing coin symbols
+            if current_time - last_coin_symbol_backfill >= COIN_SYMBOL_BACKFILL_INTERVAL:
+                logger.info("[Scheduler] Running coin symbol backfill...")
+                try:
+                    backfill_coin_symbols(batch_size=100)
+                    last_coin_symbol_backfill = current_time
+                    logger.info("[Scheduler] Coin symbol backfill completed successfully")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in coin symbol backfill: {e}")
+
             # Sleep for 1 second to prevent CPU overload while maintaining responsiveness
             await asyncio.sleep(1)  # 1 second sleep to prevent CPU overload
 
@@ -402,29 +470,25 @@ async def check_api_permissions(bot):
 async def auto_fill_transaction_history(bot, supabase):
     """Auto-fill transaction history from Binance income endpoint."""
     try:
-        from scripts.maintenance.cleanup_scripts.manual_transaction_history_fill import TransactionHistoryFiller
         from discord_bot.database import DatabaseManager
-
-        filler = TransactionHistoryFiller()
-        filler.bot = bot  # Use the existing bot instance
-        filler.db_manager = DatabaseManager(supabase)  # Use the existing supabase instance
-
-        # No need to filter symbols - we'll fetch ALL income data from Binance
-        logger.info("[Scheduler] Auto-filling transaction history for all symbols")
-
-        # Use the last sync time approach to avoid duplicates - fetch ALL income data
-        result = await filler.fill_transaction_history_manual(
-            symbol="",  # Empty symbol fetches ALL income data
-            days=1,  # Last 24 hours (will be overridden by last sync time if data exists)
-            income_type="",
-            batch_size=100
+        
+        autofiller = AutoTransactionHistoryFiller()
+        autofiller.binance_exchange = bot.binance_exchange
+        autofiller.db_manager = DatabaseManager(supabase)
+        
+        logger.info("[Scheduler] Auto-filling transaction history...")
+        
+        # Use the working autofill approach
+        result = await autofiller.auto_fill_transaction_history(
+            symbols=None,  # All symbols
+            days_back=7,   # Last 7 days
+            income_type=""  # All income types
         )
-
+        
         if result.get('success'):
-            total_inserted = result.get('inserted', 0)
-            total_skipped = result.get('skipped', 0)
-            if total_inserted > 0:
-                logger.info(f"[Scheduler] Transaction history: {total_inserted} new records inserted")
+            inserted_count = result.get('total_inserted', 0)
+            if inserted_count > 0:
+                logger.info(f"[Scheduler] Transaction history: {inserted_count} records inserted")
             else:
                 logger.info(f"[Scheduler] Transaction history: {total_inserted} inserted, {total_skipped} skipped")
         else:
@@ -435,23 +499,48 @@ async def auto_fill_transaction_history(bot, supabase):
                 logger.error(f"[Scheduler] Transaction history autofill failed: {result.get('message', 'Unknown error')}")
 
     except Exception as e:
-        logger.error(f"[Scheduler] Error in transaction history autofill: {e}")
+        logger.debug(f"[Scheduler] Transaction history error: {e}")
 
 
 async def backfill_pnl_data(bot, supabase):
     """Backfill PnL and net PnL data for closed trades."""
     try:
-        from discord_bot.utils.trade_retry_utils import backfill_trades_from_binance_history
+        from discord_bot.database import DatabaseManager
+        
+        pnl_backfiller = BinancePnLBackfiller()
+        pnl_backfiller.binance_exchange = bot.binance_exchange
+        pnl_backfiller.db_manager = DatabaseManager(supabase)
 
         logger.info("[Scheduler] Starting PnL backfill for closed trades...")
 
-        # Backfill PnL data for last 7 days (more recent, faster processing)
-        await backfill_trades_from_binance_history(bot, supabase, days=7)
+        # Backfill PnL data for last 7 days
+        await pnl_backfiller.backfill_trades_with_income_history(days=7, symbol="")
 
         logger.info("[Scheduler] PnL backfill completed")
 
     except Exception as e:
         logger.error(f"[Scheduler] Error in PnL backfill: {e}")
+
+
+async def sync_exchange_balances(supabase):
+    """Sync exchange balances from Binance and KuCoin."""
+    try:
+        from scripts.account_management.balance_scripts.combined_balance_fetcher import CombinedBalanceFetcher
+        
+        fetcher = CombinedBalanceFetcher()
+        
+        if not await fetcher.initialize():
+            logger.error("[Scheduler] Failed to initialize balance fetcher")
+            return
+        
+        # Fetch and store all balances
+        results = await fetcher.fetch_and_store_all_balances()
+        logger.info(f"[Scheduler] Balance sync: Binance={results['binance_futures']}, KuCoin={results['kucoin_futures']}, Total={results['total']}")
+        
+        await fetcher.cleanup()
+        
+    except Exception as e:
+        logger.error(f"[Scheduler] Error in balance sync: {e}")
 
 
 async def weekly_historical_backfill(bot, supabase):
