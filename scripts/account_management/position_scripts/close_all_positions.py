@@ -15,6 +15,9 @@ Usage:
 
     # Close only July 2025 trades (alternative flag)
     python close_all_positions.py --july-trades
+
+    # Close only BTC position
+    python close_all_positions.py --btc-only
 """
 
 import asyncio
@@ -23,14 +26,24 @@ import os
 import sys
 import json
 from typing import Dict, List, Tuple
-from config import settings
 from datetime import datetime, timezone
 from supabase import create_client
 
 # Add the project root to the path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
 
-from src.exchange.binance_exchange import BinanceExchange
+# Load environment variables directly
+from dotenv import load_dotenv
+load_dotenv()
+
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
+BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+from src.exchange.binance.binance_exchange import BinanceExchange
 from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET
 
 # Setup logging
@@ -50,8 +63,8 @@ class BinanceEmergencyClose:
         self.is_testnet = is_testnet
 
         # Initialize Supabase client
-        url = settings.SUPABASE_URL
-        key = settings.SUPABASE_KEY
+        url = SUPABASE_URL
+        key = SUPABASE_KEY
         if url and key:
             self.supabase = create_client(url, key)
             logger.info("Successfully connected to Supabase.")
@@ -145,7 +158,7 @@ class BinanceEmergencyClose:
             response = await self.exchange.create_futures_order(
                 pair=symbol,
                 side=close_side,
-                order_type_market='MARKET',
+                order_type='MARKET',
                 amount=quantity,
                 reduce_only=True
             )
@@ -191,6 +204,47 @@ class BinanceEmergencyClose:
             error_msg = f"Error closing July trade {trade.get('id', 'UNKNOWN')}: {e}"
             logger.error(error_msg)
             return False, error_msg
+
+    async def close_btc_position(self) -> Dict[str, List[str]]:
+        """Close only the BTC position"""
+        logger.info("=" * 60)
+        logger.info("CLOSING BTC POSITION")
+        logger.info("=" * 60)
+
+        # Get all open futures positions
+        positions = await self.get_all_open_futures_positions()
+        results = {"success": [], "failed": [], "not_found": []}
+
+        # Find BTC positions (check for various BTC symbols)
+        btc_positions = []
+        for position in positions:
+            symbol = position['symbol']
+            if any(btc_symbol in symbol.upper() for btc_symbol in ['BTCUSDT', 'BTCUSDTM', 'BTC']):
+                btc_positions.append(position)
+
+        if not btc_positions:
+            logger.info("No active BTC positions found")
+            results["not_found"].append("No active BTC positions found")
+            return results
+
+        logger.info(f"Found {len(btc_positions)} BTC position(s)")
+
+        for btc_position in btc_positions:
+            symbol = btc_position['symbol']
+            position_amt = float(btc_position['positionAmt'])
+            entry_price = float(btc_position['entryPrice'])
+            unrealized_pnl = float(btc_position.get('unRealizedProfit', 0))
+
+            logger.info(f"Processing BTC position: {symbol} | Amount: {position_amt} | Entry: {entry_price} | PnL: {unrealized_pnl}")
+
+            success, message = await self.close_futures_position(btc_position)
+            if success:
+                results["success"].append(f"{symbol}: {message}")
+            else:
+                results["failed"].append(f"{symbol}: {message}")
+
+        logger.info(f"BTC positions processed: {len(results['success'])} success, {len(results['failed'])} failed")
+        return results
 
     async def close_all_july_trades(self) -> Dict[str, List[str]]:
         """Close all open trades from July 2025"""
@@ -379,16 +433,32 @@ class BinanceEmergencyClose:
             logger.info(f"Closing {symbol} position: {position_amt} ({close_side})")
 
 
-            logger.info(f"Canceling all TP/SL orders for {symbol} before closing position")
-            cancel_result = await self.exchange.cancel_all_futures_orders(symbol)
-            if not cancel_result:
-                logger.warning(f"Failed to cancel TP/SL orders for {symbol} - proceeding with position close")
+            # Get and cancel any open orders for this symbol
+            logger.info(f"Checking for open orders for {symbol} before closing position")
+            try:
+                open_orders = await self.exchange.get_all_open_futures_orders()
+                symbol_orders = [order for order in open_orders if order.get('symbol') == symbol]
+
+                if symbol_orders:
+                    logger.info(f"Found {len(symbol_orders)} open orders for {symbol}, canceling them...")
+                    for order in symbol_orders:
+                        order_id = order.get('orderId')
+                        if order_id:
+                            success, response = await self.exchange.cancel_futures_order(symbol, str(order_id))
+                            if success:
+                                logger.info(f"Canceled order {order_id} for {symbol}")
+                            else:
+                                logger.warning(f"Failed to cancel order {order_id} for {symbol}: {response}")
+                else:
+                    logger.info(f"No open orders found for {symbol}")
+            except Exception as e:
+                logger.warning(f"Error checking/canceling orders for {symbol}: {e} - proceeding with position close")
 
             # Create market order to close position
             response = await self.exchange.create_futures_order(
                 pair=symbol,
                 side=close_side,
-                order_type_market='MARKET',
+                order_type='MARKET',
                 amount=position_amt,
                 reduce_only=True
             )
@@ -437,7 +507,16 @@ class BinanceEmergencyClose:
 
             logger.info(f"Cancelling spot order: {symbol} - {order_id}")
 
-            success = await self.exchange.cancel_order(symbol, str(order_id))
+            # Use the client directly for spot orders
+            if not self.exchange.client:
+                return False, "Client not initialized"
+
+            try:
+                result = await self.exchange.client.cancel_order(symbol=symbol, orderId=str(order_id))
+                success = 'orderId' in result
+            except Exception as e:
+                success = False
+                result = str(e)
 
             if success:
                 logger.info(f"Successfully cancelled spot order: {order_id}")
@@ -487,12 +566,19 @@ class BinanceEmergencyClose:
 
             logger.info(f"Selling {amount} {asset} via {symbol}")
 
-            response = await self.exchange.create_order(
-                pair=symbol,
-                side='SELL',
-                order_type_market='MARKET',
-                amount=amount
-            )
+            # Use the client directly for spot orders
+            if not self.exchange.client:
+                return False, "Client not initialized"
+
+            try:
+                response = await self.exchange.client.create_order(
+                    symbol=symbol,
+                    side='SELL',
+                    type='MARKET',
+                    quantity=amount
+                )
+            except Exception as e:
+                return False, f"Error creating spot order: {e}"
 
             if 'orderId' in response:
                 logger.info(f"Successfully sold {asset}: {response['orderId']}")
@@ -688,9 +774,9 @@ class BinanceEmergencyClose:
 async def main():
     """Main function"""
     # Get credentials
-    api_key = settings.BINANCE_API_KEY
-    api_secret = settings.BINANCE_API_SECRET
-    is_testnet = settings.BINANCE_TESTNET
+    api_key = BINANCE_API_KEY
+    api_secret = BINANCE_API_SECRET
+    is_testnet = BINANCE_TESTNET
 
     if not api_key or not api_secret:
         logger.error("BINANCE_API_KEY and BINANCE_API_SECRET must be set in environment variables")
@@ -699,17 +785,73 @@ async def main():
     # Parse command line arguments
     include_spot_sales = True
     close_july_trades_only = False
+    close_btc_only = False
 
     for arg in sys.argv[1:]:
         if arg.lower() in ['--no-spot', '--no-spot-sales']:
             include_spot_sales = False
         elif arg.lower() in ['--july-only', '--july-trades']:
             close_july_trades_only = True
+        elif arg.lower() in ['--btc-only']:
+            close_btc_only = True
 
     # Initialize
     emergency_close = BinanceEmergencyClose(api_key, api_secret, is_testnet)
 
-    if close_july_trades_only:
+    if close_btc_only:
+        # BTC position only mode
+        print("\n" + "="*80)
+        print("₿ BTC POSITION CLOSURE SCRIPT ₿")
+        print("="*80)
+        print(f"Testnet Mode: {'YES' if is_testnet else 'NO'}")
+        print("\nThis script will:")
+        print("1. Find the active BTC position on Binance")
+        print("2. Close the BTC position at market price")
+        print("3. Cancel any TP/SL orders for BTC")
+        print("\n⚠️  WARNING: This action cannot be undone! ⚠️")
+        print("="*80)
+
+        # Get user confirmation
+        if is_testnet:
+            print("\n✅ Testnet mode detected - proceeding automatically")
+        else:
+            confirm = input("\nType 'BTC' to confirm: ")
+            if confirm != 'BTC':
+                print("Operation cancelled.")
+                return
+
+        try:
+            await emergency_close.initialize()
+            results = await emergency_close.close_btc_position()
+
+            # Print results
+            logger.info("\n" + "="*60)
+            logger.info("BTC POSITION CLOSURE SUMMARY")
+            logger.info("="*60)
+
+            if results["success"]:
+                logger.info("✅ Successfully closed BTC position:")
+                for success in results["success"]:
+                    logger.info(f"  - {success}")
+
+            if results["not_found"]:
+                logger.info("ℹ️  No BTC position found:")
+                for not_found in results["not_found"]:
+                    logger.info(f"  - {not_found}")
+
+            if results["failed"]:
+                logger.warning("❌ Failed to close BTC position:")
+                for failure in results["failed"]:
+                    logger.warning(f"  - {failure}")
+
+            logger.info(f"\nTotal: {len(results['success'])} closed, {len(results['not_found'])} not found, {len(results['failed'])} failed")
+
+        except Exception as e:
+            logger.error(f"BTC position closure failed: {e}")
+        finally:
+            await emergency_close.close()
+
+    elif close_july_trades_only:
         # July trades only mode
         print("\n" + "="*80)
         print("📅 JULY 2025 TRADES CLOSURE SCRIPT 📅")
