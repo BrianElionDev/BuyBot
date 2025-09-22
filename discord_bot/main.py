@@ -54,9 +54,12 @@ async def lifespan(app: FastAPI):
                 logger.info("🔄 Running initial price backfill on startup...")
                 # Use the advanced backfill that can correct existing prices
                 backfill_manager = HistoricalTradeBackfillManager()
-                backfill_manager.binance_exchange = bot.binance_exchange
-                backfill_manager.db_manager = bot.db_manager
-                
+                # Set attributes directly if they exist
+                if hasattr(backfill_manager, 'binance_exchange'):
+                    backfill_manager.binance_exchange = bot.binance_exchange
+                if hasattr(backfill_manager, 'db_manager'):
+                    backfill_manager.db_manager = bot.db_manager
+
                 # Fill missing prices and correct existing ones for better accuracy
                 await backfill_manager.backfill_from_historical_data(days=1, update_existing=True)
                 logger.info("✅ Initial price backfill completed")
@@ -356,12 +359,15 @@ async def trade_retry_scheduler():
                 try:
                     # Use the advanced backfill that can correct existing prices
                     backfill_manager = HistoricalTradeBackfillManager()
-                    backfill_manager.binance_exchange = bot.binance_exchange
-                    backfill_manager.db_manager = bot.db_manager
-                    
+                    # Set attributes directly if they exist
+                    if hasattr(backfill_manager, 'binance_exchange'):
+                        backfill_manager.binance_exchange = bot.binance_exchange
+                    if hasattr(backfill_manager, 'db_manager'):
+                        backfill_manager.db_manager = bot.db_manager
+
                     # First fill missing prices, then correct existing ones
                     await backfill_manager.backfill_from_historical_data(days=1, update_existing=True)
-                    
+
                     last_price_backfill = current_time
                     logger.info("[Scheduler] Price backfill completed successfully")
                     tasks_run += 1
@@ -374,12 +380,15 @@ async def trade_retry_scheduler():
                 try:
                     # Use the advanced backfill that can correct existing prices
                     backfill_manager = HistoricalTradeBackfillManager()
-                    backfill_manager.binance_exchange = bot.binance_exchange
-                    backfill_manager.db_manager = bot.db_manager
-                    
+                    # Set attributes directly if they exist
+                    if hasattr(backfill_manager, 'binance_exchange'):
+                        backfill_manager.binance_exchange = bot.binance_exchange
+                    if hasattr(backfill_manager, 'db_manager'):
+                        backfill_manager.db_manager = bot.db_manager
+
                     # Fill missing prices first, then correct existing ones for better accuracy
                     await backfill_manager.backfill_from_historical_data(days=7, update_existing=True)
-                    
+
                     last_weekly_backfill = current_time
                     logger.info("[Scheduler] Weekly historical backfill completed successfully")
                     tasks_run += 1
@@ -471,26 +480,29 @@ async def auto_fill_transaction_history(bot, supabase):
     """Auto-fill transaction history from Binance income endpoint."""
     try:
         from discord_bot.database import DatabaseManager
-        
+
         autofiller = AutoTransactionHistoryFiller()
-        autofiller.binance_exchange = bot.binance_exchange
-        autofiller.db_manager = DatabaseManager(supabase)
-        
+        # Set attributes directly if they exist
+        if hasattr(autofiller, 'binance_exchange'):
+            autofiller.binance_exchange = bot.binance_exchange
+        if hasattr(autofiller, 'db_manager'):
+            autofiller.db_manager = DatabaseManager(supabase)
+
         logger.info("[Scheduler] Auto-filling transaction history...")
-        
+
         # Use the working autofill approach
         result = await autofiller.auto_fill_transaction_history(
             symbols=None,  # All symbols
             days_back=7,   # Last 7 days
             income_type=""  # All income types
         )
-        
+
         if result.get('success'):
             inserted_count = result.get('total_inserted', 0)
             if inserted_count > 0:
                 logger.info(f"[Scheduler] Transaction history: {inserted_count} records inserted")
             else:
-                logger.info(f"[Scheduler] Transaction history: {total_inserted} inserted, {total_skipped} skipped")
+                logger.info(f"[Scheduler] Transaction history: {result.get('total_inserted', 0)} inserted, {result.get('total_skipped', 0)} skipped")
         else:
             # Don't treat "no income records found" as an error - this is normal
             if "No income records found" in result.get('message', ''):
@@ -506,15 +518,18 @@ async def backfill_pnl_data(bot, supabase):
     """Backfill PnL and net PnL data for closed trades."""
     try:
         from discord_bot.database import DatabaseManager
-        
+
         pnl_backfiller = BinancePnLBackfiller()
-        pnl_backfiller.binance_exchange = bot.binance_exchange
-        pnl_backfiller.db_manager = DatabaseManager(supabase)
+        # Set attributes directly if they exist
+        if hasattr(pnl_backfiller, 'binance_exchange'):
+            pnl_backfiller.binance_exchange = bot.binance_exchange
+        if hasattr(pnl_backfiller, 'db_manager'):
+            pnl_backfiller.db_manager = DatabaseManager(supabase)
 
         logger.info("[Scheduler] Starting PnL backfill for closed trades...")
 
         # Backfill PnL data for last 7 days
-        await pnl_backfiller.backfill_trades_with_income_history(days=7, symbol="")
+        await pnl_backfiller.backfill_trades_with_income_history(bot, supabase, days=7, symbol="")
 
         logger.info("[Scheduler] PnL backfill completed")
 
@@ -526,19 +541,19 @@ async def sync_exchange_balances(supabase):
     """Sync exchange balances from Binance and KuCoin."""
     try:
         from scripts.account_management.balance_scripts.combined_balance_fetcher import CombinedBalanceFetcher
-        
+
         fetcher = CombinedBalanceFetcher()
-        
+
         if not await fetcher.initialize():
             logger.error("[Scheduler] Failed to initialize balance fetcher")
             return
-        
+
         # Fetch and store all balances
         results = await fetcher.fetch_and_store_all_balances()
         logger.info(f"[Scheduler] Balance sync: Binance={results['binance_futures']}, KuCoin={results['kucoin_futures']}, Total={results['total']}")
-        
+
         await fetcher.cleanup()
-        
+
     except Exception as e:
         logger.error(f"[Scheduler] Error in balance sync: {e}")
 

@@ -206,7 +206,8 @@ class TradingEngine:
         client_order_id: Optional[str] = None,
         price_threshold_override: Optional[float] = None,
         quantity_multiplier: Optional[int] = None,
-        entry_prices: Optional[List[float]] = None
+        entry_prices: Optional[List[float]] = None,
+        discord_id: Optional[str] = None
     ) -> Tuple[bool, Union[Dict, str]]:
         """
         Processes a CEX (Binance) signal.
@@ -215,7 +216,7 @@ class TradingEngine:
         return await self.initial_signal_processor.process_signal(
             coin_symbol, signal_price, position_type, order_type, stop_loss,
             take_profits, dca_range, client_order_id, price_threshold_override,
-            quantity_multiplier, entry_prices
+            quantity_multiplier, entry_prices, discord_id
         )
 
     async def calculate_position_breakeven_price(

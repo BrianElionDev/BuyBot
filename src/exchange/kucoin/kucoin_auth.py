@@ -117,6 +117,45 @@ class KucoinAuth:
             logger.error(f"Failed to generate KuCoin auth headers: {e}")
             raise
 
+    def get_futures_headers(self, method: str, endpoint: str, params: Optional[Dict] = None, body: str = "") -> Dict[str, str]:
+        """
+        Get authentication headers for KuCoin futures API request.
+
+        Args:
+            method: HTTP method
+            endpoint: API endpoint
+            params: Query parameters
+            body: Request body (for POST requests)
+
+        Returns:
+            Dictionary of authentication headers
+        """
+        try:
+            from urllib.parse import urlencode
+
+            # Convert params to query string if provided
+            query = ""
+            if params:
+                query = "?" + urlencode(params)
+
+            timestamp = str(int(time.time() * 1000))
+            str_to_sign = timestamp + method + endpoint + query + body
+            signature = self.generate_signature(timestamp, method, endpoint, query + body)
+            passphrase_signature = self.generate_passphrase_signature()
+
+            return {
+                'KC-API-KEY': self.api_key,
+                'KC-API-SIGN': signature,
+                'KC-API-TIMESTAMP': timestamp,
+                'KC-API-PASSPHRASE': passphrase_signature,
+                'KC-API-KEY-VERSION': '2',
+                'Content-Type': 'application/json'
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to generate KuCoin futures auth headers: {e}")
+            raise
+
     def validate_credentials(self) -> bool:
         """
         Validate KuCoin API credentials.

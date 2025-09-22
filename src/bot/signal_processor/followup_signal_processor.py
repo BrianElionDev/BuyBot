@@ -165,7 +165,8 @@ class FollowupSignalProcessor:
 
     async def process_trade_update(self, trade_id: int, action: str, details: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """
-        Process updates for an existing trade, like taking profit, moving stop loss, or partial close.
+        Process updates for an existing trade with position aggregation awareness.
+        Handles followup alerts for merged positions correctly.
         """
         # Validate trade before processing
         is_valid, active_trade, error_msg = await self.validate_trade_for_followup(trade_id, action)
@@ -176,6 +177,54 @@ class FollowupSignalProcessor:
         if not active_trade:
             logger.error(f"Could not find an active trade for ID {trade_id} to process update.")
             return False, {"error": "Active trade not found"}
+
+        # POSITION AGGREGATION AWARENESS - Check if this trade is part of an aggregated position
+        try:
+            from src.bot.position_management import PositionManager
+
+            position_manager = PositionManager(self.db_manager, self.exchange)
+            coin_symbol = active_trade.get('coin_symbol')
+            position_type = active_trade.get('signal_type', 'LONG')
+
+            if coin_symbol:
+                # Get all active positions to check for aggregation
+                positions = await position_manager.get_active_positions()
+
+                # Look for aggregated position containing this trade
+                for position in positions.values():
+                    if (position.symbol == coin_symbol and
+                        position.side == position_type and
+                        trade_id in position.trade_ids):
+
+                        # This trade is part of an aggregated position
+                        if trade_id != position.primary_trade_id:
+                            # This is a secondary trade in an aggregated position
+                            logger.info(f"Trade {trade_id} is part of aggregated position (primary: {position.primary_trade_id})")
+
+                            # Redirect the update to the primary trade
+                            primary_trade = await self.db_manager.get_trade_by_id(position.primary_trade_id)
+                            if primary_trade:
+                                logger.info(f"Redirecting update to primary trade {position.primary_trade_id}")
+                                return await self._process_primary_trade_update(
+                                    primary_trade, active_trade, action, details, position
+                                )
+                            else:
+                                logger.error(f"Could not find primary trade {position.primary_trade_id}")
+                                return False, {"error": "Primary trade not found for aggregated position"}
+                        else:
+                            # This is the primary trade - proceed normally but with aggregated position info
+                            logger.info(f"Processing update for primary trade {trade_id} in aggregated position")
+                            active_trade['aggregated_position'] = {
+                                'total_size': position.size,
+                                'trade_count': len(position.trade_ids),
+                                'is_primary': True
+                            }
+                            break
+
+        except Exception as e:
+            logger.error(f"Error in position aggregation check: {e}")
+            # Continue with normal processing if aggregation check fails
+            logger.info("Continuing with normal trade update processing")
 
         # Parse position size and order info
         position_size = float(active_trade.get('position_size') or 0.0)
@@ -408,3 +457,62 @@ class FollowupSignalProcessor:
         except Exception as e:
             logger.error(f"Error validating trade update: {e}")
             return False, f"Error in validation: {str(e)}"
+
+    async def _process_primary_trade_update(
+        self,
+        primary_trade: Dict[str, Any],
+        secondary_trade: Dict[str, Any],
+        action: str,
+        details: Dict[str, Any],
+        position_info
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Process a followup alert for a secondary trade by redirecting it to the primary trade.
+
+        Args:
+            primary_trade: The primary trade in the aggregated position
+            secondary_trade: The secondary trade that received the alert
+            action: The action to perform
+            details: Action details
+            position_info: Information about the aggregated position
+
+        Returns:
+            Tuple of (success, result)
+        """
+        try:
+            logger.info(f"Processing followup alert for secondary trade {secondary_trade['id']} via primary trade {primary_trade['id']}")
+
+            # Update the action details to reflect the aggregated position
+            updated_details = details.copy()
+            updated_details['original_trade_id'] = secondary_trade['id']
+            updated_details['aggregated_position'] = {
+                'total_size': position_info.size,
+                'trade_count': len(position_info.trade_ids),
+                'is_aggregated': True
+            }
+
+            # Process the update using the primary trade
+            # This ensures the update affects the correct Binance position
+            result = await self.process_trade_update(
+                primary_trade['id'],
+                action,
+                updated_details
+            )
+
+            if result[0]:  # Success
+                # Log the successful redirection
+                logger.info(f"Successfully processed followup alert for trade {secondary_trade['id']} via primary trade {primary_trade['id']}")
+
+                # Add information about the redirection to the result
+                if isinstance(result[1], dict):
+                    result[1]['redirected_from_trade_id'] = secondary_trade['id']
+                    result[1]['aggregated_position_updated'] = True
+
+                return result
+            else:
+                logger.error(f"Failed to process followup alert via primary trade: {result[1]}")
+                return result
+
+        except Exception as e:
+            logger.error(f"Error processing primary trade update: {e}")
+            return False, {"error": f"Error processing primary trade update: {str(e)}"}

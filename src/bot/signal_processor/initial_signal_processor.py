@@ -47,10 +47,11 @@ class InitialSignalProcessor:
         client_order_id: Optional[str] = None,
         price_threshold_override: Optional[float] = None,
         quantity_multiplier: Optional[int] = None,
-        entry_prices: Optional[List[float]] = None
+        entry_prices: Optional[List[float]] = None,
+        discord_id: Optional[str] = None
     ) -> Tuple[bool, Union[Dict, str]]:
         """
-        Processes a CEX (Binance) signal.
+        Processes a CEX (Binance) signal with position conflict detection.
         This is the main entry point for executing trades based on alerts.
         """
         logger.info(f"--- Processing CEX Signal for {coin_symbol} ---")
@@ -61,6 +62,85 @@ class InitialSignalProcessor:
             reason = f"Trade cooldown active for {coin_symbol}"
             logger.info(reason)
             return False, reason
+
+        # POSITION CONFLICT DETECTION - Check for existing positions
+        try:
+            from src.bot.position_management import PositionManager, SymbolCooldownManager
+
+            # Initialize position management components
+            position_manager = PositionManager(self.db_manager, self.exchange)
+            cooldown_manager = SymbolCooldownManager()
+
+            # Check for position conflicts
+            conflict = await position_manager.check_position_conflict(
+                coin_symbol, position_type, 999999  # Use temp ID for conflict check
+            )
+
+            if conflict:
+                logger.info(f"Position conflict detected for {coin_symbol} {position_type}: {conflict.reason}")
+
+                # Handle the conflict based on type
+                if conflict.conflict_type == "same_side":
+                    # Same side conflict - merge the trades
+                    logger.info(f"Merging new trade into existing {position_type} position for {coin_symbol}")
+
+                    # Calculate new position size
+                    trade_amount = await self._calculate_trade_amount(
+                        coin_symbol, signal_price, quantity_multiplier, True
+                    )
+
+                    # Get existing position info
+                    existing_position = conflict.existing_position
+                    new_total_size = existing_position.size + trade_amount
+                    new_weighted_entry = (
+                        (existing_position.size * existing_position.entry_price +
+                         trade_amount * signal_price) / new_total_size
+                    )
+
+                    # Update the existing position (Trade 1)
+                    await self._update_existing_position(
+                        existing_position.primary_trade_id,
+                        new_total_size,
+                        new_weighted_entry,
+                        signal_price,
+                        trade_amount
+                    )
+
+                    # Mark Trade 2 as merged (update existing row using discord_id)
+                    if discord_id:
+                        await self._mark_trade_as_merged(
+                            discord_id,  # Use the discord_id from the signal
+                            existing_position.primary_trade_id,
+                            new_total_size,
+                            new_weighted_entry
+                        )
+                    else:
+                        logger.warning("No discord_id provided, cannot mark trade as merged")
+
+                    # Set position cooldown
+                    cooldown_manager.set_position_cooldown(coin_symbol, 600)  # 10 minutes
+
+                    return True, {
+                        'action': 'merged',
+                        'primary_trade_id': existing_position.primary_trade_id,
+                        'new_position_size': new_total_size,
+                        'new_entry_price': new_weighted_entry,
+                        'message': f"Trade merged into existing {position_type} position for {coin_symbol}"
+                    }
+
+                elif conflict.conflict_type == "opposite_side":
+                    # Opposite side conflict - reject the trade
+                    logger.info(f"Rejecting trade due to opposite side conflict: {conflict.reason}")
+                    cooldown_manager.set_position_cooldown(coin_symbol, 600)  # 10 minutes
+                    return False, f"Trade rejected: {conflict.reason}"
+
+            # No conflict - proceed with normal trade creation
+            logger.info(f"No position conflict detected for {coin_symbol} {position_type}")
+
+        except Exception as e:
+            logger.error(f"Error in position conflict detection: {e}")
+            # Continue with normal trade creation if conflict detection fails
+            logger.info("Continuing with normal trade creation due to conflict detection error")
 
         # --- Pair Validation and Auto-Switching ---
         is_futures = position_type.upper() in ['LONG', 'SHORT']
@@ -344,3 +424,107 @@ class InitialSignalProcessor:
         except Exception as e:
             logger.error(f"Error executing trade: {e}", exc_info=True)
             return False, f"Error executing trade: {str(e)}"
+
+    async def _update_existing_position(
+        self,
+        primary_trade_id: int,
+        new_total_size: float,
+        new_weighted_entry: float,
+        signal_price: float,
+        trade_amount: float
+    ) -> bool:
+        """
+        Update an existing position with new trade data.
+
+        Args:
+            primary_trade_id: ID of the primary trade to update
+            new_total_size: New total position size
+            new_weighted_entry: New weighted average entry price
+            signal_price: Price of the new signal
+            trade_amount: Amount of the new trade
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from datetime import datetime, timezone
+
+            # Update the primary trade with merged data
+            update_data = {
+                'position_size': new_total_size,
+                'entry_price': new_weighted_entry,
+                'updated_at': datetime.now(timezone.utc).isoformat(),
+                'merged_trades_count': 1,  # Will be incremented by database operation
+                'last_merge_at': datetime.now(timezone.utc).isoformat()
+            }
+
+            # Update the trade in database
+            success = await self.db_manager.update_trade(primary_trade_id, update_data)
+
+            if success:
+                logger.info(f"Successfully updated position {primary_trade_id} with merged trade data")
+                logger.info(f"New size: {new_total_size}, New entry: {new_weighted_entry}")
+                return True
+            else:
+                logger.error(f"Failed to update position {primary_trade_id}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error updating existing position: {e}")
+            return False
+
+    async def _mark_trade_as_merged(
+        self,
+        discord_id: str,
+        primary_trade_id: int,
+        new_total_size: float,
+        new_weighted_entry: float
+    ) -> bool:
+        """
+        Mark a trade as merged by updating its existing row using discord_id.
+
+        Args:
+            discord_id: Discord ID of the trade to mark as merged
+            primary_trade_id: ID of the primary trade it was merged into
+            new_total_size: New total position size after merge
+            new_weighted_entry: New weighted average entry price after merge
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from datetime import datetime, timezone
+
+            # Find the trade by discord_id first
+            trade = await self.db_manager.find_trade_by_discord_id(discord_id)
+            if not trade:
+                logger.error(f"Could not find trade with discord_id: {discord_id}")
+                return False
+
+            trade_id = trade['id']
+
+            # Update the trade to mark it as merged
+            merge_data = {
+                'status': 'MERGED',
+                'merged_into_trade_id': primary_trade_id,
+                'merge_reason': 'Position aggregation - same symbol/side conflict',
+                'merged_at': datetime.now(timezone.utc).isoformat(),
+                'position_size': 0,  # Set to 0 since it's merged
+                'entry_price': 0,    # Set to 0 since it's merged
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }
+
+            # Update the existing trade row
+            success = await self.db_manager.update_existing_trade(trade_id, merge_data)
+
+            if success:
+                logger.info(f"Successfully marked trade {trade_id} (discord_id: {discord_id}) as merged into {primary_trade_id}")
+                logger.info(f"New aggregated position: {new_total_size} @ {new_weighted_entry}")
+                return True
+            else:
+                logger.error(f"Failed to mark trade {trade_id} as merged")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error marking trade as merged: {e}")
+            return False
