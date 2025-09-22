@@ -243,7 +243,8 @@ class DiscordBot:
                         stop_loss=stop_loss,
                         take_profits=take_profits,
                         entry_prices=entry_prices,
-                        client_order_id=signal.discord_id
+                        client_order_id=signal.discord_id,
+                        discord_id=signal.discord_id
                     )
 
                     if success:

@@ -157,7 +157,14 @@ class KucoinExchange(ExchangeBase):
 
             from kucoin_universal_sdk.generate.account.account.model_get_spot_account_list_req import GetSpotAccountListReqBuilder
 
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return {}
+
             spot_service = self.client.get_spot_service()
+            if not hasattr(spot_service, 'get_account_api'):
+                logger.error("Spot service does not have get_account_api method")
+                return {}
             account_api = spot_service.get_account_api()
 
             # Get all spot accounts
@@ -258,6 +265,10 @@ class KucoinExchange(ExchangeBase):
                 order_params["reduceOnly"] = True
 
             # Create order using KuCoin SDK - Use FUTURES service for futures orders
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return {"success": False, "error": "Client not initialized"}
+
             futures_service = self.client.get_futures_service()
             order_api = futures_service.get_order_api()
 
@@ -270,7 +281,7 @@ class KucoinExchange(ExchangeBase):
                 .set_symbol(order_params["symbol"]) \
                 .set_type(order_params["type"]) \
                 .set_size(order_params["size"]) \
-                .set_leverage("1")  # Set default leverage to 1x
+                .set_leverage(1)  # Set default leverage to 1x
 
             if "price" in order_params:
                 order_request.set_price(order_params["price"])
@@ -316,6 +327,10 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return False, {"error": "Client not initialized"}
+
             futures_api = self.client.get_futures_service().get_order_api()
 
             from kucoin_universal_sdk.generate.futures.order.model_cancel_order_by_id_req import CancelOrderByIdReqBuilder
@@ -354,6 +369,10 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return None
+
             futures_api = self.client.get_futures_service().get_order_api()
 
             from kucoin_universal_sdk.generate.futures.order.model_get_order_by_order_id_req import GetOrderByOrderIdReqBuilder
@@ -362,11 +381,23 @@ class KucoinExchange(ExchangeBase):
             get_order_request = GetOrderByOrderIdReqBuilder().set_order_id(order_id).build()
             response = futures_api.get_order_by_order_id(get_order_request)
 
-            if not response or not response.data:
+            if not response:
                 logger.warning(f"Order {order_id} not found")
                 return None
 
-            order_data = response.data
+            # Try to get data attribute safely
+            order_data = None
+            if hasattr(response, 'data'):
+                order_data = response.data
+            elif hasattr(response, 'order'):
+                order_data = response.order
+            else:
+                logger.warning(f"Order {order_id} response format not recognized")
+                return None
+
+            if not order_data:
+                logger.warning(f"Order {order_id} not found")
+                return None
 
             # Format response to match expected format
             formatted_response = {
@@ -394,7 +425,7 @@ class KucoinExchange(ExchangeBase):
     # Position Operations
     async def get_futures_position_information(self) -> List[Dict[str, Any]]:
         """
-        Get all futures positions.
+        Get all futures positions using direct API calls.
 
         Returns:
             List of position information dictionaries
@@ -402,38 +433,58 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            futures_position_api = self.client.get_futures_service().get_positions_api()
+            # Use direct HTTP API call since SDK method is not available
+            futures_base_url = self._futures_base_url()
+            url = f"{futures_base_url}/api/v1/positions"
 
-            from kucoin_universal_sdk.generate.futures.positions.model_get_position_list_req import GetPositionListReqBuilder
-
-            # Build get position list request
-            position_request = GetPositionListReqBuilder().build()
-            response = futures_position_api.get_position_list(position_request)
-
-            if not response or not response.data:
-                logger.info("No futures positions found")
+            # Prepare headers for authenticated request
+            if not self.client or not hasattr(self.client, 'auth'):
+                logger.error("KuCoin client or auth not initialized")
                 return []
 
-            positions = []
-            for position_data in response.data:
-                # Format position data to match expected format
-                formatted_position = {
-                    "symbol": getattr(position_data, 'symbol', ''),
-                    "side": getattr(position_data, 'side', 'UNKNOWN'),
-                    "size": float(getattr(position_data, 'size', 0)),
-                    "entryPrice": float(getattr(position_data, 'avgPrice', 0)),
-                    "markPrice": float(getattr(position_data, 'markPrice', 0)),
-                    "unrealizedPnl": float(getattr(position_data, 'unrealizedPnl', 0)),
-                    "percentage": float(getattr(position_data, 'percentage', 0)),
-                    "marginMode": getattr(position_data, 'marginMode', 'UNKNOWN'),
-                    "leverage": float(getattr(position_data, 'leverage', 1)),
-                    "margin": float(getattr(position_data, 'margin', 0)),
-                    "raw_response": position_data
-                }
-                positions.append(formatted_position)
+            headers = self.client.auth.get_futures_headers('GET', '/api/v1/positions')
 
-            logger.info(f"Retrieved {len(positions)} KuCoin futures positions")
-            return positions
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    data = await resp.json()
+
+                    if data.get('code') != '200000':
+                        logger.error(f"KuCoin futures positions API error: {data}")
+                        return []
+
+                    positions_data = data.get('data', [])
+                    if not positions_data:
+                        logger.info("No futures positions found")
+                        return []
+
+                    positions = []
+                    for position_data in positions_data:
+                        # Only process open positions with non-zero quantity
+                        current_qty = float(position_data.get('currentQty', 0))
+                        if current_qty == 0 or not position_data.get('isOpen', False):
+                            continue
+
+                        # Determine side based on quantity
+                        side = "LONG" if current_qty > 0 else "SHORT"
+
+                        # Format position data to match expected format
+                        formatted_position = {
+                            "symbol": position_data.get('symbol', ''),
+                            "side": side,
+                            "size": abs(current_qty),  # Use absolute value for size
+                            "entryPrice": float(position_data.get('avgEntryPrice', 0)),
+                            "markPrice": float(position_data.get('markPrice', 0)),
+                            "unrealizedPnl": float(position_data.get('unrealisedPnl', 0)),
+                            "percentage": float(position_data.get('unrealisedPnlPcnt', 0)),
+                            "marginMode": position_data.get('marginMode', 'UNKNOWN'),
+                            "leverage": float(position_data.get('leverage', 1)),
+                            "margin": float(position_data.get('posMargin', 0)),
+                            "raw_response": position_data
+                        }
+                        positions.append(formatted_position)
+
+                    logger.info(f"Retrieved {len(positions)} KuCoin futures positions")
+                    return positions
 
         except Exception as e:
             logger.error(f"Failed to get KuCoin futures positions: {e}")
@@ -442,7 +493,7 @@ class KucoinExchange(ExchangeBase):
     async def close_position(self, pair: str, amount: float,
                            position_type: str) -> Tuple[bool, Dict[str, Any]]:
         """
-        Close a futures position.
+        Close a futures position using direct API calls.
 
         Args:
             pair: Trading pair symbol
@@ -472,16 +523,58 @@ class KucoinExchange(ExchangeBase):
             # Determine side for closing
             side = "sell" if position_type.upper() == "LONG" else "buy"
 
-            # Create closing order
-            result = await self.create_futures_order(
-                pair=pair,
-                side=side,
-                order_type="MARKET",
-                amount=amount,
-                reduce_only=True
-            )
+            # Convert pair to KuCoin futures format
+            kucoin_symbol = pair.replace('-', 'USDTM')
 
-            return result.get("success", False), result
+            # Use direct API call to create order
+            futures_base_url = self._futures_base_url()
+            url = f"{futures_base_url}/api/v1/orders"
+
+            # Prepare order data
+            order_data = {
+                "clientOid": f"close_{int(asyncio.get_event_loop().time() * 1000)}",
+                "side": side,
+                "symbol": kucoin_symbol,
+                "type": "market",
+                "size": int(amount),  # KuCoin expects integer size
+                "reduceOnly": True
+            }
+
+            import json
+            order_json = json.dumps(order_data)
+
+            # Prepare headers for authenticated request
+            if not self.client or not hasattr(self.client, 'auth'):
+                logger.error("KuCoin client or auth not initialized")
+                return False, {"error": "Client or auth not initialized"}
+
+            headers = self.client.auth.get_futures_headers('POST', '/api/v1/orders', body=order_json)
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, data=order_json, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    data = await resp.json()
+
+                    if data.get('code') != '200000':
+                        logger.error(f"KuCoin futures order API error: {data}")
+                        return False, {"success": False, "error": data.get('msg', 'Unknown error')}
+
+                    order_result = data.get('data', {})
+
+                    # Format response to match expected format
+                    formatted_response = {
+                        "success": True,
+                        "orderId": order_result.get('orderId', order_data["clientOid"]),
+                        "clientOrderId": order_data["clientOid"],
+                        "symbol": pair,
+                        "side": side.upper(),
+                        "type": "MARKET",
+                        "origQty": str(amount),
+                        "status": "NEW",
+                        "time": int(asyncio.get_event_loop().time() * 1000)
+                    }
+
+                    logger.info(f"KuCoin futures order created: {formatted_response}")
+                    return True, formatted_response
 
         except Exception as e:
             logger.error(f"Failed to close KuCoin position for {pair}: {e}")
@@ -508,7 +601,7 @@ class KucoinExchange(ExchangeBase):
             try:
                 url = f"{self._futures_base_url()}/api/v1/contracts/active"
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=10) as resp:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         data = await resp.json()
                         items = data.get("data") or []
                         for it in items:
@@ -536,7 +629,7 @@ class KucoinExchange(ExchangeBase):
                             logger.info(f"Trying KuCoin futures ticker for: {mapped_symbol}")
                             url = f"{self._futures_base_url()}/api/v1/ticker?symbol={mapped_symbol}"
                             async with aiohttp.ClientSession() as session:
-                                async with session.get(url, timeout=10) as resp:
+                                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                                     data = await resp.json()
                                     if not isinstance(data, dict) or data.get('code') != '200000':
                                         raise RuntimeError(f"ticker bad response for {mapped_symbol}: {data}")
@@ -590,13 +683,21 @@ class KucoinExchange(ExchangeBase):
 
             from kucoin_universal_sdk.generate.spot.market.model_get_all_symbols_req import GetAllSymbolsReqBuilder
 
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return None
+
             spot_service = self.client.get_spot_service()
             market_api = spot_service.get_market_api()
 
             # First get all symbols to find the correct format
             symbols_request = GetAllSymbolsReqBuilder().build()
             symbols_response = market_api.get_all_symbols(symbols_request)
-            symbols = symbols_response.data
+            symbols = []
+            if hasattr(symbols_response, 'data') and symbols_response.data:
+                symbols = symbols_response.data
+            elif hasattr(symbols_response, 'items') and symbols_response.items:
+                symbols = symbols_response.items
 
             # Find matching symbol
             matching_symbol = None
@@ -658,7 +759,7 @@ class KucoinExchange(ExchangeBase):
                 logger.info(f"Fetching KuCoin futures symbol details: {mapped_symbol}")
                 url = f"{self._futures_base_url()}/api/v1/contracts/{mapped_symbol}"
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=10) as resp:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         data = await resp.json()
                         symbol_info = (data or {}).get("data")
                         if not symbol_info:
@@ -728,7 +829,7 @@ class KucoinExchange(ExchangeBase):
             url = f"{self._futures_base_url()}/api/v1/contracts/active"
             symbols: List[str] = []
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=10) as resp:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     data = await resp.json()
                     items = data.get("data") or []
                     for it in items:
@@ -849,7 +950,7 @@ class KucoinExchange(ExchangeBase):
 
             url = f"{self._futures_base_url()}/api/v1/mark-price/{mapped_symbol}/current"
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=10) as resp:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     data = await resp.json()
                     td = data.get("data") or {}
                     return float(td.get('value', 0.0))  # 'value' is mark price
@@ -860,7 +961,7 @@ class KucoinExchange(ExchangeBase):
 
     async def get_futures_account_info(self) -> Optional[Dict[str, Any]]:
         """
-        Get futures account information using futures service.
+        Get futures account information using direct API calls.
 
         Returns:
             Account information or None if not available
@@ -868,35 +969,45 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            # Use futures account service for futures account information
-            futures_service = self.client.get_futures_service()
-            account_api = futures_service.get_account_api()
+            # Use direct HTTP API call since SDK method is not available
+            futures_base_url = self._futures_base_url()
+            url = f"{futures_base_url}/api/v1/account-overview"
 
-            from kucoin_universal_sdk.generate.futures.account.model_get_account_overview_req import GetAccountOverviewReqBuilder
-            request = GetAccountOverviewReqBuilder().set_currency('USDT').build()
-            response = account_api.get_account_overview(request)
-
-            if not response or not response.data:
-                logger.warning("No futures account data received")
+            # Prepare headers for authenticated request
+            if not self.client or not hasattr(self.client, 'auth'):
+                logger.error("KuCoin client or auth not initialized")
                 return None
 
-            account_data = response.data
+            headers = self.client.auth.get_futures_headers('GET', '/api/v1/account-overview', {'currency': 'USDT'})
 
-            # Format response to match expected format
-            formatted_response = {
-                "totalWalletBalance": float(getattr(account_data, 'totalWalletBalance', 0.0)),
-                "totalUnrealizedProfit": float(getattr(account_data, 'totalUnrealizedProfit', 0.0)),
-                "totalMarginBalance": float(getattr(account_data, 'totalMarginBalance', 0.0)),
-                "totalInitialMargin": float(getattr(account_data, 'totalInitialMargin', 0.0)),
-                "totalMaintMargin": float(getattr(account_data, 'totalMaintMargin', 0.0)),
-                "maxWithdrawAmount": float(getattr(account_data, 'maxWithdrawAmount', 0.0)),
-                "availableBalance": float(getattr(account_data, 'availableBalance', 0.0)),
-                "currency": getattr(account_data, 'currency', 'USDT'),
-                "raw_response": account_data
-            }
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, params={'currency': 'USDT'}, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    data = await resp.json()
 
-            logger.info(f"Retrieved KuCoin futures account info: {formatted_response['totalWalletBalance']} {formatted_response['currency']}")
-            return formatted_response
+                    if data.get('code') != '200000':
+                        logger.error(f"KuCoin futures account API error: {data}")
+                        return None
+
+                    account_data = data.get('data', {})
+                    if not account_data:
+                        logger.warning("No futures account data received")
+                        return None
+
+                    # Format response to match expected format
+                    formatted_response = {
+                        "totalWalletBalance": float(account_data.get('accountEquity', 0.0)),
+                        "totalUnrealizedProfit": float(account_data.get('unrealisedPNL', 0.0)),
+                        "totalMarginBalance": float(account_data.get('marginBalance', 0.0)),
+                        "totalInitialMargin": float(account_data.get('positionMargin', 0.0)),
+                        "totalMaintMargin": float(account_data.get('orderMargin', 0.0)),
+                        "maxWithdrawAmount": float(account_data.get('maxWithdrawAmount', 0.0)),
+                        "availableBalance": float(account_data.get('availableBalance', 0.0)),
+                        "currency": account_data.get('currency', 'USDT'),
+                        "raw_response": account_data
+                    }
+
+                    logger.info(f"Retrieved KuCoin futures account info: {formatted_response['totalWalletBalance']} {formatted_response['currency']}")
+                    return formatted_response
 
         except Exception as e:
             logger.error(f"Failed to get KuCoin futures account info: {e}")
@@ -954,6 +1065,10 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return []
+
             futures_order_api = self.client.get_futures_service().get_order_api()
 
             from kucoin_universal_sdk.generate.futures.order.model_get_trade_history_req import GetTradeHistoryReqBuilder
@@ -963,8 +1078,6 @@ class KucoinExchange(ExchangeBase):
 
             if symbol:
                 trade_request.set_symbol(symbol)
-            if limit:
-                trade_request.set_limit(limit)
             if start_time:
                 trade_request.set_start_at(start_time)
             if end_time:
@@ -973,12 +1086,23 @@ class KucoinExchange(ExchangeBase):
             request = trade_request.build()
             response = futures_order_api.get_trade_history(request)
 
-            if not response or not response.data:
+            if not response:
+                logger.info("No trade history found")
+                return []
+
+            # Try to get data attribute safely
+            trade_data_list = []
+            if hasattr(response, 'data') and response.data:
+                trade_data_list = response.data
+            elif hasattr(response, 'items') and response.items:
+                trade_data_list = response.items
+
+            if not trade_data_list:
                 logger.info("No trade history found")
                 return []
 
             trades = []
-            for trade_data in response.data:
+            for trade_data in trade_data_list:
                 # Format trade data to match expected format
                 formatted_trade = {
                     "id": getattr(trade_data, 'id', ''),
@@ -1021,6 +1145,10 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return []
+
             futures_funding_api = self.client.get_futures_service().get_funding_fees_api()
 
             from kucoin_universal_sdk.generate.futures.fundingfees.model_get_private_funding_history_req import GetPrivateFundingHistoryReqBuilder
@@ -1034,18 +1162,27 @@ class KucoinExchange(ExchangeBase):
                 funding_request.set_start_at(start_time)
             if end_time:
                 funding_request.set_end_at(end_time)
-            if limit:
-                funding_request.set_limit(limit)
 
             request = funding_request.build()
             response = futures_funding_api.get_private_funding_history(request)
 
-            if not response or not response.data:
+            if not response:
+                logger.info("No income history found")
+                return []
+
+            # Try to get data attribute safely
+            income_data_list = []
+            if hasattr(response, 'data') and response.data:
+                income_data_list = response.data
+            elif hasattr(response, 'items') and response.items:
+                income_data_list = response.items
+
+            if not income_data_list:
                 logger.info("No income history found")
                 return []
 
             income_records = []
-            for income_data in response.data:
+            for income_data in income_data_list:
                 # Format income data to match expected format
                 formatted_income = {
                     "id": getattr(income_data, 'id', ''),
@@ -1084,28 +1221,52 @@ class KucoinExchange(ExchangeBase):
             List of open order dictionaries
         """
         try:
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return []
+
             futures_service = self.client.get_futures_service()
             order_api = futures_service.get_order_api()
 
+            from kucoin_universal_sdk.generate.futures.order.model_get_order_list_req import GetOrderListReqBuilder
+
             # Get all open orders
+            # Use string status instead of enum to avoid import issues
             request = GetOrderListReqBuilder().set_status("active").build()
             response = order_api.get_order_list(request)
 
             orders = []
-            if response and response.data:
-                for order in response.data.items:
+            if not response:
+                logger.info("No open orders found")
+                return []
+
+            # Try to get data attribute safely
+            order_data_list = []
+            if hasattr(response, 'data') and response.data:
+                if hasattr(response.data, 'items') and response.data.items:
+                    order_data_list = response.data.items
+                elif hasattr(response.data, 'data') and response.data.data:
+                    order_data_list = response.data.data
+            elif hasattr(response, 'items') and response.items:
+                order_data_list = response.items
+
+            if not order_data_list:
+                logger.info("No open orders found")
+                return []
+
+            for order in order_data_list:
                     orders.append({
-                        'orderId': order.order_id,
-                        'symbol': order.symbol,
-                        'side': order.side,
-                        'type': order.type,
-                        'status': order.status,
-                        'price': float(order.price) if order.price else None,
-                        'origQty': float(order.size) if order.size else None,
-                        'executedQty': float(order.filled_size) if order.filled_size else None,
-                        'timeInForce': order.time_in_force,
-                        'time': order.created_at,
-                        'updateTime': order.updated_at
+                        'orderId': getattr(order, 'order_id', getattr(order, 'id', '')),
+                        'symbol': getattr(order, 'symbol', ''),
+                        'side': getattr(order, 'side', ''),
+                        'type': getattr(order, 'type', ''),
+                        'status': getattr(order, 'status', ''),
+                        'price': float(getattr(order, 'price', 0)) if getattr(order, 'price', None) else None,
+                        'origQty': float(getattr(order, 'size', 0)) if getattr(order, 'size', None) else None,
+                        'executedQty': float(getattr(order, 'filled_size', 0)) if getattr(order, 'filled_size', None) else None,
+                        'timeInForce': getattr(order, 'time_in_force', ''),
+                        'time': getattr(order, 'created_at', 0),
+                        'updateTime': getattr(order, 'updated_at', 0)
                     })
 
             logger.info(f"Retrieved {len(orders)} open orders from KuCoin")
