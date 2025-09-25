@@ -1,0 +1,31 @@
+### Test Signal - Basic Health Check
+GET http://194.163.149.44:8080/
+Content-Type: application/json
+
+### Test Signal - Discord Signal Endpoint
+POST http://194.163.149.44:8080/api/v1/discord/signal
+Content-Type: application/json
+
+{
+    "timestamp": "2025-09-25T12:35:06.928Z",
+    "discord_id": "1029838895535374439",
+    "trader": "@TestTrader",
+    "content": "Longed BTC 45000 sl 44000",
+    "structured": "BTC|Entry:|45000|SL:|44000"
+}
+
+### Test Signal - Alert Update Endpoint
+POST http://194.163.149.44:8080/api/v1/discord/signal/update
+Content-Type: application/json
+
+{
+    "discord_id": "1405530878343512074",
+    "trader": "@TestTrader",
+    "trade": "1029838895535374439",
+    "timestamp": "2025-09-25T12:37:54.898Z",
+    "content": "BTC 🚀| stops moved to BE | @TestTrader"
+}
+
+### Test Signal - Health Check Endpoint
+GET http://194.163.149.44:8080/health
+Content-Type: application/json
