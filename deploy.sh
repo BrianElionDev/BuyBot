@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Configuration
 APP_NAME="buybot"
 APP_DIR="/home/dev/opt/BuyBot"
-IMAGE_NAME="ghcr.io/BrianElionDev/BuyBot:latest"
+IMAGE_NAME="ghcr.io/brianeliondev/buybot:latest"
 
 # Functions
 log_info() {
@@ -58,18 +58,13 @@ check_environment() {
 create_directories() {
     log_info "Ensuring application directories exist..."
     mkdir -p "${APP_DIR}/logs"
-    # Set permissions for container to write logs (appuser is UID 999)
-    chown -R 999:999 "${APP_DIR}/logs"
-    chmod 755 "${APP_DIR}/logs"
+    # Set permissions for container to write logs
+    sudo chmod 777 "${APP_DIR}/logs"
     log_success "Directories ready"
 }
 
 deploy_application() {
     log_info "Deploying application..."
-
-    # Login to GitHub Container Registry
-    log_info "Logging into GitHub Container Registry..."
-    echo $GITHUB_TOKEN | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
 
     # Pull latest image
     log_info "Pulling latest Docker image..."
@@ -144,7 +139,7 @@ show_access_info() {
 
 # Main deployment function
 deploy() {
-    log_info "Starting BuyBot deployment..."
+    log_info "Starting Rubicon Trading Bot deployment..."
 
     check_docker
     create_directories
@@ -156,7 +151,7 @@ deploy() {
 
 # Update function
 update() {
-    log_info "Updating BuyBot..."
+    log_info "Updating Rubicon Trading Bot..."
 
     check_docker
     check_environment
