@@ -62,6 +62,10 @@ class DatabaseManager:
             return self.utils.desanitize_data(trade_data)
         return None
 
+    async def find_trade_by_order_id(self, order_id: str) -> Optional[Dict[str, Any]]:
+        """Find a trade by Binance order ID."""
+        return await self.trade_ops.find_trade_by_order_id(order_id)
+
     async def get_open_trades(self) -> List[Dict[str, Any]]:
         """Get all open trades."""
         trades = await self.trade_ops.get_open_trades()
@@ -219,7 +223,7 @@ class DatabaseManager:
             if response.data and len(response.data) > 0:
                 last_time = response.data[0].get('time', 0)
                 logger.info(f"Last sync time from database: {last_time}")
-                
+
                 # Handle timestampz format (ISO string timestamps)
                 if isinstance(last_time, str):
                     try:
