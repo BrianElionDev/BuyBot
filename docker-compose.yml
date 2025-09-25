@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  rubicon-trading-bot:
+    build: .
+    container_name: rubicon-trading-bot
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount logs directory for external access
+      - ./logs:/app/logs
+      # Mount environment file
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONPATH=/app
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=10)" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - rubicon-network
+
+  # Optional: Add a log viewer service
+  log-viewer:
+    image: amir20/dozzle:latest
+    container_name: rubicon-log-viewer
+    ports:
+      - "9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./logs:/logs:ro
+    restart: unless-stopped
+    networks:
+      - rubicon-network
+    depends_on:
+      - rubicon-trading-bot
+
+networks:
+  rubicon-network:
+    driver: bridge
+
+volumes:
+  logs:
+    driver: local
+

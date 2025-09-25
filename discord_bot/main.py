@@ -103,6 +103,24 @@ def create_app() -> FastAPI:
     async def root():
         return {"message": "Discord Bot Service is running"}
 
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint for Docker and load balancers."""
+        try:
+            # Basic health check - can be extended with more checks
+            return {
+                "status": "healthy",
+                "service": "Rubicon Trading Bot",
+                "timestamp": datetime.now().isoformat(),
+                "version": "1.0.0"
+            }
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+
     @app.get("/websocket/status")
     async def websocket_status():
         """Get WebSocket real-time sync status."""
