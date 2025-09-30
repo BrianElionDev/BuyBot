@@ -39,7 +39,7 @@ class ActiveFuturesSyncService:
         self.alert_repo = AlertRepository(db_manager)
         # Load target traders from configuration
         from config import settings
-        self.target_traders = getattr(settings, 'TARGET_TRADERS', ["@Johnny", "@Tareeq"])
+        self.target_traders = getattr(settings, 'TARGET_TRADERS', ["@Johnny", "@Tareeq"]) or ["@Johnny", "@Tareeq"]
         self.last_sync_time = None
         # Add thread safety for concurrent access
         self._sync_lock = asyncio.Lock()

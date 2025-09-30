@@ -207,7 +207,8 @@ class KucoinTradingEngine:
         client_order_id: Optional[str] = None,
         price_threshold_override: Optional[float] = None,
         quantity_multiplier: Optional[int] = None,
-        entry_prices: Optional[List[float]] = None
+        entry_prices: Optional[List[float]] = None,
+        discord_id: Optional[str] = None
     ) -> Tuple[bool, Union[Dict, str]]:
         """
         Process a KuCoin trading signal.
@@ -224,6 +225,7 @@ class KucoinTradingEngine:
             price_threshold_override: Price threshold override
             quantity_multiplier: Quantity multiplier
             entry_prices: List of entry prices
+            discord_id: Optional Discord message id for traceability
 
         Returns:
             Tuple of (success, response)
