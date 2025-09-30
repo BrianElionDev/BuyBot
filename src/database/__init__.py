@@ -12,7 +12,7 @@ from src.database.core.database_manager import DatabaseManager
 # Models
 from src.database.models.trade_models import (
     Trade, Alert, TradeFilter, TradeUpdate, TradeStats, TradeSummary,
-    TradeStatus, OrderStatus, PositionType
+    TradeStatus, OrderStatus, PositionType, ActiveFutures, ActiveFuturesFilter
 )
 from src.database.models.user_models import (
     User, UserProfile, UserSession, UserActivity, UserFilter, UserUpdate, UserStats, UserSummary,
@@ -29,6 +29,7 @@ from src.database.repositories.trade_repository import TradeRepository
 from src.database.repositories.user_repository import UserRepository
 from src.database.repositories.alert_repository import AlertRepository
 from src.database.repositories.analytics_repository import AnalyticsRepository
+from src.database.repositories.active_futures_repository import ActiveFuturesRepository
 
 __all__ = [
     # Core
@@ -49,6 +50,8 @@ __all__ = [
     "TradeStatus",
     "OrderStatus",
     "PositionType",
+    "ActiveFutures",
+    "ActiveFuturesFilter",
     "User",
     "UserProfile",
     "UserSession",
@@ -75,5 +78,6 @@ __all__ = [
     "TradeRepository",
     "UserRepository",
     "AlertRepository",
-    "AnalyticsRepository"
+    "AnalyticsRepository",
+    "ActiveFuturesRepository"
 ]

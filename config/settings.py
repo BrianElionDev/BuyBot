@@ -9,10 +9,10 @@ def reload_env():
     # Update global variables with new values
     global BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET
     global KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE, KUCOIN_TESTNET
-    global TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE
-    global TARGET_GROUP_ID, NOTIFICATION_GROUP_ID
     global SUPABASE_URL, SUPABASE_KEY
     global OPENAI_API_KEY
+    global TELEGRAM_BOT_TOKEN, TELEGRAM_NOTIFICATION_CHAT_ID
+
     # Reload all environment variables
     BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
     BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
@@ -23,15 +23,13 @@ def reload_env():
     KUCOIN_API_PASSPHRASE = os.getenv("KUCOIN_API_PASSPHRASE")
     KUCOIN_TESTNET = False
 
-    TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
-    TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
-    TELEGRAM_PHONE = os.getenv("TELEGRAM_PHONE")
-    TARGET_GROUP_ID = int(os.getenv("TARGET_GROUP_ID", "0"))
-    NOTIFICATION_GROUP_ID = int(os.getenv("NOTIFICATION_GROUP_ID", "0"))
-
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+    # Telegram Bot Configuration (for notifications)
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
+    TELEGRAM_NOTIFICATION_CHAT_ID = os.getenv("TELEGRAM_NOTIFICATION_CHAT_ID", "")
 
     logging.info("Environment variables reloaded successfully")
     if BINANCE_API_KEY:
@@ -42,14 +40,6 @@ def reload_env():
 
 # Force reload on import with override=True to ensure fresh values
 load_dotenv(override=True)
-
-# Telegram (Legacy - for signal listening, now deprecated)
-# These are kept for backward compatibility but not used in new notification system
-TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
-TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
-TELEGRAM_PHONE = os.getenv("TELEGRAM_PHONE")
-TARGET_GROUP_ID = int(os.getenv("TARGET_GROUP_ID", "0"))
-NOTIFICATION_GROUP_ID = int(os.getenv("NOTIFICATION_GROUP_ID", "0"))
 
 # Binance
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
@@ -92,14 +82,42 @@ TP_AUDIT_INTERVAL = int(os.getenv("TP_AUDIT_INTERVAL", "30"))
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 TELEGRAM_NOTIFICATION_CHAT_ID = os.getenv("TELEGRAM_NOTIFICATION_CHAT_ID", "")
 
-# Minimum ETH balance to maintain for gas fees
-MIN_ETH_BALANCE = float(os.getenv("MIN_ETH_BALANCE", "0.01"))
-
 # Fee Calculator Configuration
-USE_FIXED_FEE_CALCULATOR = True  # Use simplified fixed fee cap instead of complex formulas
-FIXED_FEE_RATE = 0.0002  # 0.02% fixed fee cap (can be 0.0002 or 0.0005)
+USE_FIXED_FEE_CALCULATOR = os.getenv("USE_FIXED_FEE_CALCULATOR", "True").lower() == "true"
+FIXED_FEE_RATE = float(os.getenv("FIXED_FEE_RATE", "0.0002"))
+
+# Target Traders Configuration
+TARGET_TRADERS = os.getenv("TARGET_TRADERS", "").split(",")
 
 # Trading Leverage Configuration
-DEFAULT_LEVERAGE = float(os.getenv("LEVERAGE", "1"))  # Default leverage from .env, defaults to 1 if not found
+# Global default for backward compatibility
+DEFAULT_LEVERAGE = float(os.getenv("LEVERAGE", "1"))
 
-# Logging is now handled by config/logging_config.py
+# Per-exchange leverage overrides
+BINANCE_LEVERAGE = float(os.getenv("BINANCE_LEVERAGE", str(DEFAULT_LEVERAGE)))
+KUCOIN_LEVERAGE = float(os.getenv("KUCOIN_LEVERAGE", str(DEFAULT_LEVERAGE)))
+
+def get_leverage_for(exchange: str) -> float:
+    """Return leverage for a given exchange name.
+
+    Accepts common identifiers (case-insensitive), e.g. "binance", "kucoin".
+    Falls back to DEFAULT_LEVERAGE if exchange not matched.
+    """
+    if not exchange:
+        return DEFAULT_LEVERAGE
+
+    name = str(exchange).strip().lower()
+
+    if name in {"binance", "binance_futures", "binanceusdm", "binance-usdm"}:
+        return BINANCE_LEVERAGE
+
+    if name in {"kucoin", "kucoin_futures", "kucoinfutures"}:
+        return KUCOIN_LEVERAGE
+
+    return DEFAULT_LEVERAGE
+
+# Inactivity Alert Configuration
+INACTIVITY_ALERT_ENABLED = os.getenv("INACTIVITY_ALERT_ENABLED", "True").lower() == "true"
+INACTIVITY_THRESHOLD_HOURS = int(os.getenv("INACTIVITY_THRESHOLD_HOURS", "12"))
+INACTIVITY_ALERT_COOLDOWN_HOURS = int(os.getenv("INACTIVITY_ALERT_COOLDOWN_HOURS", "12"))
+INACTIVITY_ALERT_MESSAGE = os.getenv("INACTIVITY_ALERT_MESSAGE", "Discord is awefully silet today zzz")

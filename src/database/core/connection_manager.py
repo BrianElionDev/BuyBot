@@ -37,8 +37,7 @@ class DatabaseConnectionManager:
                 schema="public",
                 headers={},
                 auto_refresh_token=True,
-                persist_session=True,
-                detect_session_in_url=True
+                persist_session=True
             )
 
             # Create Supabase client

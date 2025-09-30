@@ -15,8 +15,10 @@ from discord_bot.endpoints.discord_endpoint import router as discord_router
 from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
     sync_trade_statuses_with_binance,
-    backfill_trades_from_binance_history,
 )
+
+from discord_bot.utils.activity_monitor import ActivityMonitor
+from config import settings as _settings
 from scripts.maintenance.cleanup_scripts.autofill_transaction_history import AutoTransactionHistoryFiller
 from scripts.maintenance.cleanup_scripts.backfill_pnl_and_exit_prices import BinancePnLBackfiller
 from scripts.maintenance.cleanup_scripts.backfill_coin_symbols import backfill_coin_symbols
@@ -30,7 +32,6 @@ logging_config = setup_production_logging()
 
 logger = logging.getLogger(__name__)
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -41,7 +42,7 @@ async def lifespan(app: FastAPI):
         bot, supabase = initialize_clients()
         if bot and supabase:
             logger.info("✅ Clients initialized successfully")
-
+            ActivityMonitor.mark_activity("entry")
             # Start WebSocket real-time sync
             try:
                 await bot.start_websocket_sync()
@@ -318,6 +319,7 @@ async def trade_retry_scheduler():
     last_orphaned_orders_cleanup = 0
     last_balance_sync = 0
     last_coin_symbol_backfill = 0
+    last_active_futures_sync = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
@@ -330,8 +332,12 @@ async def trade_retry_scheduler():
     ORPHANED_ORDERS_CLEANUP_INTERVAL = 2 * 60 * 60  # 2 hours
     BALANCE_SYNC_INTERVAL = 5 * 60  # 5 minutes
     COIN_SYMBOL_BACKFILL_INTERVAL = 6 * 60 * 60  # 6 hours
+    ACTIVE_FUTURES_SYNC_INTERVAL = 5 * 60  # 5 minutes
 
     logger.info("[Scheduler] ✅ Scheduler running - monitoring for tasks")
+
+    last_inactivity_check = 0
+    INACTIVITY_CHECK_INTERVAL = 5 * 60
 
     while True:
         try:
@@ -471,12 +477,50 @@ async def trade_retry_scheduler():
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in coin symbol backfill: {e}")
 
-            # Sleep for 1 second to prevent CPU overload while maintaining responsiveness
-            await asyncio.sleep(1)  # 1 second sleep to prevent CPU overload
+            if current_time - last_active_futures_sync >= ACTIVE_FUTURES_SYNC_INTERVAL:
+                logger.info("[Scheduler] Running active futures synchronization...")
+                try:
+                    await sync_active_futures_with_trades()
+                    last_active_futures_sync = current_time
+                    logger.info("[Scheduler] Active futures sync completed successfully")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in active futures sync: {e}")
+
+            await asyncio.sleep(1)
 
         except Exception as e:
             logger.error(f"Error in trade retry scheduler: {e}")
-            await asyncio.sleep(1)  # Wait 1 second before retrying
+            await asyncio.sleep(1)
+            current_time = time.time()
+
+        if _settings.INACTIVITY_ALERT_ENABLED and current_time - last_inactivity_check >= INACTIVITY_CHECK_INTERVAL:
+            try:
+                await ActivityMonitor.check_and_alert()
+            except Exception as e:
+                logger.error(f"[Scheduler] Error in inactivity check: {e}")
+            finally:
+                last_inactivity_check = current_time
+
+async def sync_active_futures_with_trades():
+    """Synchronize active futures table with local trades."""
+    try:
+        from src.services.active_futures_sync_service import ActiveFuturesSyncService
+        from src.database.core.database_manager import DatabaseManager
+
+        db_manager = DatabaseManager()
+        sync_service = ActiveFuturesSyncService(db_manager)
+
+        await sync_service.initialize()
+        result = await sync_service.sync_active_futures()
+
+        if result.get("status") == "success":
+            logger.info(f"Active futures sync successful: {result.get('message')}")
+        else:
+            logger.error(f"Active futures sync failed: {result.get('message')}")
+
+    except Exception as e:
+        logger.error(f"Error in active futures sync: {e}")
 
 async def check_api_permissions(bot):
     """Check if API key has proper permissions for futures trading"""
@@ -537,17 +581,11 @@ async def backfill_pnl_data(bot, supabase):
     try:
         from discord_bot.database import DatabaseManager
 
-        pnl_backfiller = BinancePnLBackfiller()
-        # Set attributes directly if they exist
-        if hasattr(pnl_backfiller, 'binance_exchange'):
-            pnl_backfiller.binance_exchange = bot.binance_exchange
-        if hasattr(pnl_backfiller, 'db_manager'):
-            pnl_backfiller.db_manager = DatabaseManager(supabase)
-
+        pnl_backfiller = BinancePnLBackfiller(bot, supabase)
         logger.info("[Scheduler] Starting PnL backfill for closed trades...")
 
         # Backfill PnL data for last 7 days
-        await pnl_backfiller.backfill_trades_with_income_history(bot, supabase, days=7, symbol="")
+        await pnl_backfiller.backfill_trades_with_income_history(days=7, symbol="")
 
         logger.info("[Scheduler] PnL backfill completed")
 

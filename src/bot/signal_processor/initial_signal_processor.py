@@ -320,13 +320,27 @@ class InitialSignalProcessor:
             # Get current positions for this symbol
             positions = await self.exchange.get_position_risk(symbol=trading_pair)
             current_position_size = 0.0
-            actual_leverage = self.trading_engine.config.DEFAULT_LEVERAGE
+            # Determine configured leverage per exchange
+            try:
+                from config import settings as config
+                exchange_name = getattr(self.exchange, "__class__", type(self.exchange)).__name__.lower()
+                if "binance" in exchange_name:
+                    configured_leverage = config.get_leverage_for("binance")
+                elif "kucoin" in exchange_name:
+                    configured_leverage = config.get_leverage_for("kucoin")
+                else:
+                    configured_leverage = config.DEFAULT_LEVERAGE
+            except Exception:
+                # Fallback if anything goes wrong
+                configured_leverage = self.trading_engine.config.DEFAULT_LEVERAGE
+
+            actual_leverage = configured_leverage
 
             for position in positions:
                 if position.get('symbol') == trading_pair:
                     current_position_size = abs(float(position.get('positionAmt', 0)))
-                    # Get actual leverage from position
-                    actual_leverage = float(position.get('leverage', self.trading_engine.config.DEFAULT_LEVERAGE))
+                    # Get actual leverage from position (fallback to configured value)
+                    actual_leverage = float(position.get('leverage', configured_leverage))
                     break
 
             # Calculate new total position size

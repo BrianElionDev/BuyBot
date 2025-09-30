@@ -7,15 +7,15 @@ This module contains the Discord API endpoint for backward compatibility.
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional
-import logging
 from discord_bot.discord_bot import discord_bot
 from discord_bot.models import InitialDiscordSignal
 from config.logging_config import get_endpoint_logger, get_trade_logger
+from src.services.notifications.notification_manager import NotificationManager
+from discord_bot.utils.activity_monitor import ActivityMonitor
 
 logger = get_endpoint_logger()
 trade_logger = get_trade_logger()
 router = APIRouter()
-
 class DiscordUpdateSignal(BaseModel):
     timestamp: str
     content: str
@@ -60,8 +60,11 @@ async def receive_initial_signal(signal: InitialDiscordSignal, background_tasks:
     import time
     start_time = time.time()
 
+    background_tasks.add_task(NotificationManager.notify_entry_signal, signal.model_dump())
+
     try:
         logger.info(f"[ENDPOINT] Received initial signal from {signal.trader} (ID: {signal.discord_id})")
+        ActivityMonitor.mark_activity("entry")
         background_tasks.add_task(process_initial_signal_background, signal)
 
         duration = time.time() - start_time
@@ -88,8 +91,11 @@ async def receive_update_signal(signal: DiscordUpdateSignal, background_tasks: B
     import time
     start_time = time.time()
 
+    background_tasks.add_task(NotificationManager.notify_update_signal, signal.model_dump())
+
     try:
         logger.info(f"[ENDPOINT] Received update signal for trade {signal.trade} from {signal.trader}")
+        ActivityMonitor.mark_activity("update")
         background_tasks.add_task(process_update_signal_background, signal)
 
         duration = time.time() - start_time

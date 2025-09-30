@@ -202,6 +202,7 @@ class MessageFormatter:
 
         message = f"""
 {emoji} <b>System Status: {notification.status.upper()}</b>
+    discord_id = payload.get("discord_id") or "-"
 
 📝 <b>Message:</b> {notification.message}
 """
@@ -216,3 +217,32 @@ class MessageFormatter:
         """
 
         return message.strip()
+
+def format_entry_signal_payload(payload: dict) -> str:
+    """Format entry signal payload"""
+    trader = payload.get("trader") or "-"
+    discord_id = payload.get("discord_id") or "-"
+    timestamp = payload.get("timestamp") or "-"
+    content = payload.get("content") or "-"
+    structured = payload.get("structured") or "-"
+    return (
+        f"📥 <b>New Entry Signal</b>\n"
+        f"Trader: {trader}\n"
+        f"Discord ID: {discord_id}\n"
+        f"Timestamp: {timestamp}\n"
+        f"Content:\n{content}\n"
+    )
+
+def format_update_signal_payload(payload: dict) -> str:
+    """Format update signal payload"""
+    trader = payload.get("trader") or "-"
+    trade = payload.get("trade") or "-"
+    timestamp = payload.get("timestamp") or "-"
+    content = payload.get("content") or "-"
+    return (
+    "🔔 <b>Trade Update</b>\n"
+        f"Trader: {trader}\n"
+        f"Trade: {trade}\n"
+        f"Timestamp: {timestamp}\n"
+        f"Content:\n{content}"
+        )
