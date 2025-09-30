@@ -9,6 +9,8 @@ import logging
 import time
 from typing import Dict, Any, Optional, Tuple, Union
 
+from src.core.response_models import ServiceResponse, TradeOperationResult, ErrorCode
+
 logger = logging.getLogger(__name__)
 
 

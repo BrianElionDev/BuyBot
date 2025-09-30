@@ -9,6 +9,7 @@ from .notification_models import (
     SystemStatusNotification, NotificationConfig
 )
 
+from .message_formatter import format_entry_signal_payload, format_update_signal_payload
 logger = logging.getLogger(__name__)
 
 
@@ -238,3 +239,23 @@ class NotificationManager:
         """Update the Telegram configuration"""
         self.telegram_service.update_config(config)
         self.enabled = self.telegram_service.is_enabled()
+
+    @staticmethod
+    async def notify_entry_signal(payload: Dict[str, Any]) -> None:
+        """Notify entry signal"""
+        try:
+            text = format_entry_signal_payload(payload or {})
+            svc = TelegramService()
+            await svc.send_message(text, parse_mode="HTML")
+        except Exception as e:
+            logger.error(f"Failed to send the notification: {e}")
+
+    @staticmethod
+    async def notify_update_signal(payload: Dict[str, Any]) -> None:
+        """Notify update signal"""
+        try:
+            text = format_update_signal_payload(payload or {})
+            svc = TelegramService()
+            await svc.send_message(text, parse_mode="HTML")
+        except Exception as e:
+            logger.error(f"Failed to send the notification: {e}")

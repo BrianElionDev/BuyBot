@@ -133,6 +133,25 @@ class TradeStats:
     max_drawdown: float = 0.0
 
 @dataclass
+class ActiveFutures:
+    """Active futures data model."""
+    id: Optional[int] = None
+    created_at: Optional[str] = None
+    trader: str = ""
+    title: str = ""
+    content: str = ""
+    status: str = "ACTIVE"
+    stopped_at: Optional[str] = None
+
+@dataclass
+class ActiveFuturesFilter:
+    """Active futures filter model for queries."""
+    trader: Optional[str] = None
+    status: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+@dataclass
 class TradeSummary:
     """Trade summary model."""
     period_start: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
