@@ -74,7 +74,10 @@ class ActiveFuturesRepository:
             if traders:
                 # Normalize traders list to plain strings without quotes/whitespace
                 clean_traders = [str(t).strip().strip('"').strip("'") for t in traders if str(t).strip().strip('"').strip("'")]
-                query = query.in_("trader", clean_traders)
+                if clean_traders:
+                    query = query.in_("trader", clean_traders)
+                else:
+                    return []
 
             if status:
                 query = query.eq("status", status)
