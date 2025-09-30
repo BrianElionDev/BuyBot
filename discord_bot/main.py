@@ -88,6 +88,13 @@ async def lifespan(app: FastAPI):
         if bot:
             await bot.close()
             logger.info("✅ Bot closed successfully")
+        # Close shared Telegram session cleanly
+        try:
+            from src.services.notifications.telegram_service import TelegramService
+            await TelegramService.close_shared()
+            logger.info("✅ Telegram session closed successfully")
+        except Exception as e:
+            logger.warning(f"Failed to close Telegram session: {e}")
     except Exception as e:
         logger.error(f"❌ Error closing bot: {e}")
 

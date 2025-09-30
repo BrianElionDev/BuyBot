@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 class TelegramService:
     """Core Telegram service for direct API interactions"""
 
+    # Shared singleton bot to avoid leaking aiohttp sessions
+    _shared_bot: Optional[Bot] = None
+
     def __init__(self, config: Optional[NotificationConfig] = None):
         """Initialize the Telegram service"""
         if config:
@@ -40,7 +43,9 @@ class TelegramService:
             return None
 
         try:
-            return Bot(token=self.config.bot_token)
+            if TelegramService._shared_bot is None:
+                TelegramService._shared_bot = Bot(token=self.config.bot_token)
+            return TelegramService._shared_bot
         except Exception as e:
             logger.error(f"Failed to initialize Telegram bot: {e}")
             self.config.enabled = False
@@ -89,3 +94,14 @@ class TelegramService:
         self.config = config
         self._validate_config()
         self.bot = self._initialize_bot()
+
+    @classmethod
+    async def close_shared(cls) -> None:
+        """Close the shared bot session to avoid unclosed aiohttp sessions."""
+        try:
+            if cls._shared_bot and hasattr(cls._shared_bot, 'session') and cls._shared_bot.session:
+                await cls._shared_bot.session.close()
+        except Exception as e:
+            logger.warning(f"Failed to close Telegram shared bot session: {e}")
+        finally:
+            cls._shared_bot = None
