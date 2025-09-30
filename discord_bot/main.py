@@ -514,10 +514,10 @@ async def sync_active_futures_with_trades():
         await sync_service.initialize()
         result = await sync_service.sync_active_futures()
 
-        if result.get("status") == "success":
-            logger.info(f"Active futures sync successful: {result.get('message')}")
+        if getattr(result, 'success', False):
+            logger.info(f"Active futures sync successful: {getattr(result, 'data', None)}")
         else:
-            logger.error(f"Active futures sync failed: {result.get('message')}")
+            logger.error(f"Active futures sync failed: {getattr(result, 'error', 'unknown')}")
 
     except Exception as e:
         logger.error(f"Error in active futures sync: {e}")

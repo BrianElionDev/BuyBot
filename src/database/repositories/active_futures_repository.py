@@ -64,10 +64,17 @@ class ActiveFuturesRepository:
     async def get_futures_by_traders_and_status(self, traders: List[str], status: str) -> List[ActiveFutures]:
         """Get futures by multiple traders and status."""
         try:
-            query = self.client.table("active_futures").select("*")
+            client = self.db_manager.client
+            if client is None:
+                # Ensure client is initialized
+                await self.db_manager.initialize()
+                client = self.db_manager.client
+            query = client.table("active_futures").select("*")
 
             if traders:
-                query = query.in_("trader", traders)
+                # Normalize traders list to plain strings without quotes/whitespace
+                clean_traders = [str(t).strip().strip('"').strip("'") for t in traders if str(t).strip().strip('"').strip("'")]
+                query = query.in_("trader", clean_traders)
 
             if status:
                 query = query.eq("status", status)

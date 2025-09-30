@@ -87,7 +87,12 @@ USE_FIXED_FEE_CALCULATOR = os.getenv("USE_FIXED_FEE_CALCULATOR", "True").lower()
 FIXED_FEE_RATE = float(os.getenv("FIXED_FEE_RATE", "0.0002"))
 
 # Target Traders Configuration
-TARGET_TRADERS = os.getenv("TARGET_TRADERS", "").split(",")
+_RAW_TRADERS = os.getenv("TARGET_TRADERS", "")
+TARGET_TRADERS = [
+    t.strip().strip('"').strip("'")
+    for t in _RAW_TRADERS.split(",")
+    if t.strip().strip('"').strip("'")
+]
 
 # Trading Leverage Configuration
 # Global default for backward compatibility
