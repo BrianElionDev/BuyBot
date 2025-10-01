@@ -12,6 +12,7 @@ from discord_bot.models import InitialDiscordSignal
 from config.logging_config import get_endpoint_logger, get_trade_logger
 from src.services.notifications.notification_manager import NotificationManager
 from discord_bot.utils.activity_monitor import ActivityMonitor
+from src.services.notifications.telegram_service import TelegramService
 
 logger = get_endpoint_logger()
 trade_logger = get_trade_logger()
@@ -65,6 +66,17 @@ async def receive_initial_signal(signal: InitialDiscordSignal, background_tasks:
     try:
         logger.info(f"[ENDPOINT] Received initial signal from {signal.trader} (ID: {signal.discord_id})")
         ActivityMonitor.mark_activity("entry")
+
+        # Send formatted signal to Telegram
+        telegram_service = TelegramService()
+        formatted_message = f"""📥 New Entry Signal
+Trader: @{signal.trader or 'Unknown'}
+Discord ID: {signal.discord_id}
+Timestamp: {signal.timestamp}
+Content:
+{signal.content}"""
+
+        background_tasks.add_task(telegram_service.send_message, formatted_message)
         background_tasks.add_task(process_initial_signal_background, signal)
 
         duration = time.time() - start_time
@@ -96,6 +108,17 @@ async def receive_update_signal(signal: DiscordUpdateSignal, background_tasks: B
     try:
         logger.info(f"[ENDPOINT] Received update signal for trade {signal.trade} from {signal.trader}")
         ActivityMonitor.mark_activity("update")
+
+        # Send formatted signal to Telegram
+        telegram_service = TelegramService()
+        formatted_message = f"""🔔 Trade Update
+Trader: @{signal.trader or 'Unknown'}
+Trade: {signal.trade}
+Timestamp: {signal.timestamp}
+Content:
+{signal.content}"""
+
+        background_tasks.add_task(telegram_service.send_message, formatted_message)
         background_tasks.add_task(process_update_signal_background, signal)
 
         duration = time.time() - start_time
