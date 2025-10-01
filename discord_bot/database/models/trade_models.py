@@ -13,7 +13,7 @@ import json
 @dataclass
 class TradeModel:
     """Data model for trade records."""
-    
+
     id: Optional[int] = None
     discord_id: Optional[str] = None
     trader: Optional[str] = None
@@ -34,7 +34,7 @@ class TradeModel:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         return {
@@ -59,7 +59,7 @@ class TradeModel:
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'closed_at': self.closed_at.isoformat() if self.closed_at else None
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TradeModel':
         """Create from dictionary representation."""
@@ -70,28 +70,28 @@ class TradeModel:
                 timestamp = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
             elif isinstance(data['timestamp'], datetime):
                 timestamp = data['timestamp']
-        
+
         created_at = None
         if data.get('created_at'):
             if isinstance(data['created_at'], str):
                 created_at = datetime.fromisoformat(data['created_at'].replace('Z', '+00:00'))
             elif isinstance(data['created_at'], datetime):
                 created_at = data['created_at']
-        
+
         updated_at = None
         if data.get('updated_at'):
             if isinstance(data['updated_at'], str):
                 updated_at = datetime.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
             elif isinstance(data['updated_at'], datetime):
                 updated_at = data['updated_at']
-        
+
         closed_at = None
         if data.get('closed_at'):
             if isinstance(data['closed_at'], str):
                 closed_at = datetime.fromisoformat(data['closed_at'].replace('Z', '+00:00'))
             elif isinstance(data['closed_at'], datetime):
                 closed_at = data['closed_at']
-        
+
         # Parse JSON fields
         parsed_signal = None
         if data.get('parsed_signal'):
@@ -99,14 +99,14 @@ class TradeModel:
                 parsed_signal = json.loads(data['parsed_signal'])
             else:
                 parsed_signal = data['parsed_signal']
-        
+
         binance_response = None
         if data.get('binance_response'):
             if isinstance(data['binance_response'], str):
                 binance_response = json.loads(data['binance_response'])
             else:
                 binance_response = data['binance_response']
-        
+
         return cls(
             id=data.get('id'),
             discord_id=data.get('discord_id'),
@@ -134,7 +134,7 @@ class TradeModel:
 @dataclass
 class AlertModel:
     """Data model for alert records."""
-    
+
     id: Optional[int] = None
     discord_id: Optional[str] = None
     trade: Optional[str] = None
@@ -143,11 +143,13 @@ class AlertModel:
     timestamp: Optional[datetime] = None
     parsed_alert: Optional[Dict[str, Any]] = None
     binance_response: Optional[Dict[str, Any]] = None
+    kucoin_response: Optional[Dict[str, Any]] = None
+    exchange: Optional[str] = None
     status: Optional[str] = None
     alert_hash: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         return {
@@ -159,12 +161,14 @@ class AlertModel:
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
             'parsed_alert': json.dumps(self.parsed_alert) if self.parsed_alert else None,
             'binance_response': json.dumps(self.binance_response) if self.binance_response else None,
+            'kucoin_response': json.dumps(self.kucoin_response) if self.kucoin_response else None,
+            'exchange': self.exchange,
             'status': self.status,
             'alert_hash': self.alert_hash,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AlertModel':
         """Create from dictionary representation."""
@@ -175,21 +179,21 @@ class AlertModel:
                 timestamp = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
             elif isinstance(data['timestamp'], datetime):
                 timestamp = data['timestamp']
-        
+
         created_at = None
         if data.get('created_at'):
             if isinstance(data['created_at'], str):
                 created_at = datetime.fromisoformat(data['created_at'].replace('Z', '+00:00'))
             elif isinstance(data['created_at'], datetime):
                 created_at = data['created_at']
-        
+
         updated_at = None
         if data.get('updated_at'):
             if isinstance(data['updated_at'], str):
                 updated_at = datetime.fromisoformat(data['updated_at'].replace('Z', '+00:00'))
             elif isinstance(data['updated_at'], datetime):
                 updated_at = data['updated_at']
-        
+
         # Parse JSON fields
         parsed_alert = None
         if data.get('parsed_alert'):
@@ -197,14 +201,21 @@ class AlertModel:
                 parsed_alert = json.loads(data['parsed_alert'])
             else:
                 parsed_alert = data['parsed_alert']
-        
+
         binance_response = None
         if data.get('binance_response'):
             if isinstance(data['binance_response'], str):
                 binance_response = json.loads(data['binance_response'])
             else:
                 binance_response = data['binance_response']
-        
+
+        kucoin_response = None
+        if data.get('kucoin_response'):
+            if isinstance(data['kucoin_response'], str):
+                kucoin_response = json.loads(data['kucoin_response'])
+            else:
+                kucoin_response = data['kucoin_response']
+
         return cls(
             id=data.get('id'),
             discord_id=data.get('discord_id'),
@@ -214,6 +225,8 @@ class AlertModel:
             timestamp=timestamp,
             parsed_alert=parsed_alert,
             binance_response=binance_response,
+            kucoin_response=kucoin_response,
+            exchange=data.get('exchange'),
             status=data.get('status'),
             alert_hash=data.get('alert_hash'),
             created_at=created_at,
