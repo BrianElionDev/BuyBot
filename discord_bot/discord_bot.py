@@ -385,8 +385,34 @@ class DiscordBot:
                 logger.warning(f"Duplicate alert detected: {signal.content}")
                 return {"status": "skipped", "message": "Duplicate alert"}
 
+            alert_result = None
+            try:
+                existing_alert = self.db_manager.supabase.table("alerts").select("id").eq("discord_id", signal.discord_id).limit(1).execute()
+                if existing_alert.data:
+                    alert_result = existing_alert.data[0]
+                    logger.info(f"Found existing alert in database: {alert_result['id']}")
+                else:
+                    logger.warning(f"No existing alert found for discord_id: {signal.discord_id}")
+            except Exception as e:
+                logger.error(f"Error finding existing alert: {e}")
+
             # Route the follow-up signal to the appropriate exchange
             result = await self.signal_router.route_followup_signal(signal_data, signal.trader)
+
+            if alert_result:
+                try:
+                    updates = {
+                        'status': 'PROCESSED' if result.get("status") == "success" else 'FAILED',
+                        'parsed_alert': result.get('parsed_alert'),
+                        'binance_response': result.get('binance_response') if exchange_type.value == 'binance' else None,
+                        'kucoin_response': result.get('kucoin_response') if exchange_type.value == 'kucoin' else None,
+                        'updated_at': datetime.now(timezone.utc).isoformat()
+                    }
+                    await self.db_manager.alert_ops.update_existing_alert(alert_result['id'], updates)
+                    logger.info(f"Updated alert {alert_result['id']} with processing result")
+                except Exception as e:
+                    logger.error(f"Error updating alert with result: {e}")
+
             if result.get("status") == "success":
                 logger.info(f"✅ Follow-up signal processed successfully on {exchange_type.value}")
                 return result

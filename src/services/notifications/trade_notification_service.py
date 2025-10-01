@@ -47,7 +47,7 @@ class PnLUpdateData:
     timestamp: Optional[datetime] = None
 
 @dataclass
-class StopLossData:
+class  StopLossData:
     """Data for stop-loss trigger notification."""
     symbol: str
     position_type: str

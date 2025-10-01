@@ -339,21 +339,25 @@ class KucoinTradingEngine:
             side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
 
             # Get actual position size from trade data
-            position_size = float(trade_row.get('position_size', 0.0))
+            position_size_raw = trade_row.get('position_size')
+            position_size = float(position_size_raw) if position_size_raw is not None else 0.0
 
             # If no position size in trade data, try to get it from the response
             if position_size <= 0:
                 response_data = trade_row.get('kucoin_response', {})
                 if isinstance(response_data, dict):
-                    position_size = float(response_data.get('origQty', 0.0))
+                    orig_qty = response_data.get('origQty')
+                    position_size = float(orig_qty) if orig_qty is not None else 0.0
 
             # If still no position size, fetch live positions and infer
+            current_leverage = 1.0  # Default leverage
             if position_size <= 0:
                 positions = await self.kucoin_exchange.get_futures_position_information()
                 target_symbol = f"{coin_symbol.upper()}USDTM"
                 for pos in positions:
                     if pos.get('symbol') == target_symbol and float(pos.get('size', 0)) > 0:
                         position_size = float(pos.get('size', 0))
+                        current_leverage = float(pos.get('leverage', 1.0))
                         break
             if position_size <= 0:
                 logger.error(f"No valid position size found for {coin_symbol}")
@@ -368,19 +372,17 @@ class KucoinTradingEngine:
 
             logger.info(f"Closing {close_percentage}% of position: {quantity} {coin_symbol} (total: {position_size})")
 
-            # Create market order to close position
+            # Create market order to close position using direct API call
             logger.info(f"Executing KuCoin close order: {trading_pair} {side} {ORDER_TYPE_MARKET} amount={quantity}")
-            result = await self.kucoin_exchange.create_futures_order(
+            success, result = await self.kucoin_exchange.close_position(
                 pair=trading_pair,
-                side=side,
-                order_type=ORDER_TYPE_MARKET,
                 amount=quantity,
-                reduce_only=True  # This should close the position
+                position_type=position_type
             )
 
-            if 'error' in result:
-                logger.error(f"KuCoin close order failed: {result['error']}")
-                return False, result['error']
+            if not success:
+                logger.error(f"KuCoin close order failed: {result}")
+                return False, result
 
             logger.info(f"✅ KuCoin position closed successfully: {result}")
             return True, result
@@ -407,46 +409,103 @@ class KucoinTradingEngine:
         try:
             logger.info(f"Processing KuCoin follow-up signal: {signal_data}")
 
-            # Parse the signal content to determine action
+            # Parse the signal content using AI first
             content = signal_data.get('content', '')
 
-            # Simple signal parsing for common actions
-            if 'stops moved to be' in content.lower() or 'moved to be' in content.lower():
+            # Use AI parsing for follow-up signals
+            from discord_bot.signal_processing.signal_parser import DiscordSignalParser
+            signal_parser = DiscordSignalParser()
+
+            parsed_alert = await signal_parser.parse_trade_update_signal(content, trade_row)
+            if not parsed_alert:
+                logger.error("Failed to parse follow-up signal with AI")
+                return {"status": "error", "message": "Failed to parse follow-up signal"}
+
+            logger.info(f"AI parsed follow-up signal: {parsed_alert}")
+
+            # Update signal_data with parsed alert
+            signal_data['parsed_alert'] = parsed_alert
+
+            # Extract action from parsed alert
+            action_type = parsed_alert.get('action_type', '').lower()
+
+            # Process based on AI-determined action
+            if action_type in ['stop_loss_update', 'move_to_be', 'break_even']:
                 logger.info("Processing stop loss move to break-even")
                 # This would need to be implemented based on KuCoin's stop loss management
-                return {"status": "success", "message": "Stop loss moved to break-even (KuCoin)"}
+                return {
+                    "status": "success",
+                    "message": "Stop loss moved to break-even (KuCoin)",
+                    "parsed_alert": parsed_alert,
+                    "kucoin_response": "Stop loss moved to break-even"
+                }
 
-            elif 'stopped out' in content.lower() or 'stop loss hit' in content.lower():
-                logger.info("Processing stop loss hit")
+            elif action_type in ['stop_loss_hit', 'stopped_out', 'stop_loss_triggered', 'close_position']:
+                logger.info("Processing stop loss hit or position close")
                 success, response = await self.close_position_at_market(trade_row, "stop_loss_hit")
-                return {"status": "success" if success else "error", "message": response}
+                return {
+                    "status": "success" if success else "error",
+                    "message": response,
+                    "parsed_alert": parsed_alert,
+                    "kucoin_response": response
+                }
 
-            elif 'closed in profits' in content.lower() or 'closed in profit' in content.lower():
+            elif action_type in ['take_profit', 'profit_close', 'closed_in_profit']:
                 logger.info("Processing position close in profit")
                 success, response = await self.close_position_at_market(trade_row, "profit_close")
-                return {"status": "success" if success else "error", "message": response}
+                return {
+                    "status": "success" if success else "error",
+                    "message": response,
+                    "parsed_alert": parsed_alert,
+                    "kucoin_response": response
+                }
 
-            elif 'stopped be' in content.lower() or 'stopped at be' in content.lower() or 'stopped breakeven' in content.lower():
+            elif action_type in ['stopped_be', 'stop_be'] or 'stopped at be' in content.lower() or 'stopped breakeven' in content.lower():
                 logger.info("Processing stop at break-even (close position)")
                 success, response = await self.close_position_at_market(trade_row, "stopped_be")
-                return {"status": "success" if success else "error", "message": response}
+                return {
+                    "status": "success" if success else "error",
+                    "message": response,
+                    "parsed_alert": parsed_alert,
+                    "kucoin_response": response
+                }
 
             elif 'limit order cancelled' in content.lower() or 'limit order canceled' in content.lower():
                 logger.info("Processing limit order cancel")
                 # No-op for now, could cancel open orders if tracked
-                return {"status": "success", "message": "Limit order cancel acknowledged (KuCoin)"}
+                return {
+                    "status": "success",
+                    "message": "Limit order cancel acknowledged (KuCoin)",
+                    "parsed_alert": parsed_alert,
+                    "kucoin_response": "Limit order cancel acknowledged"
+                }
 
             elif 'limit order filled' in content.lower():
                 logger.info("Processing limit order filled")
-                return {"status": "success", "message": "Limit order filled (KuCoin)"}
+                return {
+                    "status": "success",
+                    "message": "Limit order filled (KuCoin)",
+                    "parsed_alert": parsed_alert,
+                    "kucoin_response": "Limit order filled"
+                }
 
             else:
                 logger.warning(f"Unknown follow-up signal: {content}")
-                return {"status": "error", "message": f"Unknown follow-up signal: {content}"}
+                return {
+                    "status": "error",
+                    "message": f"Unknown follow-up signal: {content}",
+                    "parsed_alert": parsed_alert,
+                    "kucoin_response": f"Unknown signal: {content}"
+                }
 
         except Exception as e:
             logger.error(f"Error processing KuCoin follow-up signal: {e}")
-            return {"status": "error", "message": f"KuCoin follow-up error: {str(e)}"}
+            return {
+                "status": "error",
+                "message": f"KuCoin follow-up error: {str(e)}",
+                "parsed_alert": signal_data.get('parsed_alert'),
+                "kucoin_response": f"Error: {str(e)}"
+            }
 
     def get_exchange_type(self) -> str:
         """Get the exchange type."""

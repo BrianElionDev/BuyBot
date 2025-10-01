@@ -78,6 +78,8 @@ class Alert:
     status: str = "PENDING"
     parsed_alert: Optional[str] = None
     binance_response: Optional[str] = None
+    kucoin_response: Optional[str] = None
+    exchange: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

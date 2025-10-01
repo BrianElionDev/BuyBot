@@ -188,7 +188,8 @@ class KucoinExchange(ExchangeBase):
                                  stop_price: Optional[float] = None,
                                  client_order_id: Optional[str] = None,
                                  reduce_only: bool = False,
-                                 close_position: bool = False) -> Dict[str, Any]:
+                                 close_position: bool = False,
+                                 leverage: Optional[float] = None) -> Dict[str, Any]:
         """
         Create a futures order with comprehensive validation.
 
@@ -202,6 +203,7 @@ class KucoinExchange(ExchangeBase):
             client_order_id: Custom order ID
             reduce_only: Whether order should only reduce position
             close_position: Whether order should close position
+            leverage: Leverage for the order (optional)
 
         Returns:
             Dict containing order response or error information
@@ -246,11 +248,17 @@ class KucoinExchange(ExchangeBase):
             kucoin_side = "buy" if side.upper() == "BUY" else "sell"
             kucoin_type = self._convert_order_type(order_type)
 
+            # Convert pair to KuCoin futures symbol format
+            if pair.endswith('-USDT'):
+                kucoin_symbol = pair.replace('-USDT', 'USDTM')
+            else:
+                kucoin_symbol = pair.replace('-', 'USDTM')
+
             # Prepare order parameters
             order_params = {
                 "clientOid": client_order_id or f"kucoin_{int(asyncio.get_event_loop().time() * 1000)}",
                 "side": kucoin_side,
-                "symbol": pair,
+                "symbol": kucoin_symbol,  # Use converted symbol
                 "type": kucoin_type,
                 "size": int(amount)  # KuCoin futures expects integer size
             }
@@ -281,7 +289,7 @@ class KucoinExchange(ExchangeBase):
                 .set_symbol(order_params["symbol"]) \
                 .set_type(order_params["type"]) \
                 .set_size(order_params["size"]) \
-                .set_leverage(1)  # Set default leverage to 1x
+                .set_leverage(int(leverage) if leverage else 1)  # Use provided leverage or default to 1x
 
             if "price" in order_params:
                 order_request.set_price(order_params["price"])
@@ -506,14 +514,16 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            # If amount is 0 or None, fetch live position size
+            # If amount is 0 or None, fetch live position size and leverage
+            current_leverage = 1.0
             if amount <= 0:
                 positions = await self.get_futures_position_information()
                 target_symbol = pair.replace('-', 'USDTM')  # Convert to futures format
                 for pos in positions:
                     if pos.get('symbol') == target_symbol and pos.get('side', '').upper() == position_type.upper():
                         amount = float(pos.get('size', 0.0))
-                        logger.info(f"Found live position size for {pair}: {amount}")
+                        current_leverage = float(pos.get('leverage', 1.0))
+                        logger.info(f"Found live position size for {pair}: {amount}, leverage: {current_leverage}")
                         break
 
                 if amount <= 0:
@@ -524,57 +534,64 @@ class KucoinExchange(ExchangeBase):
             side = "sell" if position_type.upper() == "LONG" else "buy"
 
             # Convert pair to KuCoin futures format
-            kucoin_symbol = pair.replace('-', 'USDTM')
+            # Remove the -USDT part and add USDTM
+            if pair.endswith('-USDT'):
+                kucoin_symbol = pair.replace('-USDT', 'USDTM')
+            else:
+                kucoin_symbol = pair.replace('-', 'USDTM')
+            logger.info(f"Converting pair {pair} to KuCoin futures symbol: {kucoin_symbol}")
 
-            # Use direct API call to create order
-            futures_base_url = self._futures_base_url()
-            url = f"{futures_base_url}/api/v1/orders"
+            try:
+                await self._init_client()
 
-            # Prepare order data
-            order_data = {
-                "clientOid": f"close_{int(asyncio.get_event_loop().time() * 1000)}",
-                "side": side,
-                "symbol": kucoin_symbol,
-                "type": "market",
-                "size": int(amount),  # KuCoin expects integer size
-                "reduceOnly": True
-            }
+                if not self.client:
+                    logger.error("KuCoin client not initialized")
+                    return False, {"error": "Client not initialized"}
 
-            import json
-            order_json = json.dumps(order_data)
+                futures_service = self.client.get_futures_service()
+                order_api = futures_service.get_order_api()
 
-            # Prepare headers for authenticated request
-            if not self.client or not hasattr(self.client, 'auth'):
-                logger.error("KuCoin client or auth not initialized")
-                return False, {"error": "Client or auth not initialized"}
+                from kucoin_universal_sdk.generate.futures.order.model_add_order_req import AddOrderReqBuilder
 
-            headers = self.client.auth.get_futures_headers('POST', '/api/v1/orders', body=order_json)
+                client_oid = f"close_{int(asyncio.get_event_loop().time() * 1000)}"
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, data=order_json, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    data = await resp.json()
+                try:
+                    ticker = await self.get_futures_ticker(kucoin_symbol)
+                    current_price = float(ticker.get('price', 0))
+                    logger.info(f"Current price for {kucoin_symbol}: {current_price}")
+                except Exception as e:
+                    logger.warning(f"Could not get current price: {e}")
+                    current_price = 1.0  # Fallback price
 
-                    if data.get('code') != '200000':
-                        logger.error(f"KuCoin futures order API error: {data}")
-                        return False, {"success": False, "error": data.get('msg', 'Unknown error')}
+                order_request = AddOrderReqBuilder() \
+                    .set_client_oid(client_oid) \
+                    .set_side(side) \
+                    .set_symbol(kucoin_symbol) \
+                    .set_type("limit") \
+                    .set_size(int(amount)) \
+                    .set_price(str(current_price))
 
-                    order_result = data.get('data', {})
+                request = order_request.build()
+                response = order_api.add_order(request)
 
-                    # Format response to match expected format
-                    formatted_response = {
-                        "success": True,
-                        "orderId": order_result.get('orderId', order_data["clientOid"]),
-                        "clientOrderId": order_data["clientOid"],
-                        "symbol": pair,
-                        "side": side.upper(),
-                        "type": "MARKET",
-                        "origQty": str(amount),
-                        "status": "NEW",
-                        "time": int(asyncio.get_event_loop().time() * 1000)
-                    }
+                formatted_response = {
+                    "success": True,
+                    "orderId": getattr(response, 'orderId', client_oid),
+                    "clientOrderId": client_oid,
+                    "symbol": pair,
+                    "side": side.upper(),
+                    "type": "MARKET",
+                    "origQty": str(amount),
+                    "status": "NEW",
+                    "time": int(asyncio.get_event_loop().time() * 1000)
+                }
 
-                    logger.info(f"KuCoin futures order created: {formatted_response}")
-                    return True, formatted_response
+                logger.info(f"KuCoin futures order created: {formatted_response}")
+                return True, formatted_response
+
+            except Exception as e:
+                logger.error(f"Failed to create KuCoin futures order with SDK: {e}")
+                return False, {"error": str(e)}
 
         except Exception as e:
             logger.error(f"Failed to close KuCoin position for {pair}: {e}")
