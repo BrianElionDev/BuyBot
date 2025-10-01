@@ -139,6 +139,34 @@ class PositionManager:
                     pos_data['total_size'], weighted_entry, mark_price, side
                 )
 
+                try:
+                    import asyncio
+                    from src.services.notifications.trade_notification_service import trade_notification_service, PnLUpdateData
+                    from datetime import datetime, timezone
+
+                    if hasattr(self, '_last_pnl_cache'):
+                        last_pnl = self._last_pnl_cache.get(position_key, 0)
+                        pnl_change = abs(unrealized_pnl - last_pnl)
+                        if pnl_change > 1.0:
+                            notification_data = PnLUpdateData(
+                                symbol=symbol,
+                                position_type=side,
+                                entry_price=weighted_entry,
+                                current_price=mark_price,
+                                quantity=pos_data['total_size'],
+                                unrealized_pnl=unrealized_pnl,
+                                timestamp=datetime.now(timezone.utc)
+                            )
+
+                            asyncio.create_task(trade_notification_service.notify_pnl_update(notification_data))
+
+                    if not hasattr(self, '_last_pnl_cache'):
+                        self._last_pnl_cache = {}
+                    self._last_pnl_cache[position_key] = unrealized_pnl
+
+                except Exception as e:
+                    logger.error(f"Failed to send PnL update notification: {e}")
+
                 position_info = PositionInfo(
                     symbol=symbol,
                     side=side,

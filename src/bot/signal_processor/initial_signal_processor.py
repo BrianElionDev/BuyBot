@@ -7,7 +7,9 @@ including signal validation, trade amount calculation, and initial order placeme
 
 import logging
 import time
+import asyncio
 from typing import Dict, Any, Optional, List, Tuple, Union
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -415,6 +417,27 @@ class InitialSignalProcessor:
                 return False, f"Failed to create order: {order}"
 
             logger.info(f"Successfully created {order_type} order: {order['orderId']} for {trading_pair}")
+
+            try:
+                from src.services.notifications.trade_notification_service import trade_notification_service, TradeExecutionData
+
+                order_id = order.get('orderId', 'Unknown')
+                fill_price = float(order.get('price', 0)) if order.get('price') else signal_price
+                fill_quantity = float(order.get('origQty', trade_amount))
+
+                notification_data = TradeExecutionData(
+                    symbol=trading_pair,
+                    position_type=position_type,
+                    entry_price=fill_price,
+                    quantity=fill_quantity,
+                    order_id=str(order_id),
+                    timestamp=datetime.now(timezone.utc)
+                )
+
+                asyncio.create_task(trade_notification_service.notify_trade_execution_success(notification_data))
+
+            except Exception as e:
+                logger.error(f"Failed to send trade execution notification: {e}")
 
             # Create TP/SL orders if specified
             tp_sl_orders = []

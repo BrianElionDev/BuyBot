@@ -73,6 +73,63 @@ class UserDataHandler:
                 self.execution_history = self.execution_history[-1000:]
 
             logger.info(f"Execution Report: {symbol} {order_id} - {status} - Qty: {executed_qty} - Price: {avg_price}")
+
+            if status == 'FILLED' and executed_qty > 0:
+                try:
+                    import asyncio
+                    from src.services.notifications.trade_notification_service import (
+                        trade_notification_service, OrderFillData, StopLossData, TakeProfitData
+                    )
+
+                    position_type = 'LONG' if side == 'BUY' else 'SHORT'
+
+                    order_type = order_data.get('o', '').upper()
+
+                    if order_type == 'STOP_MARKET':
+                        realized_pnl = realized_pnl if realized_pnl != 0 else 0.0
+
+                        stop_loss_data = StopLossData(
+                            symbol=symbol,
+                            position_type=position_type,
+                            entry_price=0.0,
+                            stop_loss_price=avg_price,
+                            quantity=executed_qty,
+                            realized_pnl=realized_pnl,
+                            timestamp=time
+                        )
+
+                        asyncio.create_task(trade_notification_service.notify_stop_loss_triggered(stop_loss_data))
+
+                    elif order_type == 'TAKE_PROFIT_MARKET':
+                        realized_pnl = realized_pnl if realized_pnl != 0 else 0.0
+
+                        take_profit_data = TakeProfitData(
+                            symbol=symbol,
+                            position_type=position_type,
+                            entry_price=0.0,
+                            take_profit_price=avg_price,
+                            quantity=executed_qty,
+                            realized_pnl=realized_pnl,
+                            timestamp=time
+                        )
+
+                        asyncio.create_task(trade_notification_service.notify_take_profit_triggered(take_profit_data))
+
+                    else:
+                        notification_data = OrderFillData(
+                            symbol=symbol,
+                            position_type=position_type,
+                            fill_price=avg_price,
+                            fill_quantity=executed_qty,
+                            order_id=str(order_id),
+                            timestamp=time
+                        )
+
+                        asyncio.create_task(trade_notification_service.notify_order_fill(notification_data))
+
+                except Exception as e:
+                    logger.error(f"Failed to send order fill notification: {e}")
+
             return execution_report
 
         except Exception as e:
