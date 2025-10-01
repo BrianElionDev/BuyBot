@@ -29,6 +29,7 @@ from typing import Dict, List, Tuple
 from datetime import datetime, timezone
 from supabase import create_client
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 # Add the project root to the path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)

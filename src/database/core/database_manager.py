@@ -243,6 +243,39 @@ class DatabaseManager:
             logger.error(f"Database health check failed: {e}")
             return False
 
+    async def get_active_trades(self, symbol: str = None, trader: str = None) -> List[Dict[str, Any]]:
+        """
+        Get all active trades, optionally filtered by symbol or trader.
+
+        Args:
+            symbol: Optional symbol filter
+            trader: Optional trader filter
+
+        Returns:
+            List of active trade records
+        """
+        try:
+            # Build query conditions
+            query = self.client.table("trades").select("*").eq("status", "OPEN").eq("is_active", True)
+
+            if symbol:
+                query = query.eq("coin_symbol", symbol)
+            if trader:
+                query = query.eq("trader", trader)
+
+            result = await self.execute_query(query)
+            trades = result.get("data", []) if result else []
+
+            logger.info(f"Retrieved {len(trades)} active trades" +
+                       (f" for {symbol}" if symbol else "") +
+                       (f" by {trader}" if trader else ""))
+
+            return trades
+
+        except Exception as e:
+            logger.error(f"Error getting active trades: {e}")
+            return []
+
     def get_stats(self) -> Dict[str, Any]:
         """Get database manager statistics."""
         return {
