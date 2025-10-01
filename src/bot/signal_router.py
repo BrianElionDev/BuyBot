@@ -463,23 +463,37 @@ class SignalRouter:
         """
         return datetime.fromtimestamp(update_time_ms / 1000, tz=timezone.utc)
 
-    def _parse_discord_timestamp(self, timestamp_str: str) -> datetime:
+    def _parse_discord_timestamp(self, timestamp_input) -> datetime:
         """
-        Parse Discord timestamp string to datetime.
+        Parse Discord timestamp string or datetime to datetime.
 
         Args:
-            timestamp_str: Discord timestamp string (ISO format)
+            timestamp_input: Discord timestamp string (ISO format) or datetime object
 
         Returns:
             datetime: Parsed datetime object
         """
         try:
-            # Remove 'Z' and parse as UTC
+            # If already a datetime object, return it
+            if isinstance(timestamp_input, datetime):
+                return timestamp_input
+
+            # If it's a string, parse it
+            if isinstance(timestamp_input, str):
+                timestamp_str = timestamp_input
+                # Remove 'Z' and parse as UTC
+                if timestamp_str.endswith('Z'):
+                    timestamp_str = timestamp_str[:-1] + '+00:00'
+                return datetime.fromisoformat(timestamp_str)
+
+            # If it's something else, convert to string first
+            timestamp_str = str(timestamp_input)
             if timestamp_str.endswith('Z'):
                 timestamp_str = timestamp_str[:-1] + '+00:00'
             return datetime.fromisoformat(timestamp_str)
+
         except Exception as e:
-            logger.error(f"Error parsing Discord timestamp {timestamp_str}: {e}")
+            logger.error(f"Error parsing Discord timestamp {timestamp_input}: {e}")
             return datetime.now(timezone.utc)
 
     def _is_timestamp_within_range(self, alert_time: datetime, trade_time: datetime,
