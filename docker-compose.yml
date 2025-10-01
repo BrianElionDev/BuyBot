@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   rubicon-trading-bot:
-    build: .
+    image: ghcr.io/brianeliondev/buybot:latest
     container_name: rubicon-trading-bot
     ports:
       - "8080:8080"
@@ -47,4 +47,3 @@ networks:
 volumes:
   logs:
     driver: local
-

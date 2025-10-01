@@ -41,7 +41,12 @@ check_docker() {
         exit 1
     fi
 
-    log_success "Docker is installed"
+    if ! docker compose version &> /dev/null; then
+        log_error "Docker Compose is not available. Please install Docker Compose first."
+        exit 1
+    fi
+
+    log_success "Docker and Docker Compose are installed"
 }
 
 check_environment() {
@@ -70,20 +75,21 @@ deploy_application() {
     log_info "Pulling latest Docker image..."
     docker pull ${IMAGE_NAME}
 
-    # Stop existing containers
+    # Stop and remove existing containers using docker compose
     log_info "Stopping existing containers..."
-    docker stop ${APP_NAME} || true
-    docker rm ${APP_NAME} || true
+    cd ${APP_DIR}
+    docker compose -f docker-compose.yml down || true
 
-    # Start new container
+    # Wait for port to be released
+    log_info "Waiting for port 8080 to be released..."
+    while netstat -tuln | grep -q :8080; do
+        echo "Port 8080 still in use, waiting..."
+        sleep 2
+    done
+
+    # Start new container using docker compose
     log_info "Starting new container..."
-    docker run -d \
-        --name ${APP_NAME} \
-        --restart unless-stopped \
-        -p 8080:8080 \
-        --env-file ${APP_DIR}/.env \
-        -v ${APP_DIR}/logs:/app/logs \
-        ${IMAGE_NAME}
+    docker compose -f docker-compose.yml up -d
 
     log_success "Application deployed successfully"
 }
@@ -94,12 +100,13 @@ verify_deployment() {
     # Wait for container to start
     sleep 10
 
-    # Check if container is running
-    if docker ps | grep -q ${APP_NAME}; then
+    # Check if container is running using docker compose
+    cd ${APP_DIR}
+    if docker compose -f docker-compose.yml ps | grep -q "Up"; then
         log_success "Container is running"
     else
         log_error "Container is not running"
-        docker logs ${APP_NAME}
+        docker compose -f docker-compose.yml logs
         exit 1
     fi
 
@@ -112,12 +119,13 @@ verify_deployment() {
 
     # Show container status
     log_info "Container status:"
-    docker ps | grep ${APP_NAME}
+    docker compose -f docker-compose.yml ps
 }
 
 show_logs() {
     log_info "Showing recent logs..."
-    docker logs --tail 50 ${APP_NAME}
+    cd ${APP_DIR}
+    docker compose -f docker-compose.yml logs --tail 50
 }
 
 show_access_info() {
@@ -131,10 +139,10 @@ show_access_info() {
     echo "  - ${APP_DIR}/logs/"
     echo ""
     log_info "Useful Commands:"
-    echo "  - View logs: docker logs -f ${APP_NAME}"
-    echo "  - Restart: docker restart ${APP_NAME}"
-    echo "  - Stop: docker stop ${APP_NAME}"
-    echo "  - Update: ./deploy.sh"
+    echo "  - View logs: docker compose -f docker-compose.yml logs -f"
+    echo "  - Restart: docker compose -f docker-compose.yml restart"
+    echo "  - Stop: docker compose -f docker-compose.yml down"
+    echo "  - Update: ./deploy.sh update"
 }
 
 # Main deployment function
@@ -168,10 +176,11 @@ logs() {
 # Status function
 status() {
     log_info "Checking application status..."
+    cd ${APP_DIR}
 
-    if docker ps | grep -q ${APP_NAME}; then
+    if docker compose -f docker-compose.yml ps | grep -q "Up"; then
         log_success "Application is running"
-        docker ps | grep ${APP_NAME}
+        docker compose -f docker-compose.yml ps
         echo ""
         log_info "Health check:"
         curl -s http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo "Health check failed"
