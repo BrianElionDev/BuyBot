@@ -20,6 +20,7 @@ from .kucoin_models import (
 )
 from .kucoin_client import KucoinClient
 from .kucoin_symbol_mapper import symbol_mapper
+from .kucoin_symbol_converter import symbol_converter
 
 logger = logging.getLogger(__name__)
 
@@ -760,10 +761,10 @@ class KucoinExchange(ExchangeBase):
 
             # Get all available symbols first
             all_symbols = await self.get_futures_symbols()
-            symbol_mapper.available_symbols = all_symbols
+            symbol_converter.available_symbols = all_symbols
 
-            # Use symbol mapper to find the correct format
-            mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
+            # Use symbol converter to find the correct format
+            mapped_symbol = symbol_converter.find_matching_symbol(symbol, all_symbols, "futures")
 
             if not mapped_symbol:
                 logger.warning(f"Symbol {symbol} not found in KuCoin futures symbols")
@@ -873,21 +874,16 @@ class KucoinExchange(ExchangeBase):
             True if supported, False otherwise
         """
         try:
-            # First try to get symbol filters (more detailed check)
-            filters = await self.get_futures_symbol_filters(symbol)
-            if filters and filters.get('enableTrading', False):
-                logger.info(f"Symbol {symbol} is supported on KuCoin futures (using {filters.get('kucoin_symbol', 'unknown')})")
-                return True
-
-            # Fallback: check against list of all symbols using symbol mapper
+            # Get all available futures symbols
             all_symbols = await self.get_futures_symbols()
-            symbol_mapper.available_symbols = all_symbols
+            symbol_converter.available_symbols = all_symbols
 
-            is_supported = symbol_mapper.is_symbol_supported(symbol, all_symbols, "futures")
+            # Use the new symbol converter to check support
+            is_supported = symbol_converter.is_symbol_supported(symbol, all_symbols, "futures")
 
             if is_supported:
-                mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
-                logger.info(f"Symbol {symbol} is supported on KuCoin futures (as {mapped_symbol})")
+                matching_symbol = symbol_converter.find_matching_symbol(symbol, all_symbols, "futures")
+                logger.info(f"Symbol {symbol} is supported on KuCoin futures (as {matching_symbol})")
             else:
                 logger.warning(f"Symbol {symbol} not supported on KuCoin futures")
 
