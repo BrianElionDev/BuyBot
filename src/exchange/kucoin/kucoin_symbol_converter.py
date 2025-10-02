@@ -27,7 +27,9 @@ class KucoinSymbolConverter:
 
         # Known symbol mappings for special cases
         self.special_mappings = {
-            # No special mappings needed - KuCoin uses standard BTC format
+            # KuCoin uses XBT for Bitcoin instead of BTC
+            "BTCUSDT": "XBTUSDTM",  # BTC -> XBT for futures
+            "BTC": "XBT",  # BTC -> XBT for base symbol
         }
 
     def convert_bot_to_kucoin_spot(self, bot_symbol: str) -> str:
@@ -42,6 +44,12 @@ class KucoinSymbolConverter:
         """
         if not bot_symbol:
             return bot_symbol
+
+        # Handle BTC -> XBT mapping for spot
+        if bot_symbol == "BTCUSDT":
+            return "XBT-USDT"
+        elif bot_symbol == "BTC":
+            return "XBT-USDT"
 
         # Check special mappings first
         if bot_symbol in self.special_mappings:
@@ -71,6 +79,12 @@ class KucoinSymbolConverter:
         """
         if not bot_symbol:
             return bot_symbol
+
+        # Handle BTC -> XBT mapping for futures
+        if bot_symbol == "BTCUSDT":
+            return "XBTUSDTM"
+        elif bot_symbol == "BTC":
+            return "XBTUSDTM"
 
         # Check special mappings first
         if bot_symbol in self.special_mappings:
@@ -103,6 +117,14 @@ class KucoinSymbolConverter:
         """
         if not kucoin_symbol:
             return kucoin_symbol
+
+        # Handle XBT -> BTC mapping
+        if kucoin_symbol == "XBT-USDT":
+            return "BTCUSDT"
+        elif kucoin_symbol == "XBTUSDTM":
+            return "BTCUSDT"
+        elif kucoin_symbol == "XBT":
+            return "BTCUSDT"
 
         # Handle special mappings
         reverse_mappings = {v: k for k, v in self.special_mappings.items()}
