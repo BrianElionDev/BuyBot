@@ -6,7 +6,7 @@ import os
 import asyncio
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -217,7 +217,7 @@ def create_app() -> FastAPI:
             "status": "Running",
             "intervals": {
                 "daily_sync": f"{daily_interval/3600:.1f} hours",
-                "transaction_history": f"{transaction_interval/3600:.1f} hours",
+                "transaction_history": f"{transaction_interval/3600:.1f} hours (Binance + KuCoin with 7min delay)",
                 "pnl_backfill": f"{pnl_interval/3600:.1f} hours",
                 "price_backfill": f"{price_interval/3600:.1f} hours",
                 "weekly_backfill": f"{weekly_interval/3600:.1f} hours",
@@ -546,41 +546,113 @@ async def check_api_permissions(bot):
 
 
 async def auto_fill_transaction_history(bot, supabase):
-    """Auto-fill transaction history from Binance income endpoint."""
+    """Auto-fill transaction history from both Binance and KuCoin exchanges with 7-minute delay."""
     try:
         from discord_bot.database import DatabaseManager
+        from src.exchange.kucoin.kucoin_transaction_fetcher import KucoinTransactionFetcher
+
+        # Initialize database manager
+        db_manager = DatabaseManager(supabase)
+
+        # Phase 1: Binance transaction history (immediate)
+        logger.info("[Scheduler] Phase 1: Auto-filling Binance transaction history...")
 
         autofiller = AutoTransactionHistoryFiller()
         # Set attributes directly if they exist
         if hasattr(autofiller, 'binance_exchange'):
             autofiller.binance_exchange = bot.binance_exchange
         if hasattr(autofiller, 'db_manager'):
-            autofiller.db_manager = DatabaseManager(supabase)
+            autofiller.db_manager = db_manager
 
-        logger.info("[Scheduler] Auto-filling transaction history...")
-
-        # Use the working autofill approach
-        result = await autofiller.auto_fill_transaction_history(
+        # Use the working autofill approach for Binance
+        binance_result = await autofiller.auto_fill_transaction_history(
             symbols=None,  # All symbols
             days_back=7,   # Last 7 days
             income_type=""  # All income types
         )
 
-        if result.get('success'):
-            inserted_count = result.get('total_inserted', 0)
+        if binance_result.get('success'):
+            inserted_count = binance_result.get('total_inserted', 0)
             if inserted_count > 0:
-                logger.info(f"[Scheduler] Transaction history: {inserted_count} records inserted")
+                logger.info(f"[Scheduler] Binance transaction history: {inserted_count} records inserted")
             else:
-                logger.info(f"[Scheduler] Transaction history: {result.get('total_inserted', 0)} inserted, {result.get('total_skipped', 0)} skipped")
+                logger.info(f"[Scheduler] Binance transaction history: {binance_result.get('total_inserted', 0)} inserted, {binance_result.get('total_skipped', 0)} skipped")
         else:
             # Don't treat "no income records found" as an error - this is normal
-            if "No income records found" in result.get('message', ''):
-                logger.info(f"[Scheduler] Transaction history: {result.get('message', 'No new income records')}")
+            if "No income records found" in binance_result.get('message', ''):
+                logger.info(f"[Scheduler] Binance transaction history: {binance_result.get('message', 'No new income records')}")
             else:
-                logger.error(f"[Scheduler] Transaction history autofill failed: {result.get('message', 'Unknown error')}")
+                logger.error(f"[Scheduler] Binance transaction history autofill failed: {binance_result.get('message', 'Unknown error')}")
+
+        # Phase 2: KuCoin transaction history (7 minutes later)
+        logger.info("[Scheduler] Phase 2: Waiting 7 minutes before KuCoin transaction history sync...")
+        await asyncio.sleep(7 * 60)  # 7 minutes delay
+
+        logger.info("[Scheduler] Phase 2: Auto-filling KuCoin transaction history...")
+
+        # Initialize KuCoin transaction fetcher
+        kucoin_fetcher = KucoinTransactionFetcher(bot.kucoin_exchange)
+
+        # Calculate time range (last 7 days)
+        end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
+        start_time = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp() * 1000)
+
+        # Fetch KuCoin transactions
+        kucoin_transactions = await kucoin_fetcher.fetch_transaction_history(
+            symbol="",  # All symbols
+            start_time=start_time,
+            end_time=end_time,
+            limit=1000
+        )
+
+        if kucoin_transactions:
+            # Transform and insert KuCoin transactions
+            transformed_transactions = []
+            for transaction in kucoin_transactions:
+                # Ensure exchange is set
+                transaction['exchange'] = 'kucoin'
+                transformed_transactions.append(transaction)
+
+            # Insert in batches to avoid database locks
+            batch_size = 100
+            total_inserted = 0
+            total_skipped = 0
+
+            for i in range(0, len(transformed_transactions), batch_size):
+                batch = transformed_transactions[i:i + batch_size]
+
+                # Check for duplicates before inserting
+                filtered_batch = []
+                for transaction in batch:
+                    exists = await db_manager.check_transaction_exists(
+                        time=transaction.get('time', ''),
+                        type=transaction.get('type', ''),
+                        amount=transaction.get('amount', 0),
+                        asset=transaction.get('asset', ''),
+                        symbol=transaction.get('symbol', '')
+                    )
+                    if not exists:
+                        filtered_batch.append(transaction)
+                    else:
+                        total_skipped += 1
+
+                if filtered_batch:
+                    success = await db_manager.insert_transaction_history_batch(filtered_batch)
+                    if success:
+                        total_inserted += len(filtered_batch)
+                        logger.info(f"[Scheduler] KuCoin batch {i//batch_size + 1}: {len(filtered_batch)} transactions inserted")
+                    else:
+                        logger.error(f"[Scheduler] KuCoin batch {i//batch_size + 1}: Failed to insert")
+
+                # Small delay between batches to avoid overwhelming the database
+                await asyncio.sleep(0.5)
+
+            logger.info(f"[Scheduler] KuCoin transaction history: {total_inserted} inserted, {total_skipped} skipped")
+        else:
+            logger.info("[Scheduler] KuCoin transaction history: No transactions found")
 
     except Exception as e:
-        logger.debug(f"[Scheduler] Transaction history error: {e}")
+        logger.error(f"[Scheduler] Transaction history error: {e}")
 
 
 async def backfill_pnl_data(bot, supabase):
