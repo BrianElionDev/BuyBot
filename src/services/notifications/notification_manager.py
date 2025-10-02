@@ -33,6 +33,7 @@ class NotificationManager:
         quantity: float,
         order_id: str,
         status: str,
+        exchange: str,
         error_message: Optional[str] = None
     ) -> bool:
         """Send trade execution notification"""
@@ -47,6 +48,7 @@ class NotificationManager:
                 quantity=quantity,
                 order_id=order_id,
                 status=status,
+                exchange=exchange,
                 error_message=error_message,
                 timestamp=datetime.now(timezone.utc)
             )

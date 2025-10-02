@@ -12,6 +12,7 @@ class TradeNotification:
     quantity: float
     order_id: str
     status: str
+    exchange: str
     error_message: Optional[str] = None
     timestamp: Optional[datetime] = None
 
@@ -24,6 +25,7 @@ class OrderFillNotification:
     fill_price: float
     fill_quantity: float
     order_id: str
+    exchange: str
     commission: Optional[float] = None
     timestamp: Optional[datetime] = None
 
@@ -37,6 +39,7 @@ class PnLNotification:
     current_price: float
     quantity: float
     unrealized_pnl: float
+    exchange: str
     realized_pnl: Optional[float] = None
     timestamp: Optional[datetime] = None
 
@@ -50,6 +53,7 @@ class StopLossNotification:
     sl_price: float
     quantity: float
     realized_pnl: float
+    exchange: str
     timestamp: Optional[datetime] = None
 
 
@@ -62,6 +66,7 @@ class TakeProfitNotification:
     tp_price: float
     quantity: float
     realized_pnl: float
+    exchange: str
     timestamp: Optional[datetime] = None
 
 

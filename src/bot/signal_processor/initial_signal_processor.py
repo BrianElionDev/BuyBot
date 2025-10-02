@@ -425,12 +425,16 @@ class InitialSignalProcessor:
                 fill_price = float(order.get('price', 0)) if order.get('price') else signal_price
                 fill_quantity = float(order.get('origQty', trade_amount))
 
+                # Determine exchange name from exchange object
+                exchange_name = "Binance" if "Binance" in self.exchange.__class__.__name__ else "Kucoin"
+
                 notification_data = TradeExecutionData(
                     symbol=trading_pair,
                     position_type=position_type,
                     entry_price=fill_price,
                     quantity=fill_quantity,
                     order_id=str(order_id),
+                    exchange=exchange_name,
                     timestamp=datetime.now(timezone.utc)
                 )
 
