@@ -220,7 +220,7 @@ class SignalValidator:
             'leverage_update': r'leverage\s*to\s*(\d+x)',
             'trailing_stop_loss': r'trailing\s+sl\s+at\s+(\d+\.?\d*%)',
             'position_size_adjustment': r'(double|increase|decrease)\s+position\s+size',
-            'stop_loss_update': r'stoploss\s+moved\s+to\s+([-+]?\d*\.?\d+)',
+            'stop_loss_update': r'stop\s+loss\s+(?:updated|moved)?\s*to\s+([-+]?\d*\.?\d+)|stops?\s+(?:updated|moved)?\s*to\s+([-+]?\d*\.?\d+)',
             'stops_to_be': r'\b(stops?|sl)\b.*\bbe\b|stopped\s+be',
             'stops_to_price': r'\b(stop\w*|sl)\b.*\bto\b\s*(-?\d+(\.\d+)?)',
             'dca_to_entry': r'\bdca\b.*\bentry\b.*?(\d+\.?\d+)(?:\s|$)',
@@ -247,7 +247,9 @@ class SignalValidator:
                 elif action_type == 'trailing_stop_loss':
                     action_data['trailing_percentage'] = float(match.group(1).replace('%', ''))
                 elif action_type == 'stop_loss_update':
-                    action_data['stop_loss_price'] = float(match.group(1))
+                    # Handle both capture groups (stop loss vs stops)
+                    price = match.group(1) if match.group(1) else match.group(2)
+                    action_data['stop_loss_price'] = float(price)
                 elif action_type == 'stops_to_price':
                     action_data['stop_loss_price'] = float(match.group(2))
                 elif action_type == 'dca_to_entry':

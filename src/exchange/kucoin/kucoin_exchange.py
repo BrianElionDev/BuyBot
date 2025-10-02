@@ -283,6 +283,25 @@ class KucoinExchange(ExchangeBase):
 
             from kucoin_universal_sdk.generate.futures.order.model_add_order_req import AddOrderReqBuilder
 
+            # Get proper leverage for KuCoin
+            if leverage is None:
+                try:
+                    from config.settings import get_leverage_for
+                    leverage = get_leverage_for("kucoin")
+                    logger.info(f"Using configured KuCoin leverage: {leverage}x")
+                except Exception as e:
+                    logger.warning(f"Could not get configured leverage, using 10x: {e}")
+                    leverage = 10  # KuCoin typically requires higher leverage than 1x
+
+            # Ensure leverage is a valid integer
+            leverage_int = int(leverage) if leverage else 10
+            if leverage_int < 1:
+                leverage_int = 10  # Minimum leverage for KuCoin
+            elif leverage_int > 100:
+                leverage_int = 100  # Maximum leverage for KuCoin
+
+            logger.info(f"Using leverage: {leverage_int}x for {order_params['symbol']}")
+
             # Build the order request
             order_request = AddOrderReqBuilder() \
                 .set_client_oid(order_params["clientOid"]) \
@@ -290,7 +309,7 @@ class KucoinExchange(ExchangeBase):
                 .set_symbol(order_params["symbol"]) \
                 .set_type(order_params["type"]) \
                 .set_size(order_params["size"]) \
-                .set_leverage(int(leverage) if leverage else 1)  # Use provided leverage or default to 1x
+                .set_leverage(leverage_int)
 
             if "price" in order_params:
                 order_request.set_price(order_params["price"])
@@ -564,13 +583,28 @@ class KucoinExchange(ExchangeBase):
                     logger.warning(f"Could not get current price: {e}")
                     current_price = 1.0  # Fallback price
 
+                # Get proper leverage for closing position
+                try:
+                    from config.settings import get_leverage_for
+                    close_leverage = int(get_leverage_for("kucoin"))
+                except Exception as e:
+                    logger.warning(f"Could not get configured leverage for close, using 10x: {e}")
+                    close_leverage = 10
+
+                # Ensure leverage is valid
+                if close_leverage < 1:
+                    close_leverage = 10
+                elif close_leverage > 100:
+                    close_leverage = 100
+
                 order_request = AddOrderReqBuilder() \
                     .set_client_oid(client_oid) \
                     .set_side(side) \
                     .set_symbol(kucoin_symbol) \
                     .set_type("limit") \
                     .set_size(int(amount)) \
-                    .set_price(str(current_price))
+                    .set_price(str(current_price)) \
+                    .set_leverage(close_leverage)
 
                 request = order_request.build()
                 response = order_api.add_order(request)
