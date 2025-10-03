@@ -23,6 +23,7 @@ class TradeExecutionData:
     entry_price: float
     quantity: float
     order_id: str
+    exchange: str
     timestamp: Optional[datetime] = None
 
 @dataclass
@@ -33,6 +34,7 @@ class OrderFillData:
     fill_price: float
     fill_quantity: float
     order_id: str
+    exchange: str
     timestamp: Optional[datetime] = None
 
 @dataclass
@@ -44,6 +46,7 @@ class PnLUpdateData:
     current_price: float
     quantity: float
     unrealized_pnl: float
+    exchange: str
     timestamp: Optional[datetime] = None
 
 @dataclass
@@ -55,6 +58,7 @@ class  StopLossData:
     stop_loss_price: float
     quantity: float
     realized_pnl: float
+    exchange: str
     timestamp: Optional[datetime] = None
 
 @dataclass
@@ -66,6 +70,7 @@ class TakeProfitData:
     take_profit_price: float
     quantity: float
     realized_pnl: float
+    exchange: str
     timestamp: Optional[datetime] = None
 
 class TradeNotificationService:
@@ -132,6 +137,7 @@ class TradeNotificationService:
 • Entry Price: {self._format_price(data.entry_price)}
 • Quantity: {data.quantity:,.6f}
 • Order ID: {data.order_id}
+• Exchange: {data.exchange}
 
 ⏰ Time: {self._format_timestamp(data.timestamp)}"""
 
@@ -155,6 +161,7 @@ class TradeNotificationService:
 • Fill Price: {self._format_price(data.fill_price)}
 • Fill Quantity: {data.fill_quantity:,.6f}
 • Order ID: {data.order_id}
+• Exchange: {data.exchange}
 
 ⏰ Time: {self._format_timestamp(data.timestamp)}"""
 
@@ -178,6 +185,7 @@ class TradeNotificationService:
 • Entry Price: {self._format_price(data.entry_price)}
 • Current Price: {self._format_price(data.current_price)}
 • Quantity: {data.quantity:,.6f}
+• Exchange: {data.exchange}
 
 💰 PnL Status:
 • Unrealized PnL: {self._format_pnl(data.unrealized_pnl)}
@@ -204,6 +212,7 @@ class TradeNotificationService:
 • Entry Price: {self._format_price(data.entry_price)}
 • Stop-Loss Price: {self._format_price(data.stop_loss_price)}
 • Quantity: {data.quantity:,.6f}
+• Exchange: {data.exchange}
 
 💰 Final PnL:
 • Realized PnL: {self._format_pnl(data.realized_pnl)}
@@ -230,6 +239,7 @@ class TradeNotificationService:
 • Entry Price: {self._format_price(data.entry_price)}
 • Take-Profit Price: {self._format_price(data.take_profit_price)}
 • Quantity: {data.quantity:,.6f}
+• Exchange: {data.exchange}
 
 💰 Final PnL:
 • Realized PnL: {self._format_pnl(data.realized_pnl)}

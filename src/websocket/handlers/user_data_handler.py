@@ -95,6 +95,7 @@ class UserDataHandler:
                             stop_loss_price=avg_price,
                             quantity=executed_qty,
                             realized_pnl=realized_pnl,
+                            exchange="Binance",
                             timestamp=time
                         )
 
@@ -110,6 +111,7 @@ class UserDataHandler:
                             take_profit_price=avg_price,
                             quantity=executed_qty,
                             realized_pnl=realized_pnl,
+                            exchange="Binance",
                             timestamp=time
                         )
 
@@ -122,6 +124,7 @@ class UserDataHandler:
                             fill_price=avg_price,
                             fill_quantity=executed_qty,
                             order_id=str(order_id),
+                            exchange="Binance",
                             timestamp=time
                         )
 

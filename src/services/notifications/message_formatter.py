@@ -28,6 +28,7 @@ class MessageFormatter:
 • Entry Price: <code>${notification.entry_price:,.4f}</code>
 • Quantity: <code>{notification.quantity:.6f}</code>
 • Order ID: <code>{notification.order_id}</code>
+• Exchange: <b>{notification.exchange}</b>
 
 ⏰ <b>Time:</b> {formatted_time}
             """
@@ -42,6 +43,7 @@ class MessageFormatter:
 • Type: <b>{notification.position_type}</b>
 • Entry Price: <code>${notification.entry_price:,.4f}</code>
 • Quantity: <code>{notification.quantity:.6f}</code>
+• Exchange: <b>{notification.exchange}</b>
 
 ❌ <b>Error:</b> {notification.error_message or "Unknown error"}
 
@@ -65,6 +67,7 @@ class MessageFormatter:
 • Fill Price: <code>${notification.fill_price:,.4f}</code>
 • Fill Quantity: <code>{notification.fill_quantity:.6f}</code>
 • Order ID: <code>{notification.order_id}</code>
+• Exchange: <b>{notification.exchange}</b>
 """
 
         if notification.commission:
@@ -94,6 +97,7 @@ class MessageFormatter:
 • Entry Price: <code>${notification.entry_price:,.4f}</code>
 • Current Price: <code>${notification.current_price:,.4f}</code>
 • Quantity: <code>{notification.quantity:.6f}</code>
+• Exchange: <b>{notification.exchange}</b>
 
 💰 <b>PnL Status:</b>
 • Unrealized PnL: {pnl_color} <code>${notification.unrealized_pnl:,.2f}</code>
@@ -126,6 +130,7 @@ class MessageFormatter:
 • Entry Price: <code>${notification.entry_price:,.4f}</code>
 • Stop-Loss Price: <code>${notification.sl_price:,.4f}</code>
 • Quantity: <code>{notification.quantity:.6f}</code>
+• Exchange: <b>{notification.exchange}</b>
 
 💰 <b>Final PnL:</b>
 • Realized PnL: {pnl_emoji} <code>${notification.realized_pnl:,.2f}</code>
@@ -152,6 +157,7 @@ class MessageFormatter:
 • Entry Price: <code>${notification.entry_price:,.4f}</code>
 • Take-Profit Price: <code>${notification.tp_price:,.4f}</code>
 • Quantity: <code>{notification.quantity:.6f}</code>
+• Exchange: <b>{notification.exchange}</b>
 
 💰 <b>Final PnL:</b>
 • Realized PnL: {pnl_emoji} <code>${notification.realized_pnl:,.2f}</code>

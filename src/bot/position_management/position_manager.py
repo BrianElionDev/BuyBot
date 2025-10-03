@@ -148,6 +148,9 @@ class PositionManager:
                         last_pnl = self._last_pnl_cache.get(position_key, 0)
                         pnl_change = abs(unrealized_pnl - last_pnl)
                         if pnl_change > 1.0:
+                            # Determine exchange name from exchange object
+                            exchange_name = "Binance" if "Binance" in self.exchange.__class__.__name__ else "Kucoin"
+
                             notification_data = PnLUpdateData(
                                 symbol=symbol,
                                 position_type=side,
@@ -155,6 +158,7 @@ class PositionManager:
                                 current_price=mark_price,
                                 quantity=pos_data['total_size'],
                                 unrealized_pnl=unrealized_pnl,
+                                exchange=exchange_name,
                                 timestamp=datetime.now(timezone.utc)
                             )
 

@@ -299,7 +299,7 @@ class DatabaseManager:
             logger.error(f"Error inserting transaction batch: {e}")
             return False
 
-    async def check_transaction_exists(self, time: int, type: str, amount: float, asset: str, symbol: str) -> bool:
+    async def check_transaction_exists(self, time: str, type: str, amount: float, asset: str, symbol: str) -> bool:
         """Check if a transaction record already exists to avoid duplicates."""
         try:
             response = self.supabase.table("transaction_history").select("id").eq("time", time).eq("type", type).eq("amount", amount).eq("asset", asset).eq("symbol", symbol).execute()
@@ -307,6 +307,35 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error checking transaction existence: {e}")
             return False
+
+    async def get_transaction_count_by_exchange(self, exchange: str) -> int:
+        """Get count of transactions for a specific exchange."""
+        try:
+            response = self.supabase.table("transaction_history").select("id", count="exact").eq("exchange", exchange).execute()
+            return response.count if response.count else 0
+        except Exception as e:
+            logger.error(f"Error getting transaction count by exchange: {e}")
+            return 0
+
+    async def get_transaction_count_by_symbol_and_exchange(self, symbol: str, exchange: str) -> int:
+        """Get count of transactions for a specific symbol and exchange."""
+        try:
+            response = self.supabase.table("transaction_history").select("id", count="exact").eq("symbol", symbol).eq("exchange", exchange).execute()
+            return response.count if response.count else 0
+        except Exception as e:
+            logger.error(f"Error getting transaction count by symbol and exchange: {e}")
+            return 0
+
+    async def get_latest_transaction_time_by_exchange(self, exchange: str) -> Optional[str]:
+        """Get the latest transaction time for a specific exchange."""
+        try:
+            response = self.supabase.table("transaction_history").select("time").eq("exchange", exchange).order("time", desc=True).limit(1).execute()
+            if response.data and len(response.data) > 0:
+                return response.data[0].get("time")
+            return None
+        except Exception as e:
+            logger.error(f"Error getting latest transaction time by exchange: {e}")
+            return None
 
     # Health Check
 
