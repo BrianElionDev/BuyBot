@@ -216,19 +216,19 @@ class SignalValidator:
             'liquidation': r'liquidated|liquidation',
             'partial_fill': r'partial\s+fill',
             'tp1and_sl_to_be': r'tp1\s*&\s*stops?\s+moved\s+to\s+be|tp1\s*&\s*stops?\s+to\s+be',
-            'stop_loss_hit': r'stopped\s+out|closed\s+in\s+profits|closed\s+in\s+loss|closed\s+be/in\s+slight\s+loss',
+            'stop_loss_hit': r'stopped\s+out|closed\s+in\s+profits|closed\s+in\s+loss|closed\s+be/in\s+slight\s+loss|stopped\s+be|clossed\s+in\s+loss',
             'leverage_update': r'leverage\s*to\s*(\d+x)',
             'trailing_stop_loss': r'trailing\s+sl\s+at\s+(\d+\.?\d*%)',
             'position_size_adjustment': r'(double|increase|decrease)\s+position\s+size',
             'stop_loss_update': r'stop\s+loss\s+(?:updated|moved)?\s*to\s+([-+]?\d*\.?\d+)|stops?\s+(?:updated|moved)?\s*to\s+([-+]?\d*\.?\d+)',
-            'stops_to_be': r'\b(stops?|sl)\b.*\bbe\b|stopped\s+be',
+            'stops_to_be': r'\b(stops?|sl)\b.*\bbe\b|stopped\s+be|stops?\s+moved\s+to\s+be',
             'stops_to_price': r'\b(stop\w*|sl)\b.*\bto\b\s*(-?\d+(\.\d+)?)',
             'dca_to_entry': r'\bdca\b.*\bentry\b.*?(\d+\.?\d+)(?:\s|$)',
             'take_profit_1': r'tp1\b',
             'take_profit_2': r'tp2\b',
             'limit_order_cancelled': r'limit\s+order\s+cancelled?',
             'limit_order_filled': r'limit\s+order\s+filled',
-            'position_closed': r'closed\s+be|closed\s+in\s+profits?|closed\s+in\s+loss'
+            'position_closed': r'closed\s+be|closed\s+in\s+profits?|closed\s+in\s+loss|closed\s+in\s+profits|closed\s+in\s+loss|closed\s+be|closed\s+in\s+profits|closed\s+in\s+loss'
         }
 
         # Check each pattern and return the first match
@@ -298,6 +298,12 @@ class SignalValidator:
                     action_data['binance_action'] = 'MARKET_SELL'
                     action_data['position_status'] = 'CLOSED'
                     action_data['reason'] = 'Position closed'
+                elif action_type == 'stops_to_be':
+                    action_data['action_description'] = f'Stop loss moved to break even for {coin_symbol}'
+                    action_data['binance_action'] = 'UPDATE_STOP_ORDER'
+                    action_data['position_status'] = 'OPEN'
+                    action_data['stop_loss'] = 'BE'
+                    action_data['reason'] = 'Risk management - move to break even'
 
                 return action_data
 

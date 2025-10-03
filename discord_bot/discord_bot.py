@@ -158,6 +158,14 @@ class DiscordBot:
         try:
             logger.info(f"Processing initial signal from {signal.trader} (discord_id: {signal.discord_id})")
 
+            if not self.signal_router.is_trader_supported(signal.trader):
+                logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
+                return {
+                    "status": "rejected",
+                    "message": f"Trader {signal.trader} is not supported. Only @Johnny, @-Johnny, @-Tareeq, and @Tareeq are allowed.",
+                    "exchange": "none"
+                }
+
             # Validate required fields
             if not signal.discord_id or not signal.trader or not signal.content:
                 logger.error(f"Missing required fields in signal: discord_id={signal.discord_id}, trader={signal.trader}, content_length={len(signal.content) if signal.content else 0}")
@@ -295,10 +303,13 @@ class DiscordBot:
                         except Exception as e:
                             logger.error(f"Failed to send Telegram notification: {e}")
 
+                        exchange_type = self.signal_router.get_exchange_for_trader(signal.trader)
+
                         return {
                             "status": "error",
-                            "message": f"Trade execution failed: {exchange_response}",
-                            "trade_id": trade_row['id']
+                            "message": f"Trade execution failed on {exchange_type.value}: {exchange_response}",
+                            "trade_id": trade_row['id'],
+                            "exchange": exchange_type.value
                         }
 
                 except Exception as exec_error:
@@ -374,10 +385,15 @@ class DiscordBot:
 
             # Validate trader and determine exchange
             if not self.signal_router.is_trader_supported(signal.trader):
-                logger.warning(f"Unsupported trader {signal.trader}, using default exchange")
+                logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
+                return {
+                    "status": "rejected",
+                    "message": f"Trader {signal.trader} is not supported. Only @Johnny, @-Johnny, @-Tareeq, and @Tareeq are allowed.",
+                    "exchange": "none"
+                }
 
             exchange_type = self.signal_router.get_exchange_for_trader(signal.trader)
-            logger.info(f"Routing follow-up signal from {signal.trader} to {exchange_type.value} exchange")
+            logger.info(f"✅ Routing follow-up signal from {signal.trader} to {exchange_type.value} exchange")
 
             # Check for duplicate alerts
             alert_hash = self._generate_alert_hash(signal.discord_id, signal.content)
@@ -398,6 +414,10 @@ class DiscordBot:
 
             # Route the follow-up signal to the appropriate exchange
             result = await self.signal_router.route_followup_signal(signal_data, signal.trader)
+
+            # Add exchange information to result
+            if 'exchange' not in result:
+                result['exchange'] = exchange_type.value
 
             if alert_result:
                 try:
