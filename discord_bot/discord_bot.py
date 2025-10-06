@@ -434,6 +434,7 @@ class DiscordBot:
                         'kucoin_response': result.get('kucoin_response') if exchange_type.value == 'kucoin' else None,
                         'updated_at': datetime.now(timezone.utc).isoformat()
                     }
+                    updates['exchange'] = exchange_type.value
                     await self.db_manager.alert_ops.update_existing_alert(alert_result['id'], updates)
                     logger.info(f"Updated alert {alert_result['id']} with processing result")
                 except Exception as e:
