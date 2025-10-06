@@ -6,6 +6,7 @@ Following Clean Code principles with clear separation of concerns.
 """
 
 import asyncio
+import json
 import aiohttp
 import logging
 from typing import Dict, List, Optional, Tuple, Any
@@ -334,6 +335,11 @@ class KucoinExchange(ExchangeBase):
                 "time": int(asyncio.get_event_loop().time() * 1000)
             }
 
+            try:
+                logger.info(f"Raw KuCoin order response: {json.dumps(getattr(response, '__dict__', {}))}")
+            except Exception:
+                logger.info(f"Raw KuCoin order response (non-JSON-serializable): {response}")
+
             logger.info(f"KuCoin futures order created: {formatted_response}")
             return formatted_response
 
@@ -628,6 +634,11 @@ class KucoinExchange(ExchangeBase):
                     "status": "NEW",
                     "time": int(asyncio.get_event_loop().time() * 1000)
                 }
+
+                try:
+                    logger.info(f"Raw KuCoin close response: {json.dumps(getattr(response, '__dict__', {}))}")
+                except Exception:
+                    logger.info(f"Raw KuCoin close response (non-JSON-serializable): {response}")
 
                 logger.info(f"KuCoin futures order created: {formatted_response}")
                 return True, formatted_response

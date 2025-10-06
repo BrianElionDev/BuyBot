@@ -450,7 +450,30 @@ class SignalRouter:
             logger.error(f"Error processing follow-up signal on KuCoin: {e}")
             return {"status": "error", "message": f"KuCoin follow-up error: {str(e)}"}
 
-    # Removed duplicate get_exchange_for_trader and is_trader_supported declarations
+    def get_exchange_for_trader(self, trader: str) -> ExchangeType:
+        """
+        Get the exchange type for a given trader.
+
+        Args:
+            trader: The trader identifier
+
+        Returns:
+            ExchangeType: The exchange that should handle this trader's signals
+        """
+        return get_exchange_for_trader(trader)
+
+    def is_trader_supported(self, trader: str) -> bool:
+        """
+        Check if a trader is supported.
+
+        Args:
+            trader: The trader identifier
+
+        Returns:
+            bool: True if trader is supported, False otherwise
+        """
+        from src.config.trader_config import is_trader_supported
+        return is_trader_supported(trader)
 
     def _convert_binance_timestamp(self, update_time_ms: int) -> datetime:
         """
@@ -726,13 +749,97 @@ class SignalRouter:
                 'total_orders_affected': 0
             }
 
-    # Removed shadowed simplified _route_followup_to_binance; keeping enhanced implementation above
+    async def _route_followup_to_binance(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Route follow-up signal to Binance trading engine.
 
-    # Removed shadowed simplified _route_followup_to_kucoin; keeping earlier implementation above
+        Args:
+            signal_data: The follow-up signal data
+
+        Returns:
+            Dict[str, Any]: Response data
+        """
+        try:
+            if not self.binance_trading_engine:
+                return {"status": "error", "message": "Binance trading engine not available"}
+
+            # Extract signal information
+            content = signal_data.get('content', '')
+            discord_id = signal_data.get('discord_id', '')
+            trader = signal_data.get('trader', '')
+
+            logger.info(f"Routing follow-up signal to Binance: {content}")
+
+            # Find the trade associated with this signal
+            trade_row = await self._find_trade_by_discord_id(discord_id)
+            if not trade_row:
+                return {"status": "error", "message": f"No trade found for discord_id: {discord_id}"}
+
+            # Process the follow-up signal
+            result = await self.binance_trading_engine.process_followup_signal(signal_data, trade_row)
+
+            return {
+                "status": "success" if result.get("success", False) else "error",
+                "message": result.get("message", "Follow-up signal processed"),
+                "binance_response": result,
+                "exchange": "binance"
+            }
+
+        except Exception as e:
+            logger.error(f"Error routing follow-up signal to Binance: {e}")
+            return {
+                "status": "error",
+                "message": f"Error processing Binance follow-up signal: {str(e)}",
+                "exchange": "binance"
+            }
+
+    async def _route_followup_to_kucoin(self, signal_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Route follow-up signal to KuCoin trading engine.
+
+        Args:
+            signal_data: The follow-up signal data
+
+        Returns:
+            Dict[str, Any]: Response data
+        """
+        try:
+            if not self.kucoin_trading_engine:
+                return {"status": "error", "message": "KuCoin trading engine not available"}
+
+            # Extract signal information
+            content = signal_data.get('content', '')
+            discord_id = signal_data.get('discord_id', '')
+            trader = signal_data.get('trader', '')
+
+            logger.info(f"Routing follow-up signal to KuCoin: {content}")
+
+            # Find the trade associated with this signal
+            trade_row = await self._find_trade_by_discord_id(discord_id)
+            if not trade_row:
+                return {"status": "error", "message": f"No trade found for discord_id: {discord_id}"}
+
+            # Process the follow-up signal
+            result = await self.kucoin_trading_engine.process_followup_signal(signal_data, trade_row)
+
+            return {
+                "status": "success" if result.get("success", False) else "error",
+                "message": result.get("message", "Follow-up signal processed"),
+                "kucoin_response": result,
+                "exchange": "kucoin"
+            }
+
+        except Exception as e:
+            logger.error(f"Error routing follow-up signal to KuCoin: {e}")
+            return {
+                "status": "error",
+                "message": f"Error processing KuCoin follow-up signal: {str(e)}",
+                "exchange": "kucoin"
+            }
 
     async def _find_trade_by_discord_id(self, discord_id: str) -> Optional[Dict[str, Any]]:
         """
-        Find trade by discord_id using available DB managers.
+        Find trade by discord_id.
 
         Args:
             discord_id: The discord ID to search for
@@ -741,13 +848,9 @@ class SignalRouter:
             Dict[str, Any]: Trade data or None if not found
         """
         try:
-            if self.kucoin_trading_engine and hasattr(self.kucoin_trading_engine, 'db_manager'):
-                trade = await self.kucoin_trading_engine.db_manager.find_trade_by_discord_id(discord_id)
-                if trade:
-                    return trade
-            if self.binance_trading_engine and hasattr(self.binance_trading_engine, 'db_manager'):
-                return await self.binance_trading_engine.db_manager.find_trade_by_discord_id(discord_id)
-            logger.error("No trading engine available for trade lookup")
+            # This would need to be implemented based on your database structure
+            # For now, return None to indicate not found
+            logger.warning(f"Trade lookup by discord_id not implemented: {discord_id}")
             return None
         except Exception as e:
             logger.error(f"Error finding trade by discord_id {discord_id}: {e}")

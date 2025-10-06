@@ -6,6 +6,7 @@ Following Clean Code principles with clear separation of concerns.
 """
 
 import asyncio
+import json
 import logging
 from typing import Dict, List, Optional, Tuple, Any
 from binance.async_client import AsyncClient
@@ -174,6 +175,12 @@ class BinanceExchange(ExchangeBase):
 
             # Create the order
             result = await self.client.futures_create_order(**order_params)
+            try:
+                logger.info(f"Raw Binance order response: {json.dumps(result)}")
+            except Exception:
+                logger.info(f"Raw Binance order response (non-JSON-serializable): {result}")
+            if 'orderId' not in result:
+                raise ValueError(f"Missing orderId in response: {result}")
             logger.info(f"Futures order created successfully: {result.get('orderId')}")
             return result
 
@@ -193,6 +200,12 @@ class BinanceExchange(ExchangeBase):
 
         try:
             result = await self.client.futures_cancel_order(symbol=pair, orderId=order_id)
+            try:
+                logger.info(f"Raw Binance cancel response: {json.dumps(result)}")
+            except Exception:
+                logger.info(f"Raw Binance cancel response (non-JSON-serializable): {result}")
+            if isinstance(result, dict) and 'code' in result and result.get('code') != 200:
+                raise ValueError(f"Cancel failed: {result.get('msg', result)}")
             logger.info(f"Futures order cancelled successfully: {order_id}")
             return True, result
         except BinanceAPIException as e:

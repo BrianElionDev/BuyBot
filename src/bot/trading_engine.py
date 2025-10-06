@@ -467,4 +467,28 @@ class TradingEngine:
         Returns:
             Tuple of (success, response_data)
         """
-        return await self.position_manager.close_position_at_market(trade_row, reason, close_percentage)
+        try:
+            coin_symbol = trade_row.get('coin_symbol')
+            if not coin_symbol:
+                return False, {"error": "Missing coin_symbol in trade_row"}
+            trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
+
+            # Pre-check open positions to avoid reduceOnly errors
+            positions = await self.exchange.get_futures_position_information()
+            has_open = False
+            for pos in positions:
+                try:
+                    if pos.get('symbol') == trading_pair and float(pos.get('positionAmt', 0)) != 0:
+                        has_open = True
+                        break
+                except Exception:
+                    # Some exchanges may use different keys; ignore here and delegate
+                    pass
+
+            if not has_open:
+                return False, {"error": f"No open position for {trading_pair} (reduceOnly risk)"}
+
+            return await self.position_manager.close_position_at_market(trade_row, reason, close_percentage)
+        except Exception as e:
+            logger.error(f"Error in close_position_at_market pre-check: {e}")
+            return await self.position_manager.close_position_at_market(trade_row, reason, close_percentage)
