@@ -158,13 +158,16 @@ class DiscordBot:
         try:
             logger.info(f"Processing initial signal from {signal.trader} (discord_id: {signal.discord_id})")
 
-            if not self.signal_router.is_trader_supported(signal.trader):
+            if not self.signal_router.is_trader_supported(signal.trader or ""):
                 logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
                 return {
                     "status": "rejected",
                     "message": f"Trader {signal.trader} is not supported. Only @Johnny, @-Johnny, @-Tareeq, and @Tareeq are allowed.",
                     "exchange": "none"
                 }
+
+            # Determine target exchange for this trader (e.g., '@-Tareeq' -> 'kucoin')
+            exchange_type = self.signal_router.get_exchange_for_trader(signal.trader or "")
 
             # Validate required fields
             if not signal.discord_id or not signal.trader or not signal.content:
@@ -182,6 +185,7 @@ class DiscordBot:
                     'timestamp': signal.timestamp,
                     'content': signal.content,
                     'status': 'PENDING',
+                    'exchange': exchange_type.value,
                     'created_at': datetime.now(timezone.utc).isoformat(),
                     'updated_at': datetime.now(timezone.utc).isoformat()
                 }
@@ -217,7 +221,9 @@ class DiscordBot:
                     'coin_symbol': parsed_signal['coin_symbol'],
                     'signal_type': parsed_signal.get('position_type'),  # Use position_type as signal_type
                     'position_size': parsed_signal.get('position_size'),
-                    'entry_price': parsed_signal.get('entry_prices', [None])[0] if parsed_signal.get('entry_prices') else None
+                    'entry_price': parsed_signal.get('entry_prices', [None])[0] if parsed_signal.get('entry_prices') else None,
+                    # Ensure exchange column reflects routed exchange on first update
+                    'exchange': exchange_type.value
                 }
 
                 await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates=trade_updates)
@@ -384,7 +390,7 @@ class DiscordBot:
             logger.info(f"Processing update signal from trader {signal.trader}: {signal.content}")
 
             # Validate trader and determine exchange
-            if not self.signal_router.is_trader_supported(signal.trader):
+            if not self.signal_router.is_trader_supported(signal.trader or ""):
                 logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
                 return {
                     "status": "rejected",
@@ -392,7 +398,7 @@ class DiscordBot:
                     "exchange": "none"
                 }
 
-            exchange_type = self.signal_router.get_exchange_for_trader(signal.trader)
+            exchange_type = self.signal_router.get_exchange_for_trader(signal.trader or "")
             logger.info(f"✅ Routing follow-up signal from {signal.trader} to {exchange_type.value} exchange")
 
             # Check for duplicate alerts
@@ -413,7 +419,7 @@ class DiscordBot:
                 logger.error(f"Error finding existing alert: {e}")
 
             # Route the follow-up signal to the appropriate exchange
-            result = await self.signal_router.route_followup_signal(signal_data, signal.trader)
+            result = await self.signal_router.route_followup_signal(signal_data, signal.trader or "")
 
             # Add exchange information to result
             if 'exchange' not in result:
@@ -485,8 +491,8 @@ class DiscordBot:
     async def close(self):
         """Gracefully shutdown the trading engine and WebSocket manager."""
         try:
-            if hasattr(self, 'websocket_manager'):
-                await self.websocket_manager.close()
+            if hasattr(self, 'websocket_manager') and self.websocket_manager:
+                await self.websocket_manager.stop()
             logger.info("DiscordBot closed successfully")
         except Exception as e:
             logger.error(f"Error closing DiscordBot: {e}")
