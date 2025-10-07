@@ -286,18 +286,11 @@ class KucoinExchange(ExchangeBase):
 
             # Get proper leverage for KuCoin
             if leverage is None:
-                try:
-                    from config.settings import get_leverage_for
-                    leverage = get_leverage_for("kucoin")
-                    logger.info(f"Using configured KuCoin leverage: {leverage}x")
-                except Exception as e:
-                    logger.warning(f"Could not get configured leverage, using 10x: {e}")
-                    leverage = 10  # KuCoin typically requires higher leverage than 1x
+                leverage = 1.0
 
-            # Ensure leverage is a valid integer
-            leverage_int = int(leverage) if leverage else 10
+            leverage_int = int(leverage) if leverage else 1
             if leverage_int < 1:
-                leverage_int = 10  # Minimum leverage for KuCoin
+                leverage_int = 1  # Minimum leverage for KuCoin
             elif leverage_int > 100:
                 leverage_int = 100  # Maximum leverage for KuCoin
 
@@ -567,21 +560,21 @@ class KucoinExchange(ExchangeBase):
                 kucoin_symbol = pair.replace('-', 'USDTM')
             logger.info(f"Converting pair {pair} to KuCoin futures symbol: {kucoin_symbol}")
 
+            # Initialize client (was under an unnecessary try block)
+            await self._init_client()
+
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return False, {"error": "Client not initialized"}
+
+            futures_service = self.client.get_futures_service()
+            order_api = futures_service.get_order_api()
+
+            from kucoin_universal_sdk.generate.futures.order.model_add_order_req import AddOrderReqBuilder
+
+            client_oid = f"close_{int(asyncio.get_event_loop().time() * 1000)}"
+
             try:
-                await self._init_client()
-
-                if not self.client:
-                    logger.error("KuCoin client not initialized")
-                    return False, {"error": "Client not initialized"}
-
-                futures_service = self.client.get_futures_service()
-                order_api = futures_service.get_order_api()
-
-                from kucoin_universal_sdk.generate.futures.order.model_add_order_req import AddOrderReqBuilder
-
-                client_oid = f"close_{int(asyncio.get_event_loop().time() * 1000)}"
-
-                try:
                     # Get current price using the ticker API
                     url = f"{self._futures_base_url()}/api/v1/ticker?symbol={kucoin_symbol}"
                     async with aiohttp.ClientSession() as session:
@@ -593,37 +586,33 @@ class KucoinExchange(ExchangeBase):
                                 logger.info(f"Current price for {kucoin_symbol}: {current_price}")
                             else:
                                 raise RuntimeError(f"Ticker API error: {data}")
-                except Exception as e:
-                    logger.warning(f"Could not get current price for {kucoin_symbol}: {e}")
-                    current_price = 1.0  # Fallback price
+            except Exception as e:
+                logger.warning(f"Could not get current price for {kucoin_symbol}: {e}")
+                current_price = 1.0  # Fallback price
 
-                # Get proper leverage for closing position
-                try:
-                    from config.settings import get_leverage_for
-                    close_leverage = int(get_leverage_for("kucoin"))
-                except Exception as e:
-                    logger.warning(f"Could not get configured leverage for close, using 10x: {e}")
-                    close_leverage = 10
+            try:
+                close_leverage = int(current_leverage) if current_leverage else 1
+            except Exception:
+                close_leverage = 1
 
-                # Ensure leverage is valid
-                if close_leverage < 1:
-                    close_leverage = 10
-                elif close_leverage > 100:
+            if close_leverage < 1:
+                close_leverage = 1
+            elif close_leverage > 100:
                     close_leverage = 100
 
-                order_request = AddOrderReqBuilder() \
-                    .set_client_oid(client_oid) \
-                    .set_side(side) \
-                    .set_symbol(kucoin_symbol) \
-                    .set_type("limit") \
-                    .set_size(int(amount)) \
-                    .set_price(str(current_price)) \
-                    .set_leverage(close_leverage)
+            order_request = AddOrderReqBuilder() \
+                .set_client_oid(client_oid) \
+                .set_side(side) \
+                .set_symbol(kucoin_symbol) \
+                .set_type("limit") \
+                .set_size(int(amount)) \
+                .set_price(str(current_price)) \
+                .set_leverage(close_leverage)
 
-                request = order_request.build()
-                response = order_api.add_order(request)
+            request = order_request.build()
+            response = order_api.add_order(request)
 
-                formatted_response = {
+            formatted_response = {
                     "success": True,
                     "orderId": getattr(response, 'orderId', client_oid),
                     "clientOrderId": client_oid,
@@ -635,21 +624,18 @@ class KucoinExchange(ExchangeBase):
                     "time": int(asyncio.get_event_loop().time() * 1000)
                 }
 
-                try:
-                    logger.info(f"Raw KuCoin close response: {json.dumps(getattr(response, '__dict__', {}))}")
-                except Exception:
+            try:
+                logger.info(f"Raw KuCoin close response: {json.dumps(getattr(response, '__dict__', {}))}")
+            except Exception:
                     logger.info(f"Raw KuCoin close response (non-JSON-serializable): {response}")
 
-                logger.info(f"KuCoin futures order created: {formatted_response}")
-                return True, formatted_response
-
-            except Exception as e:
-                logger.error(f"Failed to create KuCoin futures order with SDK: {e}")
-                return False, {"error": str(e)}
+            logger.info(f"KuCoin futures order created: {formatted_response}")
+            return True, formatted_response
 
         except Exception as e:
-            logger.error(f"Failed to close KuCoin position for {pair}: {e}")
+            logger.error(f"Error placing KuCoin close order: {e}")
             return False, {"error": str(e)}
+
 
     # Market Data
     async def get_current_prices(self, symbols: List[str]) -> Dict[str, float]:

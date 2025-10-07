@@ -279,9 +279,9 @@ class DiscordBot:
                             except Exception as e:
                                 logger.error(f"Failed to send Telegram notification: {e}")
                         else:
-                            # If exchange_response is a string (error message), store it differently
+                            # If exchange_response is a string (error message), store it generically
                             await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
-                                'binance_response': str(exchange_response)
+                                'exchange_response': str(exchange_response)
                             })
 
                         return {
@@ -430,8 +430,9 @@ class DiscordBot:
                     updates = {
                         'status': 'PROCESSED' if result.get("status") == "success" else 'FAILED',
                         'parsed_alert': result.get('parsed_alert'),
-                        'binance_response': result.get('binance_response') if exchange_type.value == 'binance' else None,
-                        'kucoin_response': result.get('kucoin_response') if exchange_type.value == 'kucoin' else None,
+                        'exchange_response': result.get('exchange_response')
+                                           or result.get('binance_response')
+                                           or result.get('kucoin_response'),
                         'updated_at': datetime.now(timezone.utc).isoformat()
                     }
                     updates['exchange'] = exchange_type.value

@@ -322,27 +322,25 @@ class InitialSignalProcessor:
             # Get current positions for this symbol
             positions = await self.exchange.get_position_risk(symbol=trading_pair)
             current_position_size = 0.0
-            # Determine configured leverage per exchange
+            actual_leverage = 1.0
             try:
-                from config import settings as config
-                exchange_name = getattr(self.exchange, "__class__", type(self.exchange)).__name__.lower()
-                if "binance" in exchange_name:
-                    configured_leverage = config.get_leverage_for("binance")
-                elif "kucoin" in exchange_name:
-                    configured_leverage = config.get_leverage_for("kucoin")
+                runtime_config = getattr(self.trading_engine, 'runtime_config', None)
+                trader_id = getattr(self.trading_engine, 'trader_id', None)
+                exch_name = self.exchange.__class__.__name__.lower()
+                exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
+                if runtime_config and trader_id:
+                    cfg = await runtime_config.get_trader_exchange_config(trader_id, exchange_key)
+                    actual_leverage = float(cfg.get('leverage', 1.0))
                 else:
-                    configured_leverage = config.DEFAULT_LEVERAGE
-            except Exception:
-                # Fallback if anything goes wrong
-                configured_leverage = self.trading_engine.config.DEFAULT_LEVERAGE
-
-            actual_leverage = configured_leverage
+                    logger.warning("runtime_config or trader_id missing; defaulting leverage to 1x for validation")
+            except Exception as e:
+                logger.warning(f"Failed to get leverage from runtime config for validation: {e}")
 
             for position in positions:
                 if position.get('symbol') == trading_pair:
                     current_position_size = abs(float(position.get('positionAmt', 0)))
-                    # Get actual leverage from position (fallback to configured value)
-                    actual_leverage = float(position.get('leverage', configured_leverage))
+                    # Get actual leverage from position (fallback to previously resolved value)
+                    actual_leverage = float(position.get('leverage', actual_leverage))
                     break
 
             # Calculate new total position size
@@ -395,22 +393,60 @@ class InitialSignalProcessor:
             else:
                 return False, f"Invalid position type: {position_type}"
 
-            # Create the main order
+            leverage_value: Optional[float] = None
+            if is_futures:
+                try:
+                    runtime_config = getattr(self.trading_engine, 'runtime_config', None)
+                    trader_id = getattr(self.trading_engine, 'trader_id', None)
+                    if runtime_config and trader_id:
+                        # Determine exchange string (binance/kucoin) from class name
+                        exch_name = self.exchange.__class__.__name__.lower()
+                        exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
+                        cfg = await runtime_config.get_trader_exchange_config(trader_id, exchange_key)
+                        leverage_value = float(cfg.get('leverage', 1.0))
+                        logger.info(f"Leverage from Supabase for trader {trader_id} on {exchange_key}: {leverage_value}")
+                    else:
+                        logger.warning("runtime_config or trader_id missing; defaulting leverage to 1x")
+                        leverage_value = 1.0
+                except Exception as e:
+                    logger.error(f"Failed to resolve leverage from runtime config: {e}")
+                    leverage_value = 1.0
+
+            is_kucoin = 'kucoin' in self.exchange.__class__.__name__.lower()
             if order_type.upper() == 'MARKET':
-                order = await self.exchange.create_futures_order(
-                    pair=trading_pair,
-                    side=order_side,
-                    order_type='MARKET',
-                    amount=trade_amount
-                )
+                if is_kucoin:
+                    order = await self.exchange.create_futures_order(
+                        pair=trading_pair,
+                        side=order_side,
+                        order_type='MARKET',
+                        amount=trade_amount,
+                        leverage=leverage_value
+                    )
+                else:
+                    order = await self.exchange.create_futures_order(
+                        pair=trading_pair,
+                        side=order_side,
+                        order_type='MARKET',
+                        amount=trade_amount
+                    )
             else:  # LIMIT
-                order = await self.exchange.create_futures_order(
-                    pair=trading_pair,
-                    side=order_side,
-                    order_type='LIMIT',
-                    amount=trade_amount,
-                    price=signal_price
-                )
+                if is_kucoin:
+                    order = await self.exchange.create_futures_order(
+                        pair=trading_pair,
+                        side=order_side,
+                        order_type='LIMIT',
+                        amount=trade_amount,
+                        price=signal_price,
+                        leverage=leverage_value
+                    )
+                else:
+                    order = await self.exchange.create_futures_order(
+                        pair=trading_pair,
+                        side=order_side,
+                        order_type='LIMIT',
+                        amount=trade_amount,
+                        price=signal_price
+                    )
 
             if not order or 'orderId' not in order:
                 logger.error(f"Failed to create order for {trading_pair}: {order}")

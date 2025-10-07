@@ -94,33 +94,6 @@ TARGET_TRADERS = [
     if t.strip().strip('"').strip("'")
 ]
 
-# Trading Leverage Configuration
-# Global default for backward compatibility
-DEFAULT_LEVERAGE = float(os.getenv("LEVERAGE", "1"))
-
-# Per-exchange leverage overrides
-BINANCE_LEVERAGE = float(os.getenv("BINANCE_LEVERAGE", str(DEFAULT_LEVERAGE)))
-KUCOIN_LEVERAGE = float(os.getenv("KUCOIN_LEVERAGE", str(DEFAULT_LEVERAGE)))
-
-def get_leverage_for(exchange: str) -> float:
-    """Return leverage for a given exchange name.
-
-    Accepts common identifiers (case-insensitive), e.g. "binance", "kucoin".
-    Falls back to DEFAULT_LEVERAGE if exchange not matched.
-    """
-    if not exchange:
-        return DEFAULT_LEVERAGE
-
-    name = str(exchange).strip().lower()
-
-    if name in {"binance", "binance_futures", "binanceusdm", "binance-usdm"}:
-        return BINANCE_LEVERAGE
-
-    if name in {"kucoin", "kucoin_futures", "kucoinfutures"}:
-        return KUCOIN_LEVERAGE
-
-    return DEFAULT_LEVERAGE
-
 # Inactivity Alert Configuration
 INACTIVITY_ALERT_ENABLED = os.getenv("INACTIVITY_ALERT_ENABLED", "True").lower() == "true"
 INACTIVITY_THRESHOLD_HOURS = int(os.getenv("INACTIVITY_THRESHOLD_HOURS", "12"))

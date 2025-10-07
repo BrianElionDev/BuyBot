@@ -28,7 +28,7 @@ class TradeModel:
     pnl_usd: Optional[float] = None
     status: Optional[str] = None
     order_status: Optional[str] = None
-    binance_response: Optional[Dict[str, Any]] = None
+    exchange_response: Optional[Dict[str, Any]] = None
     stop_loss_order_id: Optional[str] = None
     take_profit_order_id: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -52,7 +52,7 @@ class TradeModel:
             'pnl_usd': self.pnl_usd,
             'status': self.status,
             'order_status': self.order_status,
-            'binance_response': json.dumps(self.binance_response) if self.binance_response else None,
+            'exchange_response': json.dumps(self.exchange_response) if self.exchange_response else None,
             'stop_loss_order_id': self.stop_loss_order_id,
             'take_profit_order_id': self.take_profit_order_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
@@ -100,12 +100,16 @@ class TradeModel:
             else:
                 parsed_signal = data['parsed_signal']
 
-        binance_response = None
-        if data.get('binance_response'):
-            if isinstance(data['binance_response'], str):
-                binance_response = json.loads(data['binance_response'])
+        exchange_response = None
+        raw_resp = data.get('exchange_response') or data.get('binance_response') or data.get('kucoin_response')
+        if raw_resp is not None:
+            if isinstance(raw_resp, str):
+                try:
+                    exchange_response = json.loads(raw_resp)
+                except Exception:
+                    exchange_response = raw_resp
             else:
-                binance_response = data['binance_response']
+                exchange_response = raw_resp
 
         return cls(
             id=data.get('id'),
@@ -122,7 +126,7 @@ class TradeModel:
             pnl_usd=data.get('pnl_usd'),
             status=data.get('status'),
             order_status=data.get('order_status'),
-            binance_response=binance_response,
+            exchange_response=exchange_response,
             stop_loss_order_id=data.get('stop_loss_order_id'),
             take_profit_order_id=data.get('take_profit_order_id'),
             created_at=created_at,
@@ -142,8 +146,7 @@ class AlertModel:
     trader: Optional[str] = None
     timestamp: Optional[datetime] = None
     parsed_alert: Optional[Dict[str, Any]] = None
-    binance_response: Optional[Dict[str, Any]] = None
-    kucoin_response: Optional[Dict[str, Any]] = None
+    exchange_response: Optional[Dict[str, Any]] = None
     exchange: Optional[str] = None
     status: Optional[str] = None
     alert_hash: Optional[str] = None
@@ -160,8 +163,7 @@ class AlertModel:
             'trader': self.trader,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
             'parsed_alert': json.dumps(self.parsed_alert) if self.parsed_alert else None,
-            'binance_response': json.dumps(self.binance_response) if self.binance_response else None,
-            'kucoin_response': json.dumps(self.kucoin_response) if self.kucoin_response else None,
+            'exchange_response': json.dumps(self.exchange_response) if self.exchange_response else None,
             'exchange': self.exchange,
             'status': self.status,
             'alert_hash': self.alert_hash,
@@ -202,19 +204,16 @@ class AlertModel:
             else:
                 parsed_alert = data['parsed_alert']
 
-        binance_response = None
-        if data.get('binance_response'):
-            if isinstance(data['binance_response'], str):
-                binance_response = json.loads(data['binance_response'])
+        exchange_response = None
+        raw_resp = data.get('exchange_response') or data.get('binance_response') or data.get('kucoin_response')
+        if raw_resp is not None:
+            if isinstance(raw_resp, str):
+                try:
+                    exchange_response = json.loads(raw_resp)
+                except Exception:
+                    exchange_response = raw_resp
             else:
-                binance_response = data['binance_response']
-
-        kucoin_response = None
-        if data.get('kucoin_response'):
-            if isinstance(data['kucoin_response'], str):
-                kucoin_response = json.loads(data['kucoin_response'])
-            else:
-                kucoin_response = data['kucoin_response']
+                exchange_response = raw_resp
 
         return cls(
             id=data.get('id'),
@@ -224,8 +223,7 @@ class AlertModel:
             trader=data.get('trader'),
             timestamp=timestamp,
             parsed_alert=parsed_alert,
-            binance_response=binance_response,
-            kucoin_response=kucoin_response,
+            exchange_response=exchange_response,
             exchange=data.get('exchange'),
             status=data.get('status'),
             alert_hash=data.get('alert_hash'),

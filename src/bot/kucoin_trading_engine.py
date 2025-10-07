@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from discord_bot.database import DatabaseManager
 
+from src.config import runtime_config
 from src.exchange import KucoinExchange
 from src.services.pricing.price_service import PriceService
 from src.exchange import FixedFeeCalculator

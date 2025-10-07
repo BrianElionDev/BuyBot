@@ -30,6 +30,18 @@ class SignalRouter:
         self.binance_trading_engine = binance_trading_engine
         self.kucoin_trading_engine = kucoin_trading_engine
 
+        #Initialize runtime config
+        from src.config.runtime_config import init_runtime_config, runtime_config
+        from config.settings import SUPABASE_URL, SUPABASE_KEY
+        if SUPABASE_URL and SUPABASE_KEY:
+            init_runtime_config(SUPABASE_URL, SUPABASE_KEY)
+            self.runtime_config = runtime_config
+        else:
+            logger.warning("Supabase URL or Key not set. Cannot connect to the database.")
+            self.runtime_config = None
+
+        self.runtime_config = runtime_config
+
     def is_trader_supported(self, trader: str) -> bool:
         """
         Check if a trader is supported.
@@ -97,6 +109,14 @@ class SignalRouter:
             exchange_type = get_exchange_for_trader(trader)
 
             logger.info(f"Routing signal from trader {trader} to {exchange_type.value} exchange")
+
+            # Inject runtime config and trader context into engines
+            if exchange_type == ExchangeType.BINANCE and self.binance_trading_engine:
+                setattr(self.binance_trading_engine, 'runtime_config', self.runtime_config)
+                setattr(self.binance_trading_engine, 'trader_id', trader)
+            elif exchange_type == ExchangeType.KUCOIN and self.kucoin_trading_engine:
+                setattr(self.kucoin_trading_engine, 'runtime_config', self.runtime_config)
+                setattr(self.kucoin_trading_engine, 'trader_id', trader)
 
             # Route to appropriate exchange
             if exchange_type == ExchangeType.BINANCE:
@@ -450,30 +470,7 @@ class SignalRouter:
             logger.error(f"Error processing follow-up signal on KuCoin: {e}")
             return {"status": "error", "message": f"KuCoin follow-up error: {str(e)}"}
 
-    def get_exchange_for_trader(self, trader: str) -> ExchangeType:
-        """
-        Get the exchange type for a given trader.
-
-        Args:
-            trader: The trader identifier
-
-        Returns:
-            ExchangeType: The exchange that should handle this trader's signals
-        """
-        return get_exchange_for_trader(trader)
-
-    def is_trader_supported(self, trader: str) -> bool:
-        """
-        Check if a trader is supported.
-
-        Args:
-            trader: The trader identifier
-
-        Returns:
-            bool: True if trader is supported, False otherwise
-        """
-        from src.config.trader_config import is_trader_supported
-        return is_trader_supported(trader)
+    # Removed duplicate method definitions of get_exchange_for_trader and is_trader_supported
 
     def _convert_binance_timestamp(self, update_time_ms: int) -> datetime:
         """
