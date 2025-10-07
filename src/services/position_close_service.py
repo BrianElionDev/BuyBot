@@ -68,7 +68,7 @@ class PositionCloseService:
                 "position_size": trade.position_size,
                 "entry_price": trade.entry_price,
                 "exchange_order_id": trade.exchange_order_id,
-                "binance_response": trade.binance_response
+                "exchange_response": getattr(trade, 'exchange_response', None) or getattr(trade, 'binance_response', None)
             }
 
             success, response = await trading_engine.close_position_at_market(
@@ -106,7 +106,7 @@ class PositionCloseService:
                 "position_size": trade.position_size,
                 "entry_price": trade.entry_price,
                 "exchange_order_id": trade.exchange_order_id,
-                "kucoin_response": trade.kucoin_response
+                "exchange_response": getattr(trade, 'exchange_response', None) or getattr(trade, 'kucoin_response', None)
             }
 
             success, response = await trading_engine.close_position_at_market(
