@@ -98,14 +98,14 @@ class HistoricalTradeBackfillManager:
     def extract_symbol_from_trade(self, trade: Dict[str, Any]) -> Optional[str]:
         """Extract symbol from trade data with priority order."""
         try:
-            # Try to extract symbol from binance_response first
-            binance_response = trade.get('binance_response', '')
-            if binance_response:
+            # Try to extract symbol from exchange_response first (fallback to legacy)
+            raw = trade.get('exchange_response') or trade.get('binance_response', '')
+            if raw:
                 try:
-                    response_data = json.loads(binance_response)
+                    response_data = json.loads(raw) if isinstance(raw, str) else raw
                     symbol = response_data.get('symbol')
                     if symbol:
-                        logger.info(f"Extracted symbol '{symbol}' from binance_response for trade {trade.get('id')}")
+                        logger.info(f"Extracted symbol '{symbol}' from exchange_response for trade {trade.get('id')}")
                         return symbol
                 except json.JSONDecodeError:
                     pass
@@ -308,8 +308,8 @@ class HistoricalTradeBackfillManager:
     def compare_prices(self, trade: Dict, new_entry_price: float, new_exit_price: float) -> Dict[str, Any]:
         """Compare existing prices with newly calculated prices."""
         try:
-            existing_entry = trade.get('binance_entry_price')
-            existing_exit = trade.get('binance_exit_price')
+            existing_entry = trade.get('entry_price') or trade.get('binance_entry_price')
+            existing_exit = trade.get('exit_price') or trade.get('binance_exit_price')
 
             comparison = {
                 'entry_changed': False,
@@ -346,11 +346,11 @@ class HistoricalTradeBackfillManager:
             updates = {}
 
             if entry_price > 0:
-                updates['binance_entry_price'] = str(entry_price)
+                updates['entry_price'] = float(entry_price)
                 logger.info(f"Setting entry price: {entry_price}")
 
             if exit_price > 0:
-                updates['binance_exit_price'] = str(exit_price)
+                updates['exit_price'] = float(exit_price)
                 logger.info(f"Setting exit price: {exit_price}")
 
             if updates:
@@ -380,7 +380,7 @@ class HistoricalTradeBackfillManager:
             # Query for trades with missing prices
             response = self.db_manager.supabase.from_("trades").select(
                 "id, discord_id, exchange_order_id, stop_loss_order_id, status, "
-                "binance_entry_price, binance_exit_price, binance_response, created_at, coin_symbol, closed_at, updated_at, signal_type, parsed_signal"
+                "entry_price, exit_price, exchange_response, binance_response, created_at, coin_symbol, closed_at, updated_at, signal_type, parsed_signal"
             ).not_.is_("exchange_order_id", "null").gte("created_at", cutoff_iso).execute()
 
             trades_to_process = []
@@ -393,8 +393,8 @@ class HistoricalTradeBackfillManager:
                     continue
 
                 # Check if prices are missing or if we should update existing ones
-                entry_price = trade.get('binance_entry_price')
-                exit_price = trade.get('binance_exit_price')
+                entry_price = trade.get('entry_price') or trade.get('binance_entry_price')
+                exit_price = trade.get('exit_price') or trade.get('binance_exit_price')
 
                 missing_prices = not entry_price or float(entry_price or 0) == 0 or not exit_price or float(exit_price or 0) == 0
 
@@ -404,7 +404,7 @@ class HistoricalTradeBackfillManager:
                         logger.info(f"Found trade {trade.get('id')} (Discord: {discord_id}) with missing prices - Entry: {entry_price}, Exit: {exit_price}")
                     else:
                         logger.debug(f"Found trade {trade.get('id')} with existing prices - Entry: {entry_price}, Exit: {exit_price} (will recalculate for accuracy)")
-            
+
             logger.debug(f"Found {len(trades_to_process)} trades to process ({'including existing' if update_existing else 'missing only'})")
             return trades_to_process
 
@@ -469,7 +469,7 @@ class HistoricalTradeBackfillManager:
                     logger.warning(f"No executions found in trade window for trade {trade_id}")
                     stats['trades_failed'] += 1
                     continue
-                
+
                 # Get position type from database (most reliable method)
                 position_type = self.get_position_type_from_trade(trade)
                 logger.info(f"Trade {trade_id} position type: {position_type}")
