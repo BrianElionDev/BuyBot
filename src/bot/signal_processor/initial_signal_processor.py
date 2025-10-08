@@ -458,8 +458,24 @@ class InitialSignalProcessor:
                 from src.services.notifications.trade_notification_service import trade_notification_service, TradeExecutionData
 
                 order_id = order.get('orderId', 'Unknown')
-                fill_price = float(order.get('price', 0)) if order.get('price') else signal_price
-                fill_quantity = float(order.get('origQty', trade_amount))
+
+                # For MARKET orders, use avgPrice if available (actual fill price), otherwise fallback to price or signal_price
+                fill_price = None
+                if order.get('avgPrice') and float(order.get('avgPrice', 0)) > 0:
+                    fill_price = float(order.get('avgPrice'))
+                elif order.get('price') and float(order.get('price', 0)) > 0:
+                    fill_price = float(order.get('price'))
+                else:
+                    fill_price = signal_price
+
+                # Use executedQty if available (actual filled quantity), otherwise origQty or trade_amount
+                fill_quantity = None
+                if order.get('executedQty') and float(order.get('executedQty', 0)) > 0:
+                    fill_quantity = float(order.get('executedQty'))
+                elif order.get('origQty') and float(order.get('origQty', 0)) > 0:
+                    fill_quantity = float(order.get('origQty'))
+                else:
+                    fill_quantity = trade_amount
 
                 # Determine exchange name from exchange object
                 exchange_name = "Binance" if "Binance" in self.exchange.__class__.__name__ else "Kucoin"
