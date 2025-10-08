@@ -86,13 +86,17 @@ TELEGRAM_NOTIFICATION_CHAT_ID = os.getenv("TELEGRAM_NOTIFICATION_CHAT_ID", "")
 USE_FIXED_FEE_CALCULATOR = os.getenv("USE_FIXED_FEE_CALCULATOR", "True").lower() == "true"
 FIXED_FEE_RATE = float(os.getenv("FIXED_FEE_RATE", "0.0002"))
 
-# Target Traders Configuration
+# Target Traders Configuration (DEPRECATED - Now managed via database)
+# This is kept for backward compatibility and fallback purposes
 _RAW_TRADERS = os.getenv("TARGET_TRADERS", "")
 TARGET_TRADERS = [
     t.strip().strip('"').strip("'")
     for t in _RAW_TRADERS.split(",")
     if t.strip().strip('"').strip("'")
 ]
+
+# Note: Trader configuration is now managed dynamically via the trader_exchange_config table
+# The TARGET_TRADERS environment variable is deprecated and will be removed in future versions
 
 # Inactivity Alert Configuration
 INACTIVITY_ALERT_ENABLED = os.getenv("INACTIVITY_ALERT_ENABLED", "True").lower() == "true"

@@ -158,16 +158,16 @@ class DiscordBot:
         try:
             logger.info(f"Processing initial signal from {signal.trader} (discord_id: {signal.discord_id})")
 
-            if not self.signal_router.is_trader_supported(signal.trader or ""):
+            if not await self.signal_router.is_trader_supported(signal.trader or ""):
                 logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
                 return {
                     "status": "rejected",
-                    "message": f"Trader {signal.trader} is not supported. Only @Johnny, @-Johnny, @-Tareeq, and @Tareeq are allowed.",
+                    "message": f"Trader {signal.trader} is not supported. Please check trader configuration in database.",
                     "exchange": "none"
                 }
 
             # Determine target exchange for this trader (e.g., '@-Tareeq' -> 'kucoin')
-            exchange_type = self.signal_router.get_exchange_for_trader(signal.trader or "")
+            exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader or "")
 
             # Validate required fields
             if not signal.discord_id or not signal.trader or not signal.content:
@@ -309,7 +309,7 @@ class DiscordBot:
                         except Exception as e:
                             logger.error(f"Failed to send Telegram notification: {e}")
 
-                        exchange_type = self.signal_router.get_exchange_for_trader(signal.trader)
+                        exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader)
 
                         return {
                             "status": "error",
@@ -390,15 +390,15 @@ class DiscordBot:
             logger.info(f"Processing update signal from trader {signal.trader}: {signal.content}")
 
             # Validate trader and determine exchange
-            if not self.signal_router.is_trader_supported(signal.trader or ""):
+            if not await self.signal_router.is_trader_supported(signal.trader or ""):
                 logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
                 return {
                     "status": "rejected",
-                    "message": f"Trader {signal.trader} is not supported. Only @Johnny, @-Johnny, @-Tareeq, and @Tareeq are allowed.",
+                    "message": f"Trader {signal.trader} is not supported. Please check trader configuration in database.",
                     "exchange": "none"
                 }
 
-            exchange_type = self.signal_router.get_exchange_for_trader(signal.trader or "")
+            exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader or "")
             logger.info(f"✅ Routing follow-up signal from {signal.trader} to {exchange_type.value} exchange")
 
             # Check for duplicate alerts

@@ -2,14 +2,17 @@
 Signal Router Module
 
 This module handles routing of trading signals to the appropriate exchange
-based on the trader configuration.
+based on the trader configuration from the database.
 """
 
 import logging
 import json
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple, List
-from src.config.trader_config import ExchangeType, get_exchange_for_trader, is_trader_supported
+from src.services.trader_config_service import (
+    ExchangeType, trader_config_service,
+    get_exchange_for_trader, is_trader_supported
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +45,7 @@ class SignalRouter:
 
         self.runtime_config = runtime_config
 
-    def is_trader_supported(self, trader: str) -> bool:
+    async def is_trader_supported(self, trader: str) -> bool:
         """
         Check if a trader is supported.
 
@@ -52,9 +55,9 @@ class SignalRouter:
         Returns:
             bool: True if trader is supported, False otherwise
         """
-        return is_trader_supported(trader)
+        return await is_trader_supported(trader)
 
-    def get_exchange_for_trader(self, trader: str) -> ExchangeType:
+    async def get_exchange_for_trader(self, trader: str) -> ExchangeType:
         """
         Get the exchange type for a given trader.
 
@@ -64,7 +67,7 @@ class SignalRouter:
         Returns:
             ExchangeType: The exchange that should handle this trader's signals
         """
-        return get_exchange_for_trader(trader)
+        return await get_exchange_for_trader(trader)
 
         logger.info("SignalRouter initialized")
 
@@ -106,7 +109,7 @@ class SignalRouter:
         """
         try:
             # Determine which exchange to use
-            exchange_type = get_exchange_for_trader(trader)
+            exchange_type = await get_exchange_for_trader(trader)
 
             logger.info(f"Routing signal from trader {trader} to {exchange_type.value} exchange")
 
@@ -156,7 +159,7 @@ class SignalRouter:
         """
         try:
             # Determine which exchange to use
-            exchange_type = get_exchange_for_trader(trader)
+            exchange_type = await get_exchange_for_trader(trader)
 
             logger.info(f"Routing follow-up signal from trader {trader} to {exchange_type.value} exchange")
 
@@ -190,7 +193,7 @@ class SignalRouter:
         """
         try:
             # Determine which exchange to use
-            exchange_type = get_exchange_for_trader(trader)
+            exchange_type = await get_exchange_for_trader(trader)
 
             logger.info(f"Routing alert signal from trader {trader} to {exchange_type.value} exchange")
 
