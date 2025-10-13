@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from src.database import TradeRepository, AlertRepository, Trade, Alert
 from src.database.core.connection_manager import connection_manager
-from src.config.trader_config import get_exchange_for_trader, ExchangeType
+from src.services.trader_config_service import get_exchange_for_trader, ExchangeType
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class PositionCloseService:
     async def close_position_by_trade(self, trade: Trade, reason: str = "active_futures_closed") -> Tuple[bool, Dict[str, Any]]:
         """Close a position for a specific trade."""
         try:
-            exchange_type = get_exchange_for_trader(trade.trader)
+            exchange_type = await get_exchange_for_trader(trade.trader)
 
             if exchange_type == ExchangeType.BINANCE:
                 return await self._close_binance_position(trade, reason)
@@ -68,7 +68,7 @@ class PositionCloseService:
                 "position_size": trade.position_size,
                 "entry_price": trade.entry_price,
                 "exchange_order_id": trade.exchange_order_id,
-                "binance_response": trade.binance_response
+                "exchange_response": getattr(trade, 'exchange_response', None) or getattr(trade, 'binance_response', None)
             }
 
             success, response = await trading_engine.close_position_at_market(
@@ -106,7 +106,7 @@ class PositionCloseService:
                 "position_size": trade.position_size,
                 "entry_price": trade.entry_price,
                 "exchange_order_id": trade.exchange_order_id,
-                "kucoin_response": trade.kucoin_response
+                "exchange_response": getattr(trade, 'exchange_response', None) or getattr(trade, 'kucoin_response', None)
             }
 
             success, response = await trading_engine.close_position_at_market(
@@ -261,7 +261,7 @@ class PositionCloseService:
     async def get_position_status(self, trade: Trade) -> Dict[str, Any]:
         """Get current position status for a trade."""
         try:
-            exchange_type = get_exchange_for_trader(trade.trader)
+            exchange_type = await get_exchange_for_trader(trade.trader)
 
             if exchange_type == ExchangeType.BINANCE:
                 return await self._get_binance_position_status(trade)

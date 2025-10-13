@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from discord_bot.endpoints.discord_endpoint import router as discord_router
+from discord_bot.endpoints.trader_config_endpoints import router as trader_config_router
 from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
     sync_trade_statuses_with_binance,
@@ -106,6 +107,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Rubicon Trading Bot - Discord Service", lifespan=lifespan)
 
     app.include_router(discord_router, prefix="/api/v1", tags=["discord"])
+    app.include_router(trader_config_router, prefix="/api/v1", tags=["trader-config"])
 
     @app.get("/")
     async def root():

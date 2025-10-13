@@ -63,10 +63,10 @@ class TradeOperations:
             return False
 
     async def update_trade_with_original_response(self, trade_id: int, original_response: Dict[str, Any]) -> bool:
-        """Update trade with original Binance response."""
+        """Update trade with original exchange response and extract key fields."""
         try:
             updates = {
-                'binance_response': original_response,
+                'exchange_response': original_response,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
@@ -83,6 +83,30 @@ class TradeOperations:
             if isinstance(original_response, dict) and 'stop_loss_order_id' in original_response:
                 updates['stop_loss_order_id'] = str(original_response['stop_loss_order_id'])
                 logger.info(f"Stored stop_loss_order_id {original_response['stop_loss_order_id']} for trade {trade_id}")
+
+            # Extract entry price and position size from the response
+            if isinstance(original_response, dict):
+                # For MARKET orders, use avgPrice if available, otherwise use price
+                entry_price = None
+                if 'avgPrice' in original_response and original_response['avgPrice']:
+                    entry_price = float(original_response['avgPrice'])
+                elif 'price' in original_response and original_response['price']:
+                    entry_price = float(original_response['price'])
+
+                if entry_price and entry_price > 0:
+                    updates['entry_price'] = entry_price
+                    logger.info(f"Stored entry_price {entry_price} for trade {trade_id}")
+
+                # Extract position size (quantity)
+                position_size = None
+                if 'executedQty' in original_response and original_response['executedQty']:
+                    position_size = float(original_response['executedQty'])
+                elif 'origQty' in original_response and original_response['origQty']:
+                    position_size = float(original_response['origQty'])
+
+                if position_size and position_size > 0:
+                    updates['position_size'] = position_size
+                    logger.info(f"Stored position_size {position_size} for trade {trade_id}")
 
             # Update trade status from "pending" to the status from response
             if isinstance(original_response, dict) and 'status' in original_response:

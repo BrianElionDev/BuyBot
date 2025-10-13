@@ -42,69 +42,36 @@ def initialize_clients() -> tuple[Optional[DiscordBot], Optional[Client]]:
     bot = DiscordBot()
     return bot, supabase
 
-def safe_parse_sync_order_response(sync_order_response: str) -> dict:
-    """Safely parse sync_order_response field which is stored as text but may contain JSON."""
-    if isinstance(sync_order_response, dict):
-        return sync_order_response
-    elif isinstance(sync_order_response, str):
-        # Handle empty or invalid strings
-        if not sync_order_response or sync_order_response.strip() == '':
+def safe_parse_exchange_response(exchange_response: str) -> dict:
+    """Safely parse exchange_response field (JSON or plain text)."""
+    if isinstance(exchange_response, dict):
+        return exchange_response
+    elif isinstance(exchange_response, str):
+        if not exchange_response or exchange_response.strip() == '':
             return {}
-
-        # Try to parse as JSON
         try:
-            return json.loads(sync_order_response.strip())
+            return json.loads(exchange_response.strip())
         except (json.JSONDecodeError, ValueError):
-            # If it's not valid JSON, treat it as a plain text error message
-            return {"error": sync_order_response.strip()}
+            return {"error": exchange_response.strip()}
     else:
         return {}
 
+# Backward-compatible alias
 def safe_parse_binance_response(binance_response: str) -> dict:
-    """Safely parse binance_response field which is stored as text but may contain JSON."""
-    if isinstance(binance_response, dict):
-        return binance_response
-    elif isinstance(binance_response, str):
-        # Handle empty or invalid strings
-        if not binance_response or binance_response.strip() == '':
-            return {}
+    return safe_parse_exchange_response(binance_response)
 
-        # Try to parse as JSON
-        try:
-            return json.loads(binance_response.strip())
-        except (json.JSONDecodeError, ValueError):
-            # If it's not valid JSON, treat it as a plain text error message
-            return {"error": binance_response.strip()}
-    else:
-        return {}
 
-def extract_order_info_from_binance_response(binance_response: str) -> tuple[Optional[str], Optional[str]]:
-    """
-    Extract orderId and symbol from binance_response text field.
-    The binance_response is stored as text but contains JSON-like structure.
-
-    Args:
-        binance_response: Text field from binance_response column
-
-    Returns:
-        tuple of (orderId, symbol) or (None, None) if parsing fails
-    """
+def extract_order_info_from_exchange_response(exchange_response: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract orderId and symbol from exchange_response (generic)."""
     try:
-        # Use safe parsing
-        response_data = safe_parse_binance_response(binance_response)
-
-        # Extract orderId and symbol from parsed data
-        order_id = str(response_data.get('orderId', ''))
-        symbol = response_data.get('symbol', '')
-
+        data = safe_parse_exchange_response(exchange_response)
+        order_id = str(data.get('orderId', ''))
+        symbol = data.get('symbol', '')
         if order_id and symbol:
             return order_id, symbol
-        else:
-            logging.info(f"No valid order data found in response")
-            return None, None
-
+        return None, None
     except Exception as e:
-        logging.error(f"Error extracting order info: {e}")
+        logging.error(f"Error extracting generic order info: {e}")
         return None, None
 
 async def process_pending_trades(bot: DiscordBot, supabase: Client):
@@ -383,9 +350,10 @@ def extract_symbol_from_trade(trade: dict) -> Optional[str]:
             pass
 
     # If still no symbol, try to extract from binance_response
-    if not symbol and trade.get('binance_response'):
+    if not symbol and (trade.get('exchange_response') or trade.get('binance_response')):
         try:
-            order_details = extract_order_details_from_response(trade['binance_response'])
+            raw = trade.get('exchange_response') or trade.get('binance_response')
+            order_details = extract_order_details_from_response(raw)
             symbol = order_details.get('symbol')
             if symbol and symbol.endswith('USDT'):
                 symbol = symbol[:-4]  # Remove USDT suffix
@@ -395,13 +363,12 @@ def extract_symbol_from_trade(trade: dict) -> Optional[str]:
     return symbol
 
 
-def extract_order_details_from_response(binance_response: str) -> dict:
+def extract_order_details_from_response(exchange_response: str) -> dict:
     """
-    Extract order details from binance_response with robust error handling.
+    Extract order details from exchange_response with robust error handling.
     """
     try:
-        # Use safe parsing
-        response_data = safe_parse_binance_response(binance_response)
+        response_data = safe_parse_exchange_response(exchange_response)
 
         if not isinstance(response_data, dict):
             return {}
@@ -437,9 +404,9 @@ async def validate_database_accuracy_enhanced(bot: DiscordBot, binance_orders: l
     # Check for orders in database but not on Binance
     db_order_ids = set()
     for trade in db_trades:
-        binance_response = trade.get('binance_response', '')
-        if binance_response:
-            order_details = extract_order_details_from_response(binance_response)
+        ex_resp = trade.get('exchange_response') or trade.get('binance_response', '')
+        if ex_resp:
+            order_details = extract_order_details_from_response(ex_resp)
             order_id = order_details.get('orderId')
             if order_id:
                 db_order_ids.add(str(order_id))
@@ -489,17 +456,17 @@ async def sync_orders_to_database_enhanced(bot: DiscordBot, supabase: Client, bi
     # Create lookup for database trades by orderId
     db_trades_by_order_id = {}
     for trade in db_trades:
-        # Try sync_order_response first, then fallback to binance_response
+        # Try sync_order_response first, then fallback to exchange_response
         sync_order_response = trade.get('sync_order_response', '')
-        binance_response = trade.get('binance_response', '')
+        ex_resp = trade.get('exchange_response') or trade.get('binance_response', '')
 
         if sync_order_response:
             order_details = extract_order_details_from_response(sync_order_response)
             order_id = order_details.get('orderId')
             if order_id:
                 db_trades_by_order_id[str(order_id)] = trade
-        elif binance_response:
-            order_details = extract_order_details_from_response(binance_response)
+        elif ex_resp:
+            order_details = extract_order_details_from_response(ex_resp)
             order_id = order_details.get('orderId')
             if order_id:
                 db_trades_by_order_id[str(order_id)] = trade
@@ -927,12 +894,12 @@ async def sync_pnl_data_with_binance(bot, supabase):
                 # Process each trade for this symbol
                 for trade in symbol_trades:
                     try:
-                        # Extract orderId from sync_order_response or binance_response
+                        # Extract orderId from sync_order_response or exchange_response
                         sync_order_response = trade.get('sync_order_response', '')
-                        binance_response = trade.get('binance_response', '')
+                        ex_resp = trade.get('exchange_response') or trade.get('binance_response', '')
                         order_id = None
 
-                        # Try sync_order_response first, then fallback to binance_response
+                        # Try sync_order_response first, then fallback to exchange_response
                         if isinstance(sync_order_response, dict) and 'orderId' in sync_order_response:
                             order_id = sync_order_response['orderId']
                         elif isinstance(sync_order_response, str):
@@ -944,15 +911,15 @@ async def sync_pnl_data_with_binance(bot, supabase):
                             except:
                                 pass
 
-                        # Fallback to binance_response if sync_order_response doesn't have orderId
+                        # Fallback to exchange_response if sync_order_response doesn't have orderId
                         if not order_id:
-                            if isinstance(binance_response, dict) and 'orderId' in binance_response:
-                                order_id = binance_response['orderId']
-                            elif isinstance(binance_response, str):
+                            if isinstance(ex_resp, dict) and 'orderId' in ex_resp:
+                                order_id = ex_resp['orderId']
+                            elif isinstance(ex_resp, str):
                                 # Try to parse JSON response
                                 try:
                                     import json
-                                    response_data = json.loads(binance_response)
+                                    response_data = json.loads(ex_resp)
                                     order_id = response_data.get('orderId')
                                 except:
                                     pass

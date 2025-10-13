@@ -56,21 +56,42 @@ class KucoinTransactionFetcher:
                 kucoin_symbol = self.symbol_converter.convert_bot_to_kucoin_futures(symbol)
                 logger.info(f"Converted {symbol} to KuCoin format: {kucoin_symbol}")
 
-            # Fetch both trade history and income history
-            trades = await self._fetch_trade_history(kucoin_symbol, start_time, end_time, limit)
-            income_records = await self._fetch_income_history(kucoin_symbol, start_time, end_time, limit)
+            # Respect KuCoin 7-day window: chunk requests if needed
+            window_ms = 7 * 24 * 60 * 60 * 1000
+            chunks: List[Tuple[int, int]] = []
+            if start_time and end_time and end_time > start_time:
+                cursor = start_time
+                while cursor < end_time:
+                    chunk_end = min(cursor + window_ms, end_time)
+                    chunks.append((cursor, chunk_end))
+                    cursor = chunk_end
+            else:
+                # Default to last 24h if no times provided
+                now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+                chunks.append((now_ms - 24 * 60 * 60 * 1000, now_ms))
+
+            # Fetch both trade history and income history across chunks
+            all_trades: List[Dict[str, Any]] = []
+            all_income: List[Dict[str, Any]] = []
+            for chunk_start, chunk_end in chunks:
+                trades = await self._fetch_trade_history(kucoin_symbol, chunk_start, chunk_end, limit)
+                income_records = await self._fetch_income_history(kucoin_symbol, chunk_start, chunk_end, limit)
+                if trades:
+                    all_trades.extend(trades)
+                if income_records:
+                    all_income.extend(income_records)
 
             # Transform and combine all records
             all_transactions = []
 
-            # Transform trades
-            for trade in trades:
+            # Transform trades -> COMMISSION entries (align with DB usage)
+            for trade in all_trades:
                 transaction = self._transform_trade_to_transaction(trade, symbol)
                 if transaction:
                     all_transactions.append(transaction)
 
             # Transform income records
-            for income in income_records:
+            for income in all_income:
                 transaction = self._transform_income_to_transaction(income, symbol)
                 if transaction:
                     all_transactions.append(transaction)
@@ -152,15 +173,12 @@ class KucoinTransactionFetcher:
                 # Convert from KuCoin format to bot format
                 symbol = self.symbol_converter.convert_kucoin_to_bot(symbol)
 
-            # Determine transaction type based on trade side
-            transaction_type = f"TRADE_{side.upper()}"
-
-            # Create transaction record
+            # Map to COMMISSION entry (negative fee), matching existing table semantics
             transaction = {
                 'time': time_timestampz,
-                'type': transaction_type,
-                'amount': size,  # Trade size
-                'asset': fee_currency,  # Use fee currency as asset
+                'type': 'COMMISSION',
+                'amount': -abs(fee),
+                'asset': fee_currency,
                 'symbol': symbol,
                 'exchange': 'kucoin',
                 'raw_data': {
@@ -168,6 +186,7 @@ class KucoinTransactionFetcher:
                     'side': side,
                     'trade_type': trade_type,
                     'price': price,
+                    'size': size,
                     'fee': fee,
                     'fee_currency': fee_currency
                 }

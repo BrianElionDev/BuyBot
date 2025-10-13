@@ -37,9 +37,12 @@ class ActiveFuturesSyncService:
         self.active_futures_repo = ActiveFuturesRepository(db_manager)
         self.trade_repo = TradeRepository(db_manager)
         self.alert_repo = AlertRepository(db_manager)
-        # Load target traders from configuration
+        # Load target traders from database configuration with fallback
+        from src.services.trader_config_service import trader_config_service
         from config import settings
-        self.target_traders = getattr(settings, 'TARGET_TRADERS', ["@Johnny", "@Tareeq"]) or ["@Johnny", "@Tareeq"]
+        self.trader_config_service = trader_config_service
+        self.target_traders = []  # Will be loaded dynamically from database
+        self.fallback_traders = getattr(settings, 'TARGET_TRADERS', ["@Johnny", "@Tareeq"]) or ["@Johnny", "@Tareeq"]
         self.last_sync_time = None
         # Add thread safety for concurrent access
         self._sync_lock = asyncio.Lock()
@@ -48,6 +51,18 @@ class ActiveFuturesSyncService:
         """Initialize the service."""
         try:
             await self.db_manager.initialize()
+
+            # Load supported traders from database with fallback
+            try:
+                self.target_traders = await self.trader_config_service.get_supported_traders()
+                if not self.target_traders:
+                    logger.warning("No traders found in database, using fallback configuration")
+                    self.target_traders = self.fallback_traders
+                logger.info(f"Loaded {len(self.target_traders)} supported traders: {self.target_traders}")
+            except Exception as e:
+                logger.error(f"Failed to load traders from database: {e}, using fallback")
+                self.target_traders = self.fallback_traders
+
             logger.info("ActiveFuturesSyncService initialized successfully")
             return True
         except Exception as e:
@@ -272,9 +287,9 @@ class ActiveFuturesSyncService:
             from src.core.position_manager import PositionManager
             from src.exchange.binance.binance_exchange import BinanceExchange
             from src.exchange.kucoin.kucoin_exchange import KucoinExchange
-            from src.config.trader_config import get_exchange_for_trader
+            from src.services.trader_config_service import get_exchange_for_trader
 
-            exchange_type = get_exchange_for_trader(trade.trader)
+            exchange_type = await get_exchange_for_trader(trade.trader)
 
             if exchange_type.value == "binance":
                 exchange = BinanceExchange()
@@ -353,6 +368,15 @@ class ActiveFuturesSyncService:
     async def get_sync_status(self) -> Dict[str, Any]:
         """Get current synchronization status."""
         try:
+            # Refresh target traders from database with fallback
+            try:
+                self.target_traders = await self.trader_config_service.get_supported_traders()
+                if not self.target_traders:
+                    self.target_traders = self.fallback_traders
+            except Exception as e:
+                logger.error(f"Failed to refresh traders from database: {e}, using fallback")
+                self.target_traders = self.fallback_traders
+
             active_futures_count = len(await self.active_futures_repo.get_futures_by_traders_and_status(
                 self.target_traders, "ACTIVE"
             ))

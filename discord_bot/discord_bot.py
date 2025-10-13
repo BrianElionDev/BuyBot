@@ -158,16 +158,16 @@ class DiscordBot:
         try:
             logger.info(f"Processing initial signal from {signal.trader} (discord_id: {signal.discord_id})")
 
-            if not self.signal_router.is_trader_supported(signal.trader or ""):
+            if not await self.signal_router.is_trader_supported(signal.trader or ""):
                 logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
                 return {
                     "status": "rejected",
-                    "message": f"Trader {signal.trader} is not supported. Only @Johnny, @-Johnny, @-Tareeq, and @Tareeq are allowed.",
+                    "message": f"Trader {signal.trader} is not supported. Please check trader configuration in database.",
                     "exchange": "none"
                 }
 
             # Determine target exchange for this trader (e.g., '@-Tareeq' -> 'kucoin')
-            exchange_type = self.signal_router.get_exchange_for_trader(signal.trader or "")
+            exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader or "")
 
             # Validate required fields
             if not signal.discord_id or not signal.trader or not signal.content:
@@ -279,9 +279,9 @@ class DiscordBot:
                             except Exception as e:
                                 logger.error(f"Failed to send Telegram notification: {e}")
                         else:
-                            # If exchange_response is a string (error message), store it differently
+                            # If exchange_response is a string (error message), store it generically
                             await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
-                                'binance_response': str(exchange_response)
+                                'exchange_response': str(exchange_response)
                             })
 
                         return {
@@ -309,7 +309,7 @@ class DiscordBot:
                         except Exception as e:
                             logger.error(f"Failed to send Telegram notification: {e}")
 
-                        exchange_type = self.signal_router.get_exchange_for_trader(signal.trader)
+                        exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader)
 
                         return {
                             "status": "error",
@@ -390,15 +390,15 @@ class DiscordBot:
             logger.info(f"Processing update signal from trader {signal.trader}: {signal.content}")
 
             # Validate trader and determine exchange
-            if not self.signal_router.is_trader_supported(signal.trader or ""):
+            if not await self.signal_router.is_trader_supported(signal.trader or ""):
                 logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
                 return {
                     "status": "rejected",
-                    "message": f"Trader {signal.trader} is not supported. Only @Johnny, @-Johnny, @-Tareeq, and @Tareeq are allowed.",
+                    "message": f"Trader {signal.trader} is not supported. Please check trader configuration in database.",
                     "exchange": "none"
                 }
 
-            exchange_type = self.signal_router.get_exchange_for_trader(signal.trader or "")
+            exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader or "")
             logger.info(f"✅ Routing follow-up signal from {signal.trader} to {exchange_type.value} exchange")
 
             # Check for duplicate alerts
@@ -430,8 +430,9 @@ class DiscordBot:
                     updates = {
                         'status': 'PROCESSED' if result.get("status") == "success" else 'FAILED',
                         'parsed_alert': result.get('parsed_alert'),
-                        'binance_response': result.get('binance_response') if exchange_type.value == 'binance' else None,
-                        'kucoin_response': result.get('kucoin_response') if exchange_type.value == 'kucoin' else None,
+                        'exchange_response': result.get('exchange_response')
+                                           or result.get('binance_response')
+                                           or result.get('kucoin_response'),
                         'updated_at': datetime.now(timezone.utc).isoformat()
                     }
                     updates['exchange'] = exchange_type.value

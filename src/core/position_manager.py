@@ -88,7 +88,7 @@ class PositionManager:
             position_size = float(active_trade.get("position_size") or 0.0)
 
             if position_size <= 0:
-                initial_response = active_trade.get("binance_response")
+                initial_response = active_trade.get("exchange_response") or active_trade.get("binance_response") or active_trade.get("kucoin_response")
                 if isinstance(initial_response, dict):
                     position_size = float(initial_response.get('origQty') or 0.0)
 
