@@ -88,12 +88,14 @@ class KucoinTransactionFetcher:
             for trade in all_trades:
                 transaction = self._transform_trade_to_transaction(trade, symbol)
                 if transaction:
+                    transaction['exchange'] = 'kucoin'
                     all_transactions.append(transaction)
 
             # Transform income records
             for income in all_income:
                 transaction = self._transform_income_to_transaction(income, symbol)
                 if transaction:
+                    transaction['exchange'] = 'kucoin'
                     all_transactions.append(transaction)
 
             # Sort by time
