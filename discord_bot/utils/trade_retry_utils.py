@@ -20,7 +20,7 @@ from src.services.trader_config_service import trader_config_service
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def get_trader_filter(trader: str = None):
+def get_trader_filter(trader: Optional[str] = None) -> Dict[str, str]:
     """Get the trader filter for database queries."""
     if trader:
         return {"trader": trader}
@@ -349,7 +349,12 @@ def extract_symbol_from_trade(trade: dict) -> Optional[str]:
     # If still no symbol, try to extract from binance_response
     if not symbol and (trade.get('exchange_response') or trade.get('binance_response')):
         try:
-            raw = trade.get('exchange_response') or trade.get('binance_response')
+            raw = trade.get('exchange_response') or trade.get('binance_response') or ""
+            if not isinstance(raw, str):
+                try:
+                    raw = json.dumps(raw)
+                except Exception:
+                    raw = str(raw)
             order_details = extract_order_details_from_response(raw)
             symbol = order_details.get('symbol')
             if symbol and symbol.endswith('USDT'):
