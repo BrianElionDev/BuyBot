@@ -66,6 +66,7 @@ class NotificationManager:
         fill_price: float,
         fill_quantity: float,
         order_id: str,
+        exchange: str,
         commission: Optional[float] = None
     ) -> bool:
         """Send order fill notification"""
@@ -79,6 +80,7 @@ class NotificationManager:
                 fill_price=fill_price,
                 fill_quantity=fill_quantity,
                 order_id=order_id,
+                exchange=exchange,
                 commission=commission,
                 timestamp=datetime.now(timezone.utc)
             )
@@ -97,6 +99,7 @@ class NotificationManager:
         current_price: float,
         quantity: float,
         unrealized_pnl: float,
+        exchange: str,
         realized_pnl: Optional[float] = None
     ) -> bool:
         """Send PnL update notification"""
@@ -111,6 +114,7 @@ class NotificationManager:
                 current_price=current_price,
                 quantity=quantity,
                 unrealized_pnl=unrealized_pnl,
+                exchange=exchange,
                 realized_pnl=realized_pnl,
                 timestamp=datetime.now(timezone.utc)
             )
@@ -128,7 +132,8 @@ class NotificationManager:
         entry_price: float,
         sl_price: float,
         quantity: float,
-        realized_pnl: float
+        realized_pnl: float,
+        exchange: str
     ) -> bool:
         """Send stop-loss notification"""
         if not self.enabled:
@@ -142,6 +147,7 @@ class NotificationManager:
                 sl_price=sl_price,
                 quantity=quantity,
                 realized_pnl=realized_pnl,
+                exchange=exchange,
                 timestamp=datetime.now(timezone.utc)
             )
 
@@ -158,7 +164,8 @@ class NotificationManager:
         entry_price: float,
         tp_price: float,
         quantity: float,
-        realized_pnl: float
+        realized_pnl: float,
+        exchange: str
     ) -> bool:
         """Send take-profit notification"""
         if not self.enabled:
@@ -172,6 +179,7 @@ class NotificationManager:
                 tp_price=tp_price,
                 quantity=quantity,
                 realized_pnl=realized_pnl,
+                exchange=exchange,
                 timestamp=datetime.now(timezone.utc)
             )
 
