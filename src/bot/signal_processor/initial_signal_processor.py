@@ -36,6 +36,7 @@ class InitialSignalProcessor:
         self.fee_calculator = trading_engine.fee_calculator
         self.db_manager = trading_engine.db_manager
         self.trade_cooldowns = trading_engine.trade_cooldowns
+        self._symbol_locks: Dict[str, asyncio.Lock] = {}
 
     async def process_signal(
         self,
@@ -58,14 +59,25 @@ class InitialSignalProcessor:
         """
         logger.info(f"--- Processing CEX Signal for {coin_symbol} ---")
 
-        # Check cooldown
-        cooldown_key = f"cex_{coin_symbol}"
-        if time.time() - self.trade_cooldowns.get(cooldown_key, 0) < self.trading_engine.config.TRADE_COOLDOWN:
-            reason = f"Trade cooldown active for {coin_symbol}"
-            logger.info(reason)
-            return False, reason
+        try:
+            trader_id = getattr(self.trading_engine, 'trader_id', '') or ''
+            lock_key = f"{trader_id.lower()}::{coin_symbol.lower()}"
+            if lock_key not in self._symbol_locks:
+                self._symbol_locks[lock_key] = asyncio.Lock()
+            lock = self._symbol_locks[lock_key]
+        except Exception:
+            lock = asyncio.Lock()
 
-        # POSITION CONFLICT DETECTION - Check for existing positions
+        async with lock:
+
+            # Check cooldown
+            cooldown_key = f"cex_{coin_symbol}"
+            if time.time() - self.trade_cooldowns.get(cooldown_key, 0) < self.trading_engine.config.TRADE_COOLDOWN:
+                reason = f"Trade cooldown active for {coin_symbol}"
+                logger.info(reason)
+                return False, reason
+
+            # POSITION CONFLICT DETECTION - Check for existing positions
         try:
             from src.bot.position_management import PositionManager, SymbolCooldownManager
 
@@ -141,7 +153,6 @@ class InitialSignalProcessor:
 
         except Exception as e:
             logger.error(f"Error in position conflict detection: {e}")
-            # Continue with normal trade creation if conflict detection fails
             logger.info("Continuing with normal trade creation due to conflict detection error")
 
         # --- Pair Validation and Auto-Switching ---
@@ -228,11 +239,11 @@ class InitialSignalProcessor:
             if not position_validation[0]:
                 return False, position_validation[1] or "Position validation failed"
 
-        # --- Execute Trade ---
-        return await self._execute_trade(
-            trading_pair, coin_symbol, signal_price, position_type, order_type,
-            trade_amount, stop_loss, take_profits, entry_prices, is_futures
-        )
+            # --- Execute Trade ---
+            return await self._execute_trade(
+                trading_pair, coin_symbol, signal_price, position_type, order_type,
+                trade_amount, stop_loss, take_profits, entry_prices, is_futures
+            )
 
     async def _calculate_trade_amount(
         self,
