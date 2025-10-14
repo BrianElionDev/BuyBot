@@ -214,21 +214,25 @@ class DatabaseSync:
         try:
             updates = {
                 'updated_at': datetime.now(timezone.utc).isoformat(),
-                'sync_order_response': json.dumps(execution_data)
+                'sync_order_response': json.dumps(execution_data),
+                # Persist last seen execution data in unified exchange_response for UI/notifications
+                'exchange_response': json.dumps(execution_data)
             }
 
-            # Map Binance status to our status
-            status_mapping = {
-                'NEW': 'pending',
-                'PARTIALLY_FILLED': 'partial',
-                'FILLED': 'completed',
-                'CANCELED': 'cancelled',
-                'REJECTED': 'failed',
-                'EXPIRED': 'expired'
+            # Map Binance status to internal status and order_status enums
+            # Use canonical values defined in src/core/constants.py
+            binance_to_internal = {
+                'NEW': ('PENDING', 'NEW'),
+                'PARTIALLY_FILLED': ('OPEN', 'PARTIALLY_FILLED'),
+                'FILLED': ('CLOSED', 'FILLED'),
+                'CANCELED': ('CANCELLED', 'CANCELED'),
+                'REJECTED': ('FAILED', 'REJECTED'),
+                'EXPIRED': ('CANCELLED', 'EXPIRED')
             }
 
-            mapped_status = status_mapping.get(status, status.lower())
-            updates['status'] = mapped_status
+            status_pair = binance_to_internal.get(status, ('OPEN', status if isinstance(status, str) else 'UNKNOWN'))
+            updates['status'] = status_pair[0]
+            updates['order_status'] = status_pair[1]
 
             # Update quantities and prices
             if executed_qty > 0:
@@ -243,7 +247,7 @@ class DatabaseSync:
             response = self.db_manager.supabase.from_("trades").update(updates).eq("id", trade_id).execute()
 
             if response.data:
-                logger.info(f"Updated trade {trade_id} status to {mapped_status}")
+                logger.info(f"Updated trade {trade_id} status to {updates.get('status')} order_status {updates.get('order_status')}")
             else:
                 logger.warning(f"Failed to update trade {trade_id}")
 
