@@ -14,7 +14,7 @@ from typing import Optional, Dict, List, Tuple
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from discord_bot.discord_bot import DiscordBot
-from src.config.trader_config import TraderConfig
+from src.services.trader_config_service import trader_config_service
 
 # --- Setup ---
 load_dotenv()
@@ -81,8 +81,7 @@ async def process_pending_trades(bot: DiscordBot, supabase: Client):
     logging.info("--- Processing pending trades ---")
     try:
         cutoff = get_24hr_cutoff_iso()
-        # Process all supported traders
-        supported_traders = TraderConfig.get_supported_traders()
+        supported_traders = await trader_config_service.get_supported_traders()
         all_trades = []
 
         for trader in supported_traders:
@@ -111,8 +110,7 @@ async def process_cooldown_trades(bot: DiscordBot, supabase: Client):
     cooldown_pattern = "Trade cooldown active for%"
     try:
         cutoff = get_24hr_cutoff_iso()
-        # Process all supported traders
-        supported_traders = TraderConfig.get_supported_traders()
+        supported_traders = await trader_config_service.get_supported_traders()
         all_trades = []
 
         for trader in supported_traders:
@@ -140,8 +138,8 @@ async def process_empty_binance_response_trades(bot: DiscordBot, supabase: Clien
     logging.info("--- Processing trades with empty binance_response from all supported traders ---")
     try:
         cutoff = get_24hr_cutoff_iso()
-        # Process all supported traders
-        supported_traders = TraderConfig.get_supported_traders()
+        # Use DB-backed supported traders list (fallback handled in service)
+        supported_traders = await trader_config_service.get_supported_traders()
         all_trades = []
 
         for trader in supported_traders:
@@ -173,8 +171,7 @@ async def process_margin_insufficient_trades(bot: DiscordBot, supabase: Client):
     logging.info("--- Processing margin insufficient trades from all supported traders ---")
     pattern = '%APIError(code=-2019)%'
     try:
-        # Process all supported traders
-        supported_traders = TraderConfig.get_supported_traders()
+        supported_traders = await trader_config_service.get_supported_traders()
         all_trades = []
 
         for trader in supported_traders:
