@@ -413,6 +413,12 @@ class InitialSignalProcessor:
                     leverage_value = 1.0
 
             is_kucoin = 'kucoin' in self.exchange.__class__.__name__.lower()
+            if is_futures and not is_kucoin:
+                try:
+                    if leverage_value and hasattr(self.exchange, 'set_futures_leverage'):
+                        await self.exchange.set_futures_leverage(trading_pair, int(leverage_value))
+                except Exception as e:
+                    logger.warning(f"Failed to set leverage {leverage_value} for {trading_pair}: {e}")
             if order_type.upper() == 'MARKET':
                 if is_kucoin:
                     order = await self.exchange.create_futures_order(
