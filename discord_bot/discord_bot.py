@@ -489,6 +489,21 @@ class DiscordBot:
                 return result
             else:
                 logger.error(f"❌ Follow-up signal processing failed on {exchange_type.value}: {result.get('message')}")
+                # Send failure notification for trade update
+                try:
+                    fail_lines = [
+                        "❌ Trade Update Failed",
+                        f"Trader: {signal.trader}",
+                        f"Trade: {signal.trade}",
+                        f"Timestamp: {signal.timestamp}",
+                        "Content:",
+                        signal.content or "(no content)",
+                        "",
+                        f"Error: {result.get('message') or 'Unknown error'}"
+                    ]
+                    await self.notification_manager.telegram_service.send_message("\n".join(fail_lines))
+                except Exception as e:
+                    logger.error(f"Failed to send trade update failure notification: {e}")
                 return result
 
         except Exception as e:
