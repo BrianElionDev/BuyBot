@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.config.runtime_config import init_runtime_config, runtime_config as _runtime_config
+runtime_config = _runtime_config
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,8 @@ class TraderConfigService:
             from config.settings import SUPABASE_URL, SUPABASE_KEY
             if SUPABASE_URL and SUPABASE_KEY and _runtime_config is None:
                 init_runtime_config(SUPABASE_URL, SUPABASE_KEY)
+                from src.config.runtime_config import runtime_config as _rc
+                globals()['runtime_config'] = _rc
         except Exception:
             # Defer to callers; logs will show if still missing
             pass
@@ -358,9 +361,6 @@ class TraderConfigService:
                 "trader_id", variants
             ).execute()
 
-            # If nothing deleted and we have a canonical, try case-insensitive fallback
-            # Note: Supabase Python client doesn't expose affected row count directly;
-            # this best-effort deletion covers common cases.
             if not getattr(response, 'data', None):
                 canon = self._canonical(trader_id)
                 if canon:
