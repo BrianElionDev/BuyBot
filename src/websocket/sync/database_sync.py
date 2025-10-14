@@ -234,10 +234,10 @@ class DatabaseSync:
             updates['status'] = status_pair[0]
             updates['order_status'] = status_pair[1]
 
-            # Update quantities and prices
+            # Update quantities and prices using canonical columns
             if executed_qty > 0:
-                updates['quantity'] = executed_qty
-                updates['price'] = avg_price
+                updates['position_size'] = executed_qty
+                updates['entry_price'] = avg_price
 
             # Update PnL if available
             if realized_pnl != 0:
