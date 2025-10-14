@@ -7,6 +7,7 @@ import asyncio
 import sys
 import logging
 import os
+import json
 from datetime import datetime, timezone
 from config import settings
 from typing import Dict, Any, Optional
@@ -78,7 +79,8 @@ class WebSocketIntegrationExample:
                 # Update trade based on order status
                 updates: Dict[str, Any] = {
                     'updated_at': datetime.now(timezone.utc).isoformat(),
-                    'binance_response': str(data)
+                    'exchange_response': json.dumps(data),
+                    'sync_order_response': json.dumps(data)
                 }
 
                 if status == 'FILLED':
@@ -102,8 +104,15 @@ class WebSocketIntegrationExample:
                     logger.info(f"Trade {trade['id']} PARTIALLY_FILLED at {avg_price}")
 
                 elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
+                    terminal_map = {
+                        'CANCELED': ('CANCELLED', 'CANCELED'),
+                        'EXPIRED': ('CANCELLED', 'EXPIRED'),
+                        'REJECTED': ('FAILED', 'REJECTED')
+                    }
+                    pair = terminal_map.get(status, ('FAILED', status))
                     updates.update({
-                        'status': 'FAILED'
+                        'status': pair[0],
+                        'order_status': pair[1]
                     })
                     logger.warning(f"Trade {trade['id']} {status}")
 
