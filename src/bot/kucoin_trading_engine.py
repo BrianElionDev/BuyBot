@@ -241,10 +241,14 @@ class KucoinTradingEngine:
                 logger.info(reason)
                 return False, reason
 
-            # Get current price for validation from KuCoin
             current_price = await self.price_service.get_coin_price(coin_symbol, exchange="kucoin")
             if not current_price:
-                logger.error(f"Could not get current price for {coin_symbol} from KuCoin")
+                try:
+                    current_price = await self.price_service.get_coin_price(coin_symbol, exchange="binance")
+                except Exception:
+                    current_price = None
+            if not current_price:
+                logger.error(f"Could not get current price for {coin_symbol} from KuCoin (and fallback failed)")
                 return False, f"Could not get current price for {coin_symbol} from KuCoin"
 
             # Handle price range logic
@@ -259,8 +263,8 @@ class KucoinTradingEngine:
             # Validate symbol is supported and get the correct KuCoin symbol format
             is_supported = await self.kucoin_exchange.is_futures_symbol_supported(trading_pair)
             if not is_supported:
-                logger.error(f"Symbol {trading_pair} not supported on KuCoin")
-                return False, f"Symbol {trading_pair} not supported on KuCoin"
+                logger.error(f"Symbol {trading_pair} not listed on KuCoin Futures")
+                return False, f"Symbol {trading_pair} not listed on KuCoin Futures"
 
             # Get the correct KuCoin symbol format for order creation
             filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)

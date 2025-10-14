@@ -115,6 +115,30 @@ class BinanceExchange(ExchangeBase):
             return {}
 
     # Order Operations
+    async def set_futures_leverage(self, symbol: str, leverage: int) -> bool:
+        """Set futures leverage for a specific symbol.
+
+        Binance requires leverage to be set per symbol; do this before placing the order.
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            # Clamp leverage to Binance limits 1..125
+            lev = max(1, min(int(leverage), 125))
+            result = await self.client.futures_change_leverage(symbol=symbol, leverage=lev)
+            try:
+                logger.info(f"Set leverage result for {symbol}: {json.dumps(result)}")
+            except Exception:
+                logger.info(f"Set leverage result for {symbol}: {result}")
+            return True
+        except BinanceAPIException as e:
+            logger.error(f"Binance API error setting leverage for {symbol}: {e.message}")
+            return False
+        except Exception as e:
+            logger.error(f"Error setting leverage for {symbol}: {e}")
+            return False
+
     async def create_futures_order(self, pair: str, side: str, order_type: str,
                                  amount: float, price: Optional[float] = None,
                                  stop_price: Optional[float] = None,

@@ -31,6 +31,7 @@ from src.services.pricing.price_service import PriceService
 from src.exchange import BinanceExchange, KucoinExchange
 from discord_bot.websocket import DiscordBotWebSocketManager
 from config import settings
+from src.services.notifications.notification_manager import NotificationManager
 
 
 # Setup logging
@@ -111,9 +112,7 @@ class DiscordBot:
 
         self.signal_parser = DiscordSignalParser()
 
-        # Initialize Telegram notification service
-        from src.services.notifications.telegram_service import TelegramService
-        self.telegram_notifications = TelegramService()
+        self.notification_manager = NotificationManager()
 
         # Initialize WebSocket manager for real-time database sync
         self.websocket_manager = DiscordBotWebSocketManager(self, self.db_manager)
@@ -271,13 +270,24 @@ class DiscordBot:
                                 original_response=exchange_response
                             )
 
-                            # Send Telegram notification for successful trade
                             try:
-                                await self.telegram_notifications.send_message(
-                                    message=f"Trade executed successfully for {coin_symbol}: {exchange_response}"
+                                order_id = str(exchange_response.get('orderId') or exchange_response.get('order_id') or '')
+                                raw_avg = exchange_response.get('avgPrice') or exchange_response.get('price')
+                                entry_price_val = float(raw_avg) if raw_avg else float(signal_price)
+                                raw_qty = exchange_response.get('executedQty') or exchange_response.get('origQty') or trade_updates.get('position_size')
+                                quantity_val = float(raw_qty) if raw_qty else 0.0
+                                await self.notification_manager.send_trade_execution_notification(
+                                    coin_symbol,
+                                    position_type,
+                                    entry_price_val,
+                                    quantity_val,
+                                    order_id,
+                                    status='SUCCESS',
+                                    exchange=exchange_type.value,
+                                    error_message=None
                                 )
                             except Exception as e:
-                                logger.error(f"Failed to send Telegram notification: {e}")
+                                logger.error(f"Failed to send standardized execution notification: {e}")
                         else:
                             # If exchange_response is a string (error message), store it generically
                             await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
@@ -301,13 +311,19 @@ class DiscordBot:
                             'manual_verification_needed': True
                         })
 
-                        # Send Telegram notification for failed trade
                         try:
-                            await self.telegram_notifications.send_message(
-                                message=f"Trade execution failed for {coin_symbol}: {exchange_response}"
+                            await self.notification_manager.send_trade_execution_notification(
+                                coin_symbol,
+                                position_type,
+                                float(signal_price),
+                                float(parsed_signal.get('position_size') or 0.0),
+                                order_id=str((exchange_response or {}).get('orderId') or ''),
+                                status='FAILURE',
+                                exchange=exchange_type.value,
+                                error_message=str(exchange_response)
                             )
                         except Exception as e:
-                            logger.error(f"Failed to send Telegram notification: {e}")
+                            logger.error(f"Failed to send standardized failure notification: {e}")
 
                         exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader)
 
@@ -321,7 +337,6 @@ class DiscordBot:
                 except Exception as exec_error:
                     logger.error(f"Error executing trade for {parsed_signal['coin_symbol']}: {exec_error}")
 
-                    # Update trade with error using existing columns
                     await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                         'status': 'FAILED',
                         'sync_error_count': 1,

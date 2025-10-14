@@ -66,7 +66,10 @@ class TradeOperations:
         """Update trade with original exchange response and extract key fields."""
         try:
             updates = {
+                # Store unified exchange_response for UI/notifications
                 'exchange_response': original_response,
+                # Back-compat string field for any legacy readers
+                'binance_response': str(original_response) if original_response is not None else None,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
@@ -108,25 +111,22 @@ class TradeOperations:
                     updates['position_size'] = position_size
                     logger.info(f"Stored position_size {position_size} for trade {trade_id}")
 
-            # Update trade status from "pending" to the status from response
+            # Update trade status from "pending" to the status from response (set both status and order_status)
             if isinstance(original_response, dict) and 'status' in original_response:
                 response_status = original_response['status']
-                # Map Binance status to our internal status
-                if response_status == 'OPEN':
-                    updates['status'] = 'OPEN'
-                    updates['order_status'] = 'EXECUTED'
-                elif response_status == 'FILLED':
-                    updates['status'] = 'CLOSED'
-                    updates['order_status'] = 'FILLED'
-                elif response_status == 'CANCELED':
-                    updates['status'] = 'CANCELLED'
-                    updates['order_status'] = 'CANCELLED'
-                elif response_status == 'REJECTED':
-                    updates['status'] = 'FAILED'
-                    updates['order_status'] = 'REJECTED'
-                else:
-                    updates['status'] = response_status
-                    updates['order_status'] = response_status
+                # Map Binance status to internal canonical enums
+                binance_to_internal = {
+                    'NEW': ('PENDING', 'NEW'),
+                    'OPEN': ('OPEN', 'NEW'),
+                    'PARTIALLY_FILLED': ('OPEN', 'PARTIALLY_FILLED'),
+                    'FILLED': ('CLOSED', 'FILLED'),
+                    'CANCELED': ('CANCELLED', 'CANCELED'),
+                    'REJECTED': ('FAILED', 'REJECTED'),
+                    'EXPIRED': ('CANCELLED', 'EXPIRED')
+                }
+                status_pair = binance_to_internal.get(str(response_status).upper(), ('OPEN', str(response_status).upper()))
+                updates['status'] = status_pair[0]
+                updates['order_status'] = status_pair[1]
                 logger.info(f"Updated trade {trade_id} status to {updates.get('status')} and order_status to {updates.get('order_status')}")
 
             # Extract position size from tp_sl_orders if available
