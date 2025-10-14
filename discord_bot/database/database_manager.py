@@ -278,9 +278,14 @@ class DatabaseManager:
     async def insert_transaction_history(self, transaction_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Insert a single transaction record."""
         try:
+            # Ensure exchange is set
+            if 'exchange' not in transaction_data or not transaction_data.get('exchange'):
+                sym = (transaction_data.get('symbol') or '').upper()
+                # Heuristic: if symbol contains 'USDT' and no kucoin marker, assume binance
+                transaction_data['exchange'] = 'kucoin' if '-USDT' in sym or sym.endswith('USDTM') else 'binance'
             response = self.supabase.table("transaction_history").insert(transaction_data).execute()
             if response.data and len(response.data) > 0:
-                logger.info(f"Inserted transaction: {transaction_data.get('symbol', 'Unknown')} - {transaction_data.get('type', 'Unknown')}")
+                logger.info(f"Inserted transaction: {response.data[0].get('id')}")
                 return response.data[0]
             return None
         except Exception as e:
@@ -290,6 +295,11 @@ class DatabaseManager:
     async def insert_transaction_history_batch(self, transactions: List[Dict[str, Any]]) -> bool:
         """Insert multiple transaction records in batch."""
         try:
+            # Ensure exchange is set for all records
+            for tx in transactions:
+                if 'exchange' not in tx or not tx.get('exchange'):
+                    sym = (tx.get('symbol') or '').upper()
+                    tx['exchange'] = 'kucoin' if '-USDT' in sym or sym.endswith('USDTM') else 'binance'
             response = self.supabase.table("transaction_history").insert(transactions).execute()
             if response.data:
                 logger.info(f"Inserted {len(response.data)} transactions in batch")

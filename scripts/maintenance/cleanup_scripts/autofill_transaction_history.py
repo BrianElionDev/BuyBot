@@ -155,7 +155,8 @@ class AutoTransactionHistoryFiller:
                 'type': income_type,
                 'amount': amount,
                 'asset': asset,
-                'symbol': symbol
+                'symbol': symbol,
+                'exchange': 'binance'
             }
 
             return transaction

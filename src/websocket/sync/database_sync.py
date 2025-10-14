@@ -81,7 +81,7 @@ class DatabaseSync:
                 sync_data = TradeSyncData(
                     trade_id=str(trade_id),
                     order_id=str(order_id),
-                    symbol=symbol,
+                    symbol=str(symbol or ''),
                     status=status,
                     executed_qty=executed_qty,
                     avg_price=avg_price,
@@ -148,7 +148,7 @@ class DatabaseSync:
             Optional[BalanceSyncData]: Balance sync data
         """
         try:
-            asset = data.get('a')  # Asset
+            asset = str(data.get('a') or '')  # Asset (ensure string)
             balance_delta = float(data.get('d', 0))  # Balance delta
 
             sync_data = BalanceSyncData(
@@ -212,7 +212,7 @@ class DatabaseSync:
             realized_pnl: Realized PnL
         """
         try:
-            updates = {
+            updates: Dict[str, Any] = {
                 'updated_at': datetime.now(timezone.utc).isoformat(),
                 'sync_order_response': json.dumps(execution_data),
                 # Persist last seen execution data in unified exchange_response for UI/notifications
@@ -248,6 +248,30 @@ class DatabaseSync:
 
             if response.data:
                 logger.info(f"Updated trade {trade_id} status to {updates.get('status')} order_status {updates.get('order_status')}")
+                # Notify via Telegram based on status
+                try:
+                    from src.services.notifications.notification_manager import NotificationManager
+                    notifier = NotificationManager()
+                    # Only send on meaningful transitions
+                    if status == 'FILLED':
+                        # Prefer DB coin_symbol; fallback to execution symbol
+                        local_symbol = (trade.get('coin_symbol') or str(execution_data.get('s') or '')).replace('USDT','')
+                        await notifier.send_order_fill_notification(
+                            coin_symbol=local_symbol,
+                            position_type=trade.get('signal_type') or 'LONG',
+                            fill_price=avg_price,
+                            fill_quantity=executed_qty,
+                            order_id=str(trade.get('exchange_order_id') or ''),
+                            exchange='binance'
+                        )
+                    elif status in ['CANCELED', 'REJECTED', 'EXPIRED']:
+                        # Send a failure/terminal notification
+                        local_symbol = trade.get('coin_symbol') or str(execution_data.get('s') or '')
+                        msg = f"❌ Order {status} for {local_symbol} | ID: {trade.get('exchange_order_id', '')} | Price: {avg_price} | Qty: {executed_qty}"
+                        from src.services.notifications.telegram_service import TelegramService
+                        await TelegramService().send_message(msg)
+                except Exception as e:
+                    logger.error(f"Failed to send websocket execution notification: {e}")
             else:
                 logger.warning(f"Failed to update trade {trade_id}")
 
