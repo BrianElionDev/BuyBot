@@ -355,7 +355,7 @@ class SignalRouter:
             content = signal_data.get('content', '')
             discord_id = signal_data.get('discord_id', '')
             trader = signal_data.get('trader', '')
-            trade_reference = signal_data.get('trade', '')
+            trade_reference = (signal_data.get('trade', '') or '').strip()
 
             logger.info(f"Routing follow-up signal to Binance: {content}")
 
@@ -399,7 +399,7 @@ class SignalRouter:
             content = signal_data.get('content', '')
             discord_id = signal_data.get('discord_id', '')
             trader = signal_data.get('trader', '')
-            trade_reference = signal_data.get('trade', '')
+            trade_reference = (signal_data.get('trade', '') or '').strip()
 
             logger.info(f"Routing follow-up signal to KuCoin: {content}")
 
@@ -712,9 +712,45 @@ class SignalRouter:
             Dict[str, Any]: Trade data or None if not found
         """
         try:
-            # This would need to be implemented based on your database structure
-            # For now, return None to indicate not found
-            logger.warning(f"Trade lookup by discord_id not implemented: {discord_id}")
+            ref = (discord_id or "").strip()
+            if not ref:
+                return None
+
+            # We need database access via a Supabase client; use runtime_config.supabase directly
+            trade = None
+            try:
+                if self.runtime_config and getattr(self.runtime_config, 'supabase', None):
+                    resp = self.runtime_config.supabase.table("trades").select("*").eq("discord_id", ref).limit(1).execute()
+                    data = getattr(resp, 'data', None)
+                    if data:
+                        trade = data[0]
+            except Exception:
+                trade = None
+            if trade:
+                return trade
+
+            # Fallback 1: match by signal_id
+            try:
+                if self.runtime_config and getattr(self.runtime_config, 'supabase', None):
+                    resp = self.runtime_config.supabase.table("trades").select("*").eq("signal_id", ref).limit(1).execute()
+                    data = getattr(resp, 'data', None)
+                    if data:
+                        return data[0]
+            except Exception:
+                pass
+
+            # Fallback 2: numeric id
+            try:
+                numeric_id = int(ref)
+                if self.runtime_config and getattr(self.runtime_config, 'supabase', None):
+                    resp = self.runtime_config.supabase.table("trades").select("*").eq("id", numeric_id).limit(1).execute()
+                    data = getattr(resp, 'data', None)
+                    if data:
+                        return data[0]
+            except Exception:
+                pass
+
+            logger.info(f"No trade found by reference after fallbacks: {ref}")
             return None
         except Exception as e:
             logger.error(f"Error finding trade by discord_id {discord_id}: {e}")
