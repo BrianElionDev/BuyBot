@@ -450,6 +450,20 @@ class InitialSignalProcessor:
                     logger.error(f"Failed to resolve leverage from services: {e}")
                     leverage_value = 1.0
 
+            try:
+                if is_futures and leverage_value is not None and leverage_value > 0:
+                    usdt_amount = self.trading_engine.config.TRADE_AMOUNT
+                    notional_value = float(usdt_amount) * float(leverage_value)
+                    quantities = await self.exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
+                    min_qty = float(quantities[0])
+                    max_qty = float(quantities[1])
+                    recomputed_qty = max(min_qty, min(max_qty, notional_value / float(signal_price)))
+                    if abs(recomputed_qty - trade_amount) / max(trade_amount, 1e-9) > 0.01:
+                        logger.info(f"Adjusted futures quantity for leverage: {trade_amount} -> {recomputed_qty} ({leverage_value}x)")
+                    trade_amount = recomputed_qty
+            except Exception as e:
+                logger.warning(f"Failed to adjust quantity for leverage: {e}")
+
             is_kucoin = 'kucoin' in self.exchange.__class__.__name__.lower()
             if is_futures and not is_kucoin:
                 try:
