@@ -68,8 +68,6 @@ class TradeOperations:
             updates = {
                 # Store unified exchange_response for UI/notifications
                 'exchange_response': original_response,
-                # Back-compat string field for any legacy readers
-                'binance_response': str(original_response) if original_response is not None else None,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
@@ -212,8 +210,8 @@ class TradeOperations:
                 if sync_response and order_id in str(sync_response):
                     return trade
 
-                binance_response = trade.get('binance_response', '')
-                if binance_response and order_id in str(binance_response):
+                ex_resp = trade.get('exchange_response') or trade.get('binance_response', '')
+                if ex_resp and order_id in str(ex_resp):
                     return trade
 
             return None

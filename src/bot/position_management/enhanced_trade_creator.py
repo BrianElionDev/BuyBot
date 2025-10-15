@@ -272,7 +272,7 @@ class EnhancedTradeCreator:
             if result[0]:  # Success
                 update_data = {
                     'status': 'OPEN',
-                    'binance_response': str(result[1]) if isinstance(result[1], dict) else '',
+                    'exchange_response': result[1] if isinstance(result[1], dict) else None,
                     'updated_at': datetime.now(timezone.utc).isoformat()
                 }
             else:

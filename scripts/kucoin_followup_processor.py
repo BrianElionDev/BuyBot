@@ -286,7 +286,7 @@ class KuCoinFollowupProcessor:
 
             # Add response data based on status
             if status == "success":
-                updates["kucoin_response"] = message
+                updates["exchange_response"] = message
             else:
                 updates["sync_issues"] = [message]
 

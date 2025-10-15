@@ -442,7 +442,7 @@ class KucoinTradingEngine:
                     "status": "success",
                     "message": "Stop loss moved to break-even (KuCoin)",
                     "parsed_alert": parsed_alert,
-                    "kucoin_response": "Stop loss moved to break-even"
+                    "exchange_response": "Stop loss moved to break-even"
                 }
 
             elif action_type in ['stop_loss_hit', 'stopped_out', 'stop_loss_triggered', 'close_position']:
@@ -452,7 +452,7 @@ class KucoinTradingEngine:
                     "status": "success" if success else "error",
                     "message": response,
                     "parsed_alert": parsed_alert,
-                    "kucoin_response": response
+                    "exchange_response": response
                 }
 
             elif action_type in ['take_profit', 'profit_close', 'closed_in_profit']:
@@ -462,7 +462,7 @@ class KucoinTradingEngine:
                     "status": "success" if success else "error",
                     "message": response,
                     "parsed_alert": parsed_alert,
-                    "kucoin_response": response
+                    "exchange_response": response
                 }
 
             elif action_type in ['stopped_be', 'stop_be'] or 'stopped at be' in content.lower() or 'stopped breakeven' in content.lower():
@@ -472,7 +472,7 @@ class KucoinTradingEngine:
                     "status": "success" if success else "error",
                     "message": response,
                     "parsed_alert": parsed_alert,
-                    "kucoin_response": response
+                    "exchange_response": response
                 }
 
             elif 'limit order cancelled' in content.lower() or 'limit order canceled' in content.lower():
@@ -482,7 +482,7 @@ class KucoinTradingEngine:
                     "status": "success",
                     "message": "Limit order cancel acknowledged (KuCoin)",
                     "parsed_alert": parsed_alert,
-                    "kucoin_response": "Limit order cancel acknowledged"
+                    "exchange_response": "Limit order cancel acknowledged"
                 }
 
             elif 'limit order filled' in content.lower():
@@ -491,7 +491,7 @@ class KucoinTradingEngine:
                     "status": "success",
                     "message": "Limit order filled (KuCoin)",
                     "parsed_alert": parsed_alert,
-                    "kucoin_response": "Limit order filled"
+                    "exchange_response": "Limit order filled"
                 }
 
             else:
@@ -500,7 +500,7 @@ class KucoinTradingEngine:
                     "status": "error",
                     "message": f"Unknown follow-up signal: {content}",
                     "parsed_alert": parsed_alert,
-                    "kucoin_response": f"Unknown signal: {content}"
+                    "exchange_response": f"Unknown signal: {content}"
                 }
 
         except Exception as e:
@@ -509,7 +509,7 @@ class KucoinTradingEngine:
                 "status": "error",
                 "message": f"KuCoin follow-up error: {str(e)}",
                 "parsed_alert": signal_data.get('parsed_alert'),
-                "kucoin_response": f"Error: {str(e)}"
+                "exchange_response": f"Error: {str(e)}"
             }
 
     def get_exchange_type(self) -> str:

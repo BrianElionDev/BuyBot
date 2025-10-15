@@ -93,7 +93,7 @@ class DatabaseManager:
         """Update trade PnL and exit price."""
         return await self.trade_ops.update_trade_pnl(trade_id, pnl_usd, exit_price)
 
-    async def update_trade_failure(self, trade_id: int, error_message: str, binance_response: str = "", sync_issues: Optional[list] = None) -> bool:
+    async def update_trade_failure(self, trade_id: int, error_message: str, exchange_response: str = "", sync_issues: Optional[list] = None) -> bool:
         """
         Comprehensive method to update trade when it fails.
         This ensures all error information is properly stored for debugging and sync scripts.
@@ -101,7 +101,7 @@ class DatabaseManager:
         try:
             updates = {
                 'status': 'FAILED',
-                'binance_response': binance_response,
+                'exchange_response': exchange_response if exchange_response else None,
                 'sync_error_count': 1,
                 'manual_verification_needed': True,
                 'updated_at': datetime.now(timezone.utc).isoformat()
