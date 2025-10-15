@@ -245,6 +245,9 @@ class InitialSignalProcessor:
                 trade_amount, stop_loss, take_profits, entry_prices, is_futures
             )
 
+        # If we reach here, non-futures flow is not implemented in this processor
+        return False, "Spot trading flow not implemented in InitialSignalProcessor"
+
     async def _calculate_trade_amount(
         self,
         coin_symbol: str,
@@ -335,19 +338,32 @@ class InitialSignalProcessor:
             current_position_size = 0.0
             actual_leverage = 1.0
             try:
-                runtime_config = getattr(self.trading_engine, 'runtime_config', None)
-                trader_id = getattr(self.trading_engine, 'trader_id', None)
+                # Prefer TraderConfigService for consistent leverage resolution
+                from src.services.trader_config_service import trader_config_service
+                trader_id = getattr(self.trading_engine, 'trader_id', None) or ''
                 exch_name = self.exchange.__class__.__name__.lower()
                 exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
-                if runtime_config and trader_id:
-                    cfg = await runtime_config.get_trader_exchange_config(trader_id, exchange_key)
-                    actual_leverage = float(cfg.get('leverage', 1.0))
-                else:
-                    logger.warning("runtime_config or trader_id missing; defaulting leverage to 1x for validation")
-            except Exception as e:
-                logger.warning(f"Failed to get leverage from runtime config for validation: {e}")
 
-            for position in positions:
+                config = await trader_config_service.get_trader_config(trader_id)
+                if config and config.exchange.value == exchange_key:
+                    actual_leverage = float(config.leverage)
+                else:
+                    # Fallback to runtime_config if service not available/mismatch
+                    from src.config.runtime_config import runtime_config as _rc
+                    if _rc:
+                        cfg = await _rc.get_trader_exchange_config(trader_id, exchange_key)
+                        if isinstance(cfg, dict):
+                            actual_leverage = float(cfg.get('leverage', 1.0))
+                        else:
+                            actual_leverage = 1.0
+                    else:
+                        logger.warning("No trader config available; defaulting leverage to 1x for validation")
+            except Exception as e:
+                logger.warning(f"Failed to get leverage for validation: {e}")
+
+            for position in positions or []:
+                if not isinstance(position, dict):
+                    continue
                 if position.get('symbol') == trading_pair:
                     current_position_size = abs(float(position.get('positionAmt', 0)))
                     # Get actual leverage from position (fallback to previously resolved value)
@@ -407,20 +423,31 @@ class InitialSignalProcessor:
             leverage_value: Optional[float] = None
             if is_futures:
                 try:
-                    runtime_config = getattr(self.trading_engine, 'runtime_config', None)
-                    trader_id = getattr(self.trading_engine, 'trader_id', None)
-                    if runtime_config and trader_id:
-                        # Determine exchange string (binance/kucoin) from class name
-                        exch_name = self.exchange.__class__.__name__.lower()
-                        exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
-                        cfg = await runtime_config.get_trader_exchange_config(trader_id, exchange_key)
-                        leverage_value = float(cfg.get('leverage', 1.0))
-                        logger.info(f"Leverage from Supabase for trader {trader_id} on {exchange_key}: {leverage_value}")
+                    # Resolve leverage via TraderConfigService with robust normalization/variants
+                    from src.services.trader_config_service import trader_config_service
+                    trader_id = getattr(self.trading_engine, 'trader_id', None) or ''
+                    exch_name = self.exchange.__class__.__name__.lower()
+                    exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
+
+                    config = await trader_config_service.get_trader_config(trader_id)
+                    if config and config.exchange.value == exchange_key:
+                        leverage_value = float(config.leverage)
+                        logger.info(f"Leverage from TraderConfigService for trader {trader_id} on {exchange_key}: {leverage_value}")
                     else:
-                        logger.warning("runtime_config or trader_id missing; defaulting leverage to 1x")
-                        leverage_value = 1.0
+                        # Fall back to runtime_config direct call only if necessary
+                        from src.config.runtime_config import runtime_config as _rc
+                        if _rc:
+                            cfg = await _rc.get_trader_exchange_config(trader_id, exchange_key)
+                            if isinstance(cfg, dict):
+                                leverage_value = float(cfg.get('leverage', 1.0))
+                            else:
+                                leverage_value = 1.0
+                            logger.info(f"Leverage from RuntimeConfig fallback for trader {trader_id} on {exchange_key}: {leverage_value}")
+                        else:
+                            logger.warning("No trader config available; defaulting leverage to 1x")
+                            leverage_value = 1.0
                 except Exception as e:
-                    logger.error(f"Failed to resolve leverage from runtime config: {e}")
+                    logger.error(f"Failed to resolve leverage from services: {e}")
                     leverage_value = 1.0
 
             is_kucoin = 'kucoin' in self.exchange.__class__.__name__.lower()
@@ -473,24 +500,36 @@ class InitialSignalProcessor:
 
             try:
                 from src.services.notifications.trade_notification_service import trade_notification_service, TradeExecutionData
+                from typing import cast
 
-                order_id = order.get('orderId', 'Unknown')
+                order_dict = cast(dict, order)
+                order_id = order_dict.get('orderId', 'Unknown')
 
                 # For MARKET orders, use avgPrice if available (actual fill price), otherwise fallback to price or signal_price
                 fill_price = None
-                if order.get('avgPrice') and float(order.get('avgPrice', 0)) > 0:
-                    fill_price = float(order.get('avgPrice'))
-                elif order.get('price') and float(order.get('price', 0)) > 0:
-                    fill_price = float(order.get('price'))
+                avg_price_val = order_dict.get('avgPrice')
+                price_val = order_dict.get('price')
+                try:
+                    if isinstance(avg_price_val, (int, float, str)) and float(avg_price_val) > 0:
+                        fill_price = float(avg_price_val)
+                    elif isinstance(price_val, (int, float, str)) and float(price_val) > 0:
+                        fill_price = float(price_val)
+                except Exception:
+                    fill_price = None
                 else:
                     fill_price = signal_price
 
                 # Use executedQty if available (actual filled quantity), otherwise origQty or trade_amount
                 fill_quantity = None
-                if order.get('executedQty') and float(order.get('executedQty', 0)) > 0:
-                    fill_quantity = float(order.get('executedQty'))
-                elif order.get('origQty') and float(order.get('origQty', 0)) > 0:
-                    fill_quantity = float(order.get('origQty'))
+                executed_qty_val = order_dict.get('executedQty')
+                orig_qty_val = order_dict.get('origQty')
+                try:
+                    if isinstance(executed_qty_val, (int, float, str)) and float(executed_qty_val) > 0:
+                        fill_quantity = float(executed_qty_val)
+                    elif isinstance(orig_qty_val, (int, float, str)) and float(orig_qty_val) > 0:
+                        fill_quantity = float(orig_qty_val)
+                except Exception:
+                    fill_quantity = None
                 else:
                     fill_quantity = trade_amount
 
@@ -500,8 +539,8 @@ class InitialSignalProcessor:
                 notification_data = TradeExecutionData(
                     symbol=trading_pair,
                     position_type=position_type,
-                    entry_price=fill_price,
-                    quantity=fill_quantity,
+                    entry_price=float(fill_price if fill_price is not None else signal_price),
+                    quantity=float(fill_quantity if fill_quantity is not None else trade_amount),
                     order_id=str(order_id),
                     exchange=exchange_name,
                     timestamp=datetime.now(timezone.utc)
