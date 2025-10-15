@@ -355,13 +355,13 @@ class SignalRouter:
             content = signal_data.get('content', '')
             discord_id = signal_data.get('discord_id', '')
             trader = signal_data.get('trader', '')
+            trade_reference = signal_data.get('trade', '')
 
             logger.info(f"Routing follow-up signal to Binance: {content}")
 
-            # Find the trade associated with this signal
-            trade_row = await self._find_trade_by_discord_id(discord_id)
+            trade_row = await self._find_trade_by_discord_id(trade_reference)
             if not trade_row:
-                return {"status": "error", "message": f"No trade found for discord_id: {discord_id}"}
+                return {"status": "error", "message": f"No trade found for trade reference: {trade_reference}"}
 
             # Process the follow-up signal
             result = await self.binance_trading_engine.process_followup_signal(signal_data, trade_row)
@@ -399,13 +399,13 @@ class SignalRouter:
             content = signal_data.get('content', '')
             discord_id = signal_data.get('discord_id', '')
             trader = signal_data.get('trader', '')
+            trade_reference = signal_data.get('trade', '')
 
             logger.info(f"Routing follow-up signal to KuCoin: {content}")
 
-            # Find the trade associated with this signal
-            trade_row = await self._find_trade_by_discord_id(discord_id)
+            trade_row = await self._find_trade_by_discord_id(trade_reference)
             if not trade_row:
-                return {"status": "error", "message": f"No trade found for discord_id: {discord_id}"}
+                return {"status": "error", "message": f"No trade found for trade reference: {trade_reference}"}
 
             # Process the follow-up signal
             result = await self.kucoin_trading_engine.process_followup_signal(signal_data, trade_row)
