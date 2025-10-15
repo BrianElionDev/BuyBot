@@ -457,7 +457,24 @@ class InitialSignalProcessor:
                     quantities = await self.exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
                     min_qty = float(quantities[0])
                     max_qty = float(quantities[1])
-                    recomputed_qty = max(min_qty, min(max_qty, notional_value / float(signal_price)))
+                    raw_qty = notional_value / float(signal_price)
+
+                    # Round down to step size from LOT_SIZE filter when available
+                    step_size = None
+                    try:
+                        symbol_filters = await self.exchange.get_futures_symbol_filters(trading_pair)
+                        lot = symbol_filters.get('LOT_SIZE', {}) if symbol_filters else {}
+                        step_val = lot.get('stepSize')
+                        if step_val is not None:
+                            step_size = float(step_val)
+                    except Exception:
+                        step_size = None
+
+                    if step_size and step_size > 0:
+                        import math
+                        raw_qty = math.floor(raw_qty / step_size) * step_size
+
+                    recomputed_qty = max(min_qty, min(max_qty, raw_qty))
                     if abs(recomputed_qty - trade_amount) / max(trade_amount, 1e-9) > 0.01:
                         logger.info(f"Adjusted futures quantity for leverage: {trade_amount} -> {recomputed_qty} ({leverage_value}x)")
                     trade_amount = recomputed_qty

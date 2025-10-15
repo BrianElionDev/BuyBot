@@ -553,7 +553,6 @@ class FollowupSignalProcessor:
                     result[1]['aggregated_position_updated'] = True
 
                 try:
-                    # Normalize status before writing
                     from src.services.status.status_normalizer import normalize_status
                     update_fields = {
                         'status': normalize_status('MERGED'),
