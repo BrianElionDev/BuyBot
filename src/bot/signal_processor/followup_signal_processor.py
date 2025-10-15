@@ -552,6 +552,16 @@ class FollowupSignalProcessor:
                     result[1]['redirected_from_trade_id'] = secondary_trade['id']
                     result[1]['aggregated_position_updated'] = True
 
+                try:
+                    update_fields = {
+                        'status': 'MERGED',
+                        'merged_into_trade_id': primary_trade['id']
+                    }
+                    await self.db_manager.update_existing_trade(secondary_trade['id'], update_fields)
+                    logger.info(f"Marked secondary trade {secondary_trade['id']} as MERGED into {primary_trade['id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to mark secondary trade {secondary_trade['id']} as MERGED: {e}")
+
                 return result
             else:
                 logger.error(f"Failed to process followup alert via primary trade: {result[1]}")
