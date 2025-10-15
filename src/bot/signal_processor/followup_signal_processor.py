@@ -553,8 +553,10 @@ class FollowupSignalProcessor:
                     result[1]['aggregated_position_updated'] = True
 
                 try:
+                    # Normalize status before writing
+                    from src.services.status.status_normalizer import normalize_status
                     update_fields = {
-                        'status': 'MERGED',
+                        'status': normalize_status('MERGED'),
                         'merged_into_trade_id': primary_trade['id']
                     }
                     await self.db_manager.update_existing_trade(secondary_trade['id'], update_fields)
