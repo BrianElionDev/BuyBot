@@ -254,6 +254,12 @@ class NotificationManager:
     async def notify_entry_signal(payload: Dict[str, Any]) -> None:
         """Notify entry signal"""
         try:
+            from src.services.telegram.trader_filter import should_notify_trader
+            trader = payload.get('trader', '') if payload else ''
+            if not should_notify_trader(trader):
+                logger.debug(f"Skipping entry signal notification for trader '{trader}' (not in Supabase config)")
+                return
+
             text = format_entry_signal_payload(payload or {})
             svc = TelegramService()
             await svc.send_message(text, parse_mode="HTML")
@@ -264,6 +270,12 @@ class NotificationManager:
     async def notify_update_signal(payload: Dict[str, Any]) -> None:
         """Notify update signal"""
         try:
+            from src.services.telegram.trader_filter import should_notify_trader
+            trader = payload.get('trader', '') if payload else ''
+            if not should_notify_trader(trader):
+                logger.debug(f"Skipping update signal notification for trader '{trader}' (not in Supabase config)")
+                return
+
             text = format_update_signal_payload(payload or {})
             svc = TelegramService()
             await svc.send_message(text, parse_mode="HTML")
