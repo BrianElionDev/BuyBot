@@ -99,29 +99,73 @@ class FollowupSignalProcessor:
         # Check if trade was successfully executed (has exchange order)
         exchange_order_id = active_trade.get('exchange_order_id')
         binance_response = active_trade.get('binance_response', '')
+        exchange_response = active_trade.get('exchange_response', '')
+        kucoin_response = active_trade.get('kucoin_response', '')
 
-        # Parse binance response to get order ID if not in exchange_order_id
-        if not exchange_order_id and binance_response:
+        if not exchange_order_id:
             try:
                 import json
-                if isinstance(binance_response, str):
-                    response_data = json.loads(binance_response)
-                    exchange_order_id = response_data.get('orderId')
-            except:
+                if binance_response:
+                    if isinstance(binance_response, str):
+                        response_data = json.loads(binance_response)
+                    elif isinstance(binance_response, dict):
+                        response_data = binance_response
+                    else:
+                        response_data = None
+                    if isinstance(response_data, dict):
+                        exchange_order_id = response_data.get('orderId') or response_data.get('order_id')
+                        client_order_id = response_data.get('clientOrderId') or response_data.get('client_order_id')
+                    else:
+                        client_order_id = None
+                else:
+                    client_order_id = None
+
+                if (not exchange_order_id) and exchange_response:
+                    if isinstance(exchange_response, str):
+                        er = json.loads(exchange_response)
+                    elif isinstance(exchange_response, dict):
+                        er = exchange_response
+                    else:
+                        er = None
+                    if isinstance(er, dict):
+                        exchange_order_id = er.get('orderId') or er.get('order_id')
+                        client_order_id = client_order_id or er.get('clientOrderId') or er.get('client_order_id')
+
+                if (not exchange_order_id) and kucoin_response:
+                    if isinstance(kucoin_response, str):
+                        kr = json.loads(kucoin_response)
+                    elif isinstance(kucoin_response, dict):
+                        kr = kucoin_response
+                    else:
+                        kr = None
+                    if isinstance(kr, dict):
+                        exchange_order_id = kr.get('orderId') or kr.get('order_id') or kr.get('id')
+                        client_order_id = client_order_id or kr.get('clientOid')
+
+                if (not exchange_order_id) and client_order_id and hasattr(self.exchange, 'get_order_by_client_id'):
+                    try:
+                        coin_symbol = active_trade.get('coin_symbol') or ''
+                        symbol = f"{coin_symbol}USDT" if coin_symbol else None
+                        order_info = await self.exchange.get_order_by_client_id(client_order_id, symbol)
+                        if isinstance(order_info, dict):
+                            exchange_order_id = order_info.get('orderId') or order_info.get('order_id')
+                    except Exception:
+                        pass
+            except Exception:
                 pass
 
         if not exchange_order_id:
             return False, active_trade, f"Trade {trade_id} has no exchange order ID - original trade likely failed"
 
-        # Validate against live Binance data and get position size for position-requiring actions
+        if str(active_trade.get('status', '')).upper() == 'CLOSED':
+            return False, active_trade, f"Trade {trade_id} already closed"
+
         try:
             binance_status = await self.check_trade_status_on_binance(coin_symbol, exchange_order_id)
 
-            # Check position size for actions that require an open position
             position_requiring_actions = ['stop_loss_hit', 'take_profit_1', 'stops_to_be', 'tp1and_sl_to_be', 'position_closed']
             if action in position_requiring_actions:
                 if 'error' in binance_status:
-                    # Fallback to stored position_size if Binance check fails
                     logger.warning(f"Could not get live position data from Binance for {coin_symbol}: {binance_status['error']}. Using stored position_size.")
                     position_size = float(active_trade.get('position_size') or 0.0)
                 else:
