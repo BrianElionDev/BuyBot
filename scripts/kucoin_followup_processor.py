@@ -288,7 +288,7 @@ class KuCoinFollowupProcessor:
             if status == "success":
                 updates["exchange_response"] = message
             else:
-                updates["sync_issues"] = [message]
+                updates["sync_issues"] = message
 
             response = self.supabase.table("alerts").update(updates).eq("id", alert_id).execute()
 

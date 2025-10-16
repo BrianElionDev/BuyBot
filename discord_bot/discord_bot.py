@@ -207,7 +207,7 @@ class DiscordBot:
                     await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                         'status': 'FAILED',
                         'sync_error_count': 1,
-                        'sync_issues': ['Failed to parse signal or extract coin symbol'],
+                        'exchange_response': ['Processing issue:Failed to parse signal or extract coin symbol'],
                         'manual_verification_needed': True
                     })
                     return {"status": "error", "message": "Failed to parse signal or extract coin symbol"}
@@ -307,7 +307,7 @@ class DiscordBot:
                         await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                             'status': 'FAILED',
                             'sync_error_count': 1,
-                            'sync_issues': [f'Trade execution failed: {exchange_response}'],
+                            'exchange_response': [f'Trade execution failed: {exchange_response}'],
                             'manual_verification_needed': True
                         })
 
@@ -340,7 +340,7 @@ class DiscordBot:
                     await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                         'status': 'FAILED',
                         'sync_error_count': 1,
-                        'sync_issues': [f'Execution error: {str(exec_error)}'],
+                        'exchange_response': [f'Execution error: {str(exec_error)}'],
                         'manual_verification_needed': True
                     })
 

@@ -825,8 +825,42 @@ class KucoinExchange(ExchangeBase):
             all_symbols = await self.get_futures_symbols()
             symbol_converter.available_symbols = all_symbols
 
-            # Use symbol converter to find the correct format
-            mapped_symbol = symbol_converter.find_matching_symbol(symbol, all_symbols, "futures")
+            # Normalize symbol (same logic as is_futures_symbol_supported)
+            base = (symbol or "").strip().upper().lstrip('@').replace(' ', '')
+
+            # Normalize BTC to XBT for KuCoin
+            if base.startswith('BTC'):
+                base = base.replace('BTC', 'XBT', 1)
+            if base.startswith('BTC-'):
+                base = base.replace('BTC-', 'XBT-', 1)
+
+            # Try direct lookup first
+            if base in all_symbols:
+                mapped_symbol = base
+            else:
+                # Generate candidates (KuCoin Futures uses USDTM for perpetuals)
+                candidates = []
+                if base.endswith('USDTM'):
+                    candidates.append(base)
+                elif base.endswith('USDT'):
+                    # Convert USDT to USDTM for futures
+                    candidates.extend([base + 'M', base])
+                elif '-' in base:
+                    no_dash = base.replace('-', '')
+                    candidates.extend([no_dash + 'M', no_dash, base])
+                else:
+                    candidates.extend([f"{base}USDTM", f"{base}USDT", f"{base}-USDT"])
+
+                # Find first matching candidate
+                mapped_symbol = None
+                for cand in candidates:
+                    if cand in all_symbols:
+                        mapped_symbol = cand
+                        break
+
+                # Fallback to symbol converter
+                if not mapped_symbol:
+                    mapped_symbol = symbol_converter.find_matching_symbol(symbol, all_symbols, "futures")
 
             if not mapped_symbol:
                 logger.warning(f"Symbol {symbol} not found in KuCoin futures symbols")
@@ -940,20 +974,53 @@ class KucoinExchange(ExchangeBase):
             all_symbols = await self.get_futures_symbols()
             symbol_converter.available_symbols = all_symbols
 
-            # Use the new symbol converter to check support
-            is_supported = symbol_converter.is_symbol_supported(symbol, all_symbols, "futures")
+            base = (symbol or "").strip().upper().lstrip('@').replace(' ', '')
 
+            # Normalize BTC to XBT for KuCoin
+            if base.startswith('BTC'):
+                base = base.replace('BTC', 'XBT', 1)
+            if base.startswith('BTC-'):
+                base = base.replace('BTC-', 'XBT-', 1)
+
+            candidates = []
+            if base.endswith('USDTM'):
+                candidates.append(base)
+            elif base.endswith('USDT'):
+                # Convert USDT to USDTM for futures
+                candidates.extend([base + 'M', base])
+            elif '-' in base:
+                no_dash = base.replace('-', '')
+                candidates.extend([no_dash + 'M', no_dash, base])
+            else:
+                candidates.extend([f"{base}USDTM", f"{base}USDT", f"{base}-USDT"])
+
+            for cand in candidates:
+                if cand in all_symbols:
+                    logger.info(f"Symbol {symbol} is supported on KuCoin futures (as {cand})")
+                    return True
+
+            is_supported = symbol_converter.is_symbol_supported(symbol, all_symbols, "futures")
             if is_supported:
                 matching_symbol = symbol_converter.find_matching_symbol(symbol, all_symbols, "futures")
                 logger.info(f"Symbol {symbol} is supported on KuCoin futures (as {matching_symbol})")
-            else:
-                logger.warning(f"Symbol {symbol} not supported on KuCoin futures")
+                return True
 
-            return is_supported
+            logger.warning(f"Symbol {symbol} not supported on KuCoin futures (candidates tried: {candidates[:3]}...)")
+            return False
 
         except Exception as e:
             logger.error(f"Failed to check KuCoin symbol support for {symbol}: {e}")
             return False
+
+    def get_futures_trading_pair(self, coin_symbol: str) -> str:
+        """
+        Return a canonical pair used by our bot prior to KuCoin conversion.
+        We use COINUSDTM format for KuCoin Futures perpetuals.
+        """
+        try:
+            return f"{str(coin_symbol).upper()}USDTM"
+        except Exception:
+            return f"{coin_symbol}USDTM"
 
     async def validate_trade_amount(self, symbol: str, amount: float, price: float) -> Tuple[bool, Optional[str]]:
         """

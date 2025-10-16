@@ -111,6 +111,7 @@ class DatabaseManager:
                 updates['sync_issues'] = sync_issues
             else:
                 updates['sync_issues'] = [f'Trade execution failed: {error_message}']
+                updates['exchange_response'] = [f'Trade execution failed: {error_message}']
 
             # Update the trade
             success = await self.trade_ops.update_existing_trade(trade_id, updates)
