@@ -452,12 +452,20 @@ class InitialSignalProcessor:
 
             try:
                 if is_futures and leverage_value is not None and leverage_value > 0:
-                    usdt_amount = self.trading_engine.config.TRADE_AMOUNT
-                    notional_value = float(usdt_amount) * float(leverage_value)
+                    # CORRECT LEVERAGE CALCULATION:
+                    # With leverage, we want to control a larger position with our margin
+                    # Position Value = Margin × Leverage
+                    # Quantity = Position Value ÷ Price
+
+                    margin_amount = self.trading_engine.config.TRADE_AMOUNT  # Our actual capital (margin)
+                    position_value = float(margin_amount) * float(leverage_value)  # Total position value
+
                     quantities = await self.exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
                     min_qty = float(quantities[0])
                     max_qty = float(quantities[1])
-                    raw_qty = notional_value / float(signal_price)
+
+                    # Calculate quantity based on leveraged position value
+                    raw_qty = position_value / float(signal_price)
 
                     # Round down to step size from LOT_SIZE filter when available
                     step_size = None
@@ -475,6 +483,9 @@ class InitialSignalProcessor:
                         raw_qty = math.floor(raw_qty / step_size) * step_size
 
                     recomputed_qty = max(min_qty, min(max_qty, raw_qty))
+
+                    logger.info(f"Leverage calculation: Margin=${margin_amount}, Leverage={leverage_value}x, Position Value=${position_value}, Price=${signal_price}, Quantity={recomputed_qty}")
+
                     if abs(recomputed_qty - trade_amount) / max(trade_amount, 1e-9) > 0.01:
                         logger.info(f"Adjusted futures quantity for leverage: {trade_amount} -> {recomputed_qty} ({leverage_value}x)")
                     trade_amount = recomputed_qty
