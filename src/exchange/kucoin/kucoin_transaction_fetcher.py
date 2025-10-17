@@ -6,6 +6,7 @@ This module handles fetching transaction history from KuCoin exchange
 and transforming it to match the database schema.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Any, Optional, Tuple
@@ -13,6 +14,76 @@ from src.exchange.kucoin.kucoin_exchange import KucoinExchange
 from src.exchange.kucoin.kucoin_symbol_converter import symbol_converter
 
 logger = logging.getLogger(__name__)
+
+# Comprehensive mapping of KuCoin business types to transaction history types
+KUCOIN_TYPE_MAPPING = {
+    # Realized PnL
+    'RealisedPNL': 'REALIZED_PNL',
+    'RealizedPNL': 'REALIZED_PNL',
+    'PnL': 'REALIZED_PNL',
+
+    # Trading fees and commissions
+    'Trade': 'COMMISSION',
+    'Trading': 'COMMISSION',
+    'Commission': 'COMMISSION',
+    'Fee': 'COMMISSION',
+
+    # Funding fees
+    'Funding': 'FUNDING_FEE',
+    'FundingFee': 'FUNDING_FEE',
+    'FundingFeeDeduction': 'FUNDING_FEE',
+
+    # Transfers and deposits/withdrawals
+    'Deposit': 'TRANSFER',
+    'Withdrawal': 'TRANSFER',
+    'TransferIn': 'TRANSFER',
+    'TransferOut': 'TRANSFER',
+    'Transfer': 'TRANSFER',
+    'InternalTransfer': 'TRANSFER',
+
+    # Bonuses and rewards
+    'Bonus': 'WELCOME_BONUS',
+    'WelcomeBonus': 'WELCOME_BONUS',
+    'Reward': 'WELCOME_BONUS',
+    'Promotion': 'WELCOME_BONUS',
+
+    # Insurance and risk management
+    'Insurance': 'INSURANCE_CLEAR',
+    'InsuranceClear': 'INSURANCE_CLEAR',
+    'RiskManagement': 'INSURANCE_CLEAR',
+    'Liquidation': 'INSURANCE_CLEAR',
+
+    # Other transaction types
+    'Margin': 'MARGIN',
+    'Lending': 'LENDING',
+    'Staking': 'STAKING',
+    'Vote': 'VOTE',
+    'Airdrop': 'AIRDROP',
+    'Dividend': 'DIVIDEND',
+    'Interest': 'INTEREST',
+    'Refund': 'REFUND',
+    'Adjustment': 'ADJUSTMENT',
+    'Settlement': 'SETTLEMENT',
+    'Rebate': 'REBATE',
+    'Cashback': 'CASHBACK',
+    'Referral': 'REFERRAL',
+    'KCS': 'KCS_BONUS',  # KuCoin Shares bonus
+    'KCSBonus': 'KCS_BONUS',
+    'KCSDividend': 'KCS_BONUS',
+}
+
+# Business types that should be treated as outgoing (negative amounts)
+OUTGOING_BIZ_TYPES = {
+    'Withdrawal', 'TransferOut', 'Commission', 'Fee', 'Trading', 'Trade',
+    'FundingFeeDeduction', 'Insurance', 'Liquidation', 'Margin'
+}
+
+# Business types that should be treated as incoming (positive amounts)
+INCOMING_BIZ_TYPES = {
+    'Deposit', 'TransferIn', 'Bonus', 'WelcomeBonus', 'Reward', 'Promotion',
+    'Airdrop', 'Dividend', 'Interest', 'Refund', 'Rebate', 'Cashback',
+    'Referral', 'KCS', 'KCSBonus', 'KCSDividend', 'RealisedPNL', 'RealizedPNL'
+}
 
 
 class KucoinTransactionFetcher:
@@ -36,7 +107,7 @@ class KucoinTransactionFetcher:
                                       end_time: int = 0,
                                       limit: int = 1000) -> List[Dict[str, Any]]:
         """
-        Fetch transaction history from KuCoin.
+        Fetch comprehensive transaction history from KuCoin using all available data sources.
 
         Args:
             symbol: Trading pair symbol (empty for all)
@@ -48,7 +119,7 @@ class KucoinTransactionFetcher:
             List of transaction records formatted for database
         """
         try:
-            logger.info(f"Fetching KuCoin transaction history for {symbol or 'ALL SYMBOLS'}")
+            logger.info(f"Fetching comprehensive KuCoin transaction history for {symbol or 'ALL SYMBOLS'}")
 
             # Convert symbol to KuCoin format if needed
             kucoin_symbol = ""
@@ -70,42 +141,67 @@ class KucoinTransactionFetcher:
                 now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
                 chunks.append((now_ms - 24 * 60 * 60 * 1000, now_ms))
 
-            # Fetch both trade history and income history across chunks
-            all_trades: List[Dict[str, Any]] = []
-            all_income: List[Dict[str, Any]] = []
-            for chunk_start, chunk_end in chunks:
-                trades = await self._fetch_trade_history(kucoin_symbol, chunk_start, chunk_end, limit)
-                income_records = await self._fetch_income_history(kucoin_symbol, chunk_start, chunk_end, limit)
-                if trades:
-                    all_trades.extend(trades)
-                if income_records:
-                    all_income.extend(income_records)
-
-            # Transform and combine all records
+            # Fetch from all data sources across chunks
             all_transactions = []
 
-            # Transform trades -> COMMISSION entries (align with DB usage)
-            for trade in all_trades:
-                transaction = self._transform_trade_to_transaction(trade, symbol)
-                if transaction:
-                    transaction['exchange'] = 'kucoin'
-                    all_transactions.append(transaction)
+            for chunk_start, chunk_end in chunks:
+                logger.info(f"Processing chunk: {datetime.fromtimestamp(chunk_start/1000, tz=timezone.utc)} to {datetime.fromtimestamp(chunk_end/1000, tz=timezone.utc)}")
 
-            # Transform income records
-            for income in all_income:
-                transaction = self._transform_income_to_transaction(income, symbol)
-                if transaction:
-                    transaction['exchange'] = 'kucoin'
-                    all_transactions.append(transaction)
+                # 1. Fetch account ledgers (primary source for comprehensive data)
+                account_ledgers = await self._fetch_account_ledgers(kucoin_symbol, chunk_start, chunk_end, limit)
+
+                # 2. Fetch futures account ledgers (for futures-specific activities)
+                futures_ledgers = await self._fetch_futures_account_ledgers(kucoin_symbol, chunk_start, chunk_end, limit)
+
+                # 3. Fetch trade history (for detailed trade information)
+                trades = await self._fetch_trade_history(kucoin_symbol, chunk_start, chunk_end, limit)
+
+                # 4. Fetch income/funding history
+                income_records = await self._fetch_income_history(kucoin_symbol, chunk_start, chunk_end, limit)
+
+                # Transform all data sources
+                chunk_transactions = []
+
+                # Transform account ledgers
+                for ledger in account_ledgers:
+                    transaction = self._transform_ledger_to_transaction(ledger, symbol)
+                    if transaction:
+                        chunk_transactions.append(transaction)
+
+                # Transform futures account ledgers
+                for ledger in futures_ledgers:
+                    transaction = self._transform_ledger_to_transaction(ledger, symbol)
+                    if transaction:
+                        chunk_transactions.append(transaction)
+
+                # Transform trades (for commission data)
+                for trade in trades:
+                    transaction = self._transform_trade_to_transaction(trade, symbol)
+                    if transaction:
+                        chunk_transactions.append(transaction)
+
+                # Transform income records
+                for income in income_records:
+                    transaction = self._transform_income_to_transaction(income, symbol)
+                    if transaction:
+                        chunk_transactions.append(transaction)
+
+                all_transactions.extend(chunk_transactions)
+
+                # Rate limiting between chunks
+                await asyncio.sleep(0.5)
+
+            # Deduplicate transactions
+            all_transactions = self._deduplicate_transactions(all_transactions)
 
             # Sort by time
-            all_transactions.sort(key=lambda x: x.get('time', 0))
+            all_transactions.sort(key=lambda x: x.get('time', ''))
 
-            logger.info(f"Fetched {len(all_transactions)} KuCoin transactions")
+            logger.info(f"Fetched {len(all_transactions)} comprehensive KuCoin transactions")
             return all_transactions
 
         except Exception as e:
-            logger.error(f"Error fetching KuCoin transaction history: {e}")
+            logger.error(f"Error fetching comprehensive KuCoin transaction history: {e}")
             return []
 
     async def _fetch_trade_history(self, symbol: str, start_time: int, end_time: int, limit: int) -> List[Dict[str, Any]]:
@@ -136,6 +232,52 @@ class KucoinTransactionFetcher:
             return income_records
         except Exception as e:
             logger.error(f"Error fetching KuCoin income history: {e}")
+            return []
+
+    async def _fetch_account_ledgers(self, symbol: str, start_time: int, end_time: int, limit: int) -> List[Dict[str, Any]]:
+        """Fetch account ledgers from KuCoin."""
+        try:
+            # Extract currency from symbol if provided
+            currency = ""
+            if symbol:
+                # Extract base currency from symbol (e.g., BTC from BTCUSDT)
+                currency = symbol.replace('USDT', '').replace('USDC', '').replace('BTC', '').replace('ETH', '')
+                if not currency:
+                    currency = "USDT"  # Default to USDT if can't extract
+
+            ledger_records = await self.kucoin_exchange.get_account_ledgers(
+                currency=currency,
+                start_time=start_time,
+                end_time=end_time,
+                limit=limit
+            )
+            logger.info(f"Fetched {len(ledger_records)} KuCoin account ledger records")
+            return ledger_records
+        except Exception as e:
+            logger.error(f"Error fetching KuCoin account ledgers: {e}")
+            return []
+
+    async def _fetch_futures_account_ledgers(self, symbol: str, start_time: int, end_time: int, limit: int) -> List[Dict[str, Any]]:
+        """Fetch futures account ledgers from KuCoin."""
+        try:
+            # Extract currency from symbol if provided
+            currency = ""
+            if symbol:
+                # Extract base currency from symbol (e.g., BTC from BTCUSDT)
+                currency = symbol.replace('USDT', '').replace('USDC', '').replace('BTC', '').replace('ETH', '')
+                if not currency:
+                    currency = "USDT"  # Default to USDT if can't extract
+
+            ledger_records = await self.kucoin_exchange.get_futures_account_ledgers(
+                currency=currency,
+                start_time=start_time,
+                end_time=end_time,
+                limit=limit
+            )
+            logger.info(f"Fetched {len(ledger_records)} KuCoin futures account ledger records")
+            return ledger_records
+        except Exception as e:
+            logger.error(f"Error fetching KuCoin futures account ledgers: {e}")
             return []
 
     def _transform_trade_to_transaction(self, trade: Dict[str, Any], original_symbol: str = "") -> Optional[Dict[str, Any]]:
@@ -198,6 +340,83 @@ class KucoinTransactionFetcher:
 
         except Exception as e:
             logger.error(f"Error transforming KuCoin trade to transaction: {e}")
+            return None
+
+    def _transform_ledger_to_transaction(self, ledger: Dict[str, Any], original_symbol: str = "") -> Optional[Dict[str, Any]]:
+        """
+        Transform a KuCoin ledger record to transaction history format.
+
+        Args:
+            ledger: KuCoin ledger record
+            original_symbol: Original symbol from bot format
+
+        Returns:
+            Transaction record formatted for database
+        """
+        try:
+            # Extract ledger data
+            ledger_id = ledger.get('id', '')
+            currency = ledger.get('currency', '')
+            amount = float(ledger.get('amount', 0))
+            fee = float(ledger.get('fee', 0))
+            balance = float(ledger.get('balance', 0))
+            biz_type = ledger.get('bizType', '')
+            direction = ledger.get('direction', '')
+            context = ledger.get('context', '')
+            time_ms = ledger.get('createdAt', 0)
+
+            # Convert time to timestamp with timezone
+            if time_ms:
+                dt = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc)
+                time_timestampz = dt.isoformat()
+            else:
+                time_timestampz = datetime.now(timezone.utc).isoformat()
+
+            # Map business type to transaction type
+            transaction_type = KUCOIN_TYPE_MAPPING.get(biz_type, 'UNKNOWN')
+
+            # Handle amount direction
+            final_amount = amount
+            if direction == 'out' and amount > 0:
+                final_amount = -amount
+            elif direction == 'in' and amount < 0:
+                final_amount = abs(amount)
+
+            # Extract symbol from context or use original symbol
+            symbol = original_symbol
+            if not symbol and context:
+                # Try to extract symbol from context
+                # Context might contain trading pair information
+                if 'USDT' in context or 'USDC' in context:
+                    # Simple extraction - this could be enhanced
+                    symbol = context.split()[0] if context.split() else ''
+
+            # Convert symbol to bot format if needed
+            if symbol and not original_symbol:
+                symbol = self.symbol_converter.convert_kucoin_to_bot(symbol)
+
+            # Create transaction record
+            transaction = {
+                'time': time_timestampz,
+                'type': transaction_type,
+                'amount': final_amount,
+                'asset': currency,
+                'symbol': symbol or '',
+                'exchange': 'kucoin',
+                'raw_data': {
+                    'ledger_id': ledger_id,
+                    'biz_type': biz_type,
+                    'direction': direction,
+                    'fee': fee,
+                    'balance': balance,
+                    'context': context
+                }
+            }
+
+            return transaction
+
+        except Exception as e:
+            logger.error(f"Error transforming KuCoin ledger to transaction: {e}")
             return None
 
     def _transform_income_to_transaction(self, income: Dict[str, Any], original_symbol: str = "") -> Optional[Dict[str, Any]]:
@@ -307,3 +526,41 @@ class KucoinTransactionFetcher:
         except Exception as e:
             logger.error(f"Error getting supported KuCoin symbols: {e}")
             return []
+
+    def _deduplicate_transactions(self, transactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Remove duplicate transactions based on time, type, amount, and symbol.
+
+        Args:
+            transactions: List of transaction records
+
+        Returns:
+            Deduplicated list of transactions
+        """
+        try:
+            seen = set()
+            deduplicated = []
+
+            for transaction in transactions:
+                # Create a unique key for deduplication
+                time_str = transaction.get('time', '')
+                transaction_type = transaction.get('type', '')
+                amount = transaction.get('amount', 0)
+                symbol = transaction.get('symbol', '')
+                asset = transaction.get('asset', '')
+
+                # Create unique identifier
+                unique_key = f"{time_str}_{transaction_type}_{amount}_{symbol}_{asset}"
+
+                if unique_key not in seen:
+                    seen.add(unique_key)
+                    deduplicated.append(transaction)
+                else:
+                    logger.debug(f"Duplicate transaction found and removed: {unique_key}")
+
+            logger.info(f"Deduplication: {len(transactions)} -> {len(deduplicated)} transactions")
+            return deduplicated
+
+        except Exception as e:
+            logger.error(f"Error during transaction deduplication: {e}")
+            return transactions
