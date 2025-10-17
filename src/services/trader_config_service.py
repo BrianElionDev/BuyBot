@@ -29,6 +29,7 @@ class TraderConfig:
     trader_id: str
     exchange: ExchangeType
     leverage: int
+    position_size: float
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     updated_by: Optional[str] = None
@@ -128,7 +129,7 @@ class TraderConfigService:
             # First, try exact/variant matching using IN
             variants = self._variants(trader_id)
             response = runtime_config.supabase.table("trader_exchange_config").select(
-                "trader_id, exchange, leverage, created_at, updated_at, updated_by"
+                "trader_id, exchange, leverage, position_size, created_at, updated_at, updated_by"
             ).in_("trader_id", variants).execute()
 
             data = getattr(response, 'data', None)
@@ -138,7 +139,7 @@ class TraderConfigService:
                 canon = self._canonical(trader_id)
                 if canon:
                     response = runtime_config.supabase.table("trader_exchange_config").select(
-                        "trader_id, exchange, leverage, created_at, updated_at, updated_by"
+                        "trader_id, exchange, leverage, position_size, created_at, updated_at, updated_by"
                     ).ilike("trader_id", canon).execute()
                     data = getattr(response, 'data', None)
 
@@ -148,6 +149,7 @@ class TraderConfigService:
                     trader_id=config_data["trader_id"],
                     exchange=ExchangeType(config_data["exchange"]),
                     leverage=config_data["leverage"],
+                    position_size=float(config_data.get("position_size", 100.0)),
                     created_at=config_data.get("created_at"),
                     updated_at=config_data.get("updated_at"),
                     updated_by=config_data.get("updated_by")
@@ -157,7 +159,7 @@ class TraderConfigService:
                 self._config_cache[cache_key] = config
                 self._cache_timestamps[cache_key] = time.time()
 
-                logger.info(f"Loaded config for trader {trader_id}: {config.exchange.value} @ {config.leverage}x")
+                logger.info(f"Loaded config for trader {trader_id}: {config.exchange.value} @ {config.leverage}x, position_size=${config.position_size}")
                 return config
             else:
                 logger.warning(f"No configuration found for trader {trader_id}")

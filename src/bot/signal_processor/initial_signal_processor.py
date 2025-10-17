@@ -256,11 +256,33 @@ class InitialSignalProcessor:
         is_futures: bool
     ) -> float:
         """
-        Calculate the trade amount based on USDT value and current price.
+        Calculate the trade amount based on live database position_size and current price.
         """
         try:
+            # Get position_size from database instead of hardcoded config
+            usdt_amount = self.trading_engine.config.TRADE_AMOUNT  # Fallback to config
+            try:
+                from src.services.trader_config_service import trader_config_service
+                trader_id = getattr(self.trading_engine, 'trader_id', None) or ''
+                exch_name = self.exchange.__class__.__name__.lower()
+                exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
+
+                config = await trader_config_service.get_trader_config(trader_id)
+                if config and config.exchange.value == exchange_key:
+                    usdt_amount = config.position_size
+                    logger.info(f"Using database position_size: ${usdt_amount} for trader {trader_id}")
+                else:
+                    # Fallback to runtime_config
+                    from src.config.runtime_config import runtime_config as _rc
+                    if _rc:
+                        cfg = await _rc.get_trader_exchange_config(trader_id, exchange_key)
+                        if isinstance(cfg, dict) and 'position_size' in cfg:
+                            usdt_amount = float(cfg['position_size'])
+                            logger.info(f"Using runtime_config position_size: ${usdt_amount} for trader {trader_id}")
+            except Exception as e:
+                logger.warning(f"Failed to get position_size from database, using config fallback: {e}")
+
             # Calculate trade amount based on USDT value and current price
-            usdt_amount = self.trading_engine.config.TRADE_AMOUNT
             trade_amount = usdt_amount / current_price
             logger.info(f"Calculated trade amount: {trade_amount} {coin_symbol} (${usdt_amount:.2f} / ${current_price:.8f})")
 
@@ -457,7 +479,30 @@ class InitialSignalProcessor:
                     # Position Value = Margin × Leverage
                     # Quantity = Position Value ÷ Price
 
-                    margin_amount = self.trading_engine.config.TRADE_AMOUNT  # Our actual capital (margin)
+                    # Get position_size from database instead of hardcoded config
+                    margin_amount = self.trading_engine.config.TRADE_AMOUNT  # Fallback to config
+                    try:
+                        # Try to get position_size from database
+                        from src.services.trader_config_service import trader_config_service
+                        trader_id = getattr(self.trading_engine, 'trader_id', None) or ''
+                        exch_name = self.exchange.__class__.__name__.lower()
+                        exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
+
+                        config = await trader_config_service.get_trader_config(trader_id)
+                        if config and config.exchange.value == exchange_key:
+                            margin_amount = config.position_size
+                            logger.info(f"Using database position_size: ${margin_amount} for trader {trader_id}")
+                        else:
+                            # Fallback to runtime_config
+                            from src.config.runtime_config import runtime_config as _rc
+                            if _rc:
+                                cfg = await _rc.get_trader_exchange_config(trader_id, exchange_key)
+                                if isinstance(cfg, dict) and 'position_size' in cfg:
+                                    margin_amount = float(cfg['position_size'])
+                                    logger.info(f"Using runtime_config position_size: ${margin_amount} for trader {trader_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to get position_size from database, using config fallback: {e}")
+
                     position_value = float(margin_amount) * float(leverage_value)  # Total position value
 
                     quantities = await self.exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
