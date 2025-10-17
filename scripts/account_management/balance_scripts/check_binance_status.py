@@ -133,6 +133,20 @@ class BinanceStatusChecker:
             logger.error(f"Error fetching account balance: {e}")
             return {}
 
+    async def get_comprehensive_account_info(self) -> Dict:
+        """Get comprehensive account information including leverage settings"""
+        try:
+            if not self.binance_exchange:
+                logger.error("Binance exchange not initialized")
+                return {}
+
+            account_info = await self.binance_exchange.get_futures_account_info()
+            return account_info
+
+        except Exception as e:
+            logger.error(f"Error fetching comprehensive account info: {e}")
+            return {}
+
     def format_order(self, order: Dict) -> Dict:
         """Format order data for display"""
         return {
@@ -159,6 +173,8 @@ class BinanceStatusChecker:
         entry_price = float(position.get('entryPrice', 0))
         mark_price = float(position.get('markPrice', 0))
         unrealized_pnl = float(position.get('unRealizedProfit', 0))
+        notional = float(position.get('notional', 0))
+        isolated_margin = float(position.get('isolatedMargin', 0))
 
         # Calculate PnL percentage
         pnl_percentage = 0
@@ -178,7 +194,11 @@ class BinanceStatusChecker:
             'pnlPercentage': round(pnl_percentage, 2),
             'liquidationPrice': float(position.get('liquidationPrice', 0)),
             'leverage': int(position.get('leverage', 1)),
-            'marginType': position.get('marginType', 'isolated')
+            'marginType': position.get('marginType', 'isolated'),
+            'notional': notional,
+            'isolatedMargin': isolated_margin,
+            'positionSide': position.get('positionSide', 'BOTH'),
+            'isAutoAddMargin': position.get('isAutoAddMargin', False)
         }
 
     def display_orders(self, orders: List[Dict]):
@@ -234,25 +254,29 @@ class BinanceStatusChecker:
             return
 
         print(f"\n💰 Active Positions ({len(positions)}):")
-        print("=" * 140)
+        print("=" * 180)
         print(f"{'Symbol':<12} {'Side':<6} {'Size':<12} {'Entry Price':<12} {'Mark Price':<12} "
-              f"{'PnL':<12} {'PnL %':<8} {'Liquidation':<12} {'Leverage':<8}")
-        print("-" * 140)
+              f"{'PnL':<12} {'PnL %':<8} {'Liquidation':<12} {'Leverage':<8} {'Notional':<12} {'Margin':<12}")
+        print("-" * 180)
 
         total_pnl = 0
+        total_notional = 0
         for position in positions:
             formatted = self.format_position(position)
             total_pnl += formatted['unrealizedPnl']
+            total_notional += formatted['notional']
 
             pnl_color = "🟢" if formatted['unrealizedPnl'] >= 0 else "🔴"
             print(f"{formatted['symbol']:<12} {formatted['side']:<6} {formatted['size']:<12.4f} "
                   f"{formatted['entryPrice']:<12.4f} {formatted['markPrice']:<12.4f} "
                   f"{pnl_color} {formatted['unrealizedPnl']:<10.2f} {formatted['pnlPercentage']:<8.2f}% "
-                  f"{formatted['liquidationPrice']:<12.4f} {formatted['leverage']:<8}x")
+                  f"{formatted['liquidationPrice']:<12.4f} {formatted['leverage']:<8}x "
+                  f"{formatted['notional']:<12.2f} {formatted['isolatedMargin']:<12.2f}")
 
-        print("-" * 140)
+        print("-" * 180)
         pnl_color = "🟢" if total_pnl >= 0 else "🔴"
         print(f"{'TOTAL PnL:':<60} {pnl_color} {total_pnl:<10.2f} USDT")
+        print(f"{'TOTAL NOTIONAL:':<60} {total_notional:<10.2f} USDT")
 
     def display_balance(self, balance: Dict):
         """Display account balance"""
@@ -273,6 +297,48 @@ class BinanceStatusChecker:
         for asset, amount in sorted(non_zero_assets.items()):
             print(f"{asset:<10}: {float(amount):<15.4f}")
 
+    def display_account_info(self, account_info: Dict):
+        """Display comprehensive account information"""
+        if not account_info:
+            print("\n📊 Unable to fetch comprehensive account information")
+            return
+
+        print(f"\n📊 Account Information:")
+        print("=" * 60)
+
+        # Total wallet balance
+        total_wallet_balance = float(account_info.get('totalWalletBalance', 0))
+        print(f"Total Wallet Balance: {total_wallet_balance:.4f} USDT")
+
+        # Total unrealized PnL
+        total_unrealized_pnl = float(account_info.get('totalUnrealizedProfit', 0))
+        pnl_color = "🟢" if total_unrealized_pnl >= 0 else "🔴"
+        print(f"Total Unrealized PnL: {pnl_color} {total_unrealized_pnl:.4f} USDT")
+
+        # Total margin balance
+        total_margin_balance = float(account_info.get('totalMarginBalance', 0))
+        print(f"Total Margin Balance: {total_margin_balance:.4f} USDT")
+
+        # Available balance
+        available_balance = float(account_info.get('availableBalance', 0))
+        print(f"Available Balance: {available_balance:.4f} USDT")
+
+        # Max withdraw amount
+        max_withdraw_amount = float(account_info.get('maxWithdrawAmount', 0))
+        print(f"Max Withdraw Amount: {max_withdraw_amount:.4f} USDT")
+
+        # Can trade
+        can_trade = account_info.get('canTrade', False)
+        print(f"Can Trade: {'✅' if can_trade else '❌'}")
+
+        # Can withdraw
+        can_withdraw = account_info.get('canWithdraw', False)
+        print(f"Can Withdraw: {'✅' if can_withdraw else '❌'}")
+
+        # Can deposit
+        can_deposit = account_info.get('canDeposit', False)
+        print(f"Can Deposit: {'✅' if can_deposit else '❌'}")
+
     async def run_full_check(self):
         """Run a complete status check"""
         print("🔍 Binance Status Checker")
@@ -287,8 +353,10 @@ class BinanceStatusChecker:
             orders = await self.get_open_orders()
             positions = await self.get_positions()
             balance = await self.get_account_balance()
+            account_info = await self.get_comprehensive_account_info()
 
             # Display results
+            self.display_account_info(account_info)
             self.display_balance(balance)
             self.display_orders(orders)
             self.display_positions(positions)

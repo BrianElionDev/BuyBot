@@ -101,6 +101,7 @@ class DatabaseManager:
         try:
             updates = {
                 'status': 'FAILED',
+                'order_status': 'FAILED',
                 'exchange_response': exchange_response if exchange_response else None,
                 'sync_error_count': 1,
                 'manual_verification_needed': True,

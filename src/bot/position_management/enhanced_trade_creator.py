@@ -149,6 +149,7 @@ class EnhancedTradeCreator:
                 # Clean up temporary trade on error
                 await self.db_manager.update_trade(temp_trade_id, {
                     'status': 'FAILED',
+                    'order_status': 'FAILED',
                     'sync_issues': [f"Error during conflict detection: {str(e)}"],
                     'updated_at': datetime.now(timezone.utc).isoformat()
                 })
@@ -278,6 +279,7 @@ class EnhancedTradeCreator:
             else:
                 update_data = {
                     'status': 'FAILED',
+                    'order_status': 'FAILED',
                     'sync_issues': [str(result[1])],
                     'updated_at': datetime.now(timezone.utc).isoformat()
                 }
@@ -292,6 +294,7 @@ class EnhancedTradeCreator:
             # Update trade with error
             await self.db_manager.update_trade(trade_id, {
                 'status': 'FAILED',
+                'order_status': 'FAILED',
                 'sync_issues': [f"Execution error: {str(e)}"],
                 'updated_at': datetime.now(timezone.utc).isoformat()
             })

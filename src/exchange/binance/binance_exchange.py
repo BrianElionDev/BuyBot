@@ -87,9 +87,40 @@ class BinanceExchange(ExchangeBase):
     # Account Operations
     async def get_account_balances(self) -> Dict[str, float]:
         """Get account balances for all assets."""
-        # REMOVE: USDM balance logic (futures_account)
-        # If you want to keep coin-m, implement coin-m balance fetch here, or just pass for now
-        return {}
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            # Get futures account information
+            account_info = await self.client.futures_account()
+            balances = {}
+
+            # Extract balance information from account
+            for asset_info in account_info.get('assets', []):
+                asset = asset_info.get('asset', '')
+                wallet_balance = float(asset_info.get('walletBalance', 0))
+
+                if wallet_balance > 0:
+                    balances[asset] = wallet_balance
+
+            logger.info(f"Retrieved Binance futures balances: {balances}")
+            return balances
+
+        except Exception as e:
+            logger.error(f"Error getting futures account balances: {e}")
+            return {}
+
+    async def get_futures_account_info(self) -> Dict[str, Any]:
+        """Get comprehensive futures account information including leverage settings."""
+        await self._init_client()
+        assert self.client is not None
+
+        try:
+            account_info = await self.client.futures_account()
+            return account_info
+        except Exception as e:
+            logger.error(f"Error getting futures account info: {e}")
+            return {}
 
     async def get_spot_balance(self) -> Dict[str, float]:
         """Get spot account balances."""
@@ -258,13 +289,42 @@ class BinanceExchange(ExchangeBase):
 
     # Position Operations
     async def get_futures_position_information(self) -> List[Dict[str, Any]]:
-        """Get all futures positions."""
+        """Get all futures positions with comprehensive information."""
         await self._init_client()
         assert self.client is not None
 
         try:
-            result = await self.client.futures_position_information()
-            return list(result)
+            # Get comprehensive account information which includes positions with leverage
+            account_info = await self.client.futures_account()
+            positions = account_info.get('positions', [])
+
+            # Filter out positions with zero size and format the data
+            active_positions = []
+            for position in positions:
+                position_amt = float(position.get('positionAmt', 0))
+                if position_amt != 0:  # Only include active positions
+                    # Ensure all required fields are present with proper types
+                    formatted_position = {
+                        'symbol': position.get('symbol', ''),
+                        'positionAmt': position_amt,
+                        'entryPrice': float(position.get('entryPrice', 0)),
+                        'markPrice': float(position.get('markPrice', 0)),
+                        'unRealizedProfit': float(position.get('unRealizedProfit', 0)),
+                        'liquidationPrice': float(position.get('liquidationPrice', 0)),
+                        'leverage': int(position.get('leverage', 1)),
+                        'marginType': position.get('marginType', 'isolated'),
+                        'isolatedMargin': float(position.get('isolatedMargin', 0)),
+                        'isAutoAddMargin': position.get('isAutoAddMargin', False),
+                        'positionSide': position.get('positionSide', 'BOTH'),
+                        'notional': float(position.get('notional', 0)),
+                        'isolatedWallet': float(position.get('isolatedWallet', 0)),
+                        'updateTime': position.get('updateTime', 0)
+                    }
+                    active_positions.append(formatted_position)
+
+            logger.info(f"Retrieved {len(active_positions)} active positions from Binance")
+            return active_positions
+
         except Exception as e:
             logger.error(f"Error getting futures positions: {e}")
             return []

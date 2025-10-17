@@ -306,6 +306,7 @@ class DiscordBot:
                         # Update trade with error using existing columns
                         await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                             'status': 'FAILED',
+                            'order_status': 'FAILED',
                             'sync_error_count': 1,
                             'exchange_response': [f'Trade execution failed: {exchange_response}'],
                             'manual_verification_needed': True
@@ -339,6 +340,7 @@ class DiscordBot:
 
                     await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                         'status': 'FAILED',
+                        'order_status': 'FAILED',
                         'sync_error_count': 1,
                         'exchange_response': [f'Execution error: {str(exec_error)}'],
                         'manual_verification_needed': True
