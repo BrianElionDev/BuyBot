@@ -40,14 +40,24 @@ class KucoinSymbolMapper:
         Returns:
             List of possible KuCoin symbol formats
         """
-        base_symbol = symbol.replace('-', '').replace('USDT', '')
-
         base = symbol.split('-')[0].upper()
-        variants = [
-            symbol.upper(),              # DAM-USDT (spot format)
-            f"{base}USDT",              # DAMUSDT (delivery)
-            f"{base}USDTM",             # DAMUSDTM (perpetual)
-        ]
+
+        # Handle BTC -> XBT mapping for KuCoin
+        if base == "BTC":
+            variants = [
+                symbol.upper(),              # BTC-USDT (spot format)
+                "XBT-USDT",                  # XBT-USDT (KuCoin spot format)
+                "BTCUSDT",                   # BTCUSDT (delivery)
+                "XBTUSDT",                   # XBTUSDT (KuCoin delivery)
+                "BTCUSDTM",                  # BTCUSDTM (perpetual)
+                "XBTUSDTM",                  # XBTUSDTM (KuCoin perpetual)
+            ]
+        else:
+            variants = [
+                symbol.upper(),              # DAM-USDT (spot format)
+                f"{base}USDT",              # DAMUSDT (delivery)
+                f"{base}USDTM",             # DAMUSDTM (perpetual)
+            ]
 
         # Remove duplicates while preserving order
         seen = set()

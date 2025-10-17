@@ -72,16 +72,18 @@ class KucoinSymbolConverter:
         Convert bot symbol format to KuCoin futures format.
 
         Args:
-            bot_symbol: Bot symbol format (e.g., 'ASTERUSDT')
+            bot_symbol: Bot symbol format (e.g., 'ASTERUSDT', 'BTC-USDT')
 
         Returns:
-            KuCoin futures symbol format (e.g., 'ASTERUSDTM')
+            KuCoin futures symbol format (e.g., 'ASTERUSDTM', 'XBTUSDTM')
         """
         if not bot_symbol:
             return bot_symbol
 
-        # Handle BTC -> XBT mapping for futures
+        # Handle BTC -> XBT mapping for futures (special case for KuCoin)
         if bot_symbol == "BTCUSDT":
+            return "XBTUSDTM"
+        elif bot_symbol == "BTC-USDT":
             return "XBTUSDTM"
         elif bot_symbol == "BTC":
             return "XBTUSDTM"
@@ -90,6 +92,11 @@ class KucoinSymbolConverter:
         if bot_symbol in self.special_mappings:
             return self.special_mappings[bot_symbol]
 
+        # If it has a dash (e.g., 'ETH-USDT'), convert to futures format
+        if '-' in bot_symbol:
+            base_coin = bot_symbol.split('-')[0]
+            return f"{base_coin}USDTM"
+
         # Convert COINUSDT to COINUSDTM
         if bot_symbol.endswith('USDT'):
             return f"{bot_symbol}M"
@@ -97,10 +104,6 @@ class KucoinSymbolConverter:
         # If it already ends with USDTM, return as is
         if bot_symbol.endswith('USDTM'):
             return bot_symbol
-
-        # If it has a dash, convert to futures format
-        if '-' in bot_symbol:
-            return bot_symbol.replace('-', '') + 'M'
 
         # Add USDTM if it doesn't have USDT
         return f"{bot_symbol}USDTM"

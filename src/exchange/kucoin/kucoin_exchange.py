@@ -250,11 +250,8 @@ class KucoinExchange(ExchangeBase):
             kucoin_side = "buy" if side.upper() == "BUY" else "sell"
             kucoin_type = self._convert_order_type(order_type)
 
-            # Convert pair to KuCoin futures symbol format
-            if pair.endswith('-USDT'):
-                kucoin_symbol = pair.replace('-USDT', 'USDTM')
-            else:
-                kucoin_symbol = pair.replace('-', 'USDTM')
+            # Convert pair to KuCoin futures symbol format using proper converter
+            kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(pair)
 
             # Prepare order parameters
             order_params = {
