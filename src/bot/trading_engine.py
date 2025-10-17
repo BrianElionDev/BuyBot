@@ -251,6 +251,49 @@ class TradingEngine:
         """
         return await self.followup_signal_processor.process_trade_update(trade_id, action, details)
 
+    async def process_followup_signal(self, signal_data: Dict[str, Any], trade_row: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Adapter method to process a follow-up signal for Binance via the FollowupSignalProcessor.
+
+        Expects signal_data to already contain parsed information about the intended action.
+        """
+        try:
+            # Extract action and details; fallback to content parsing if present
+            action = None
+            details: Dict[str, Any] = {}
+
+            # Prefer structured fields if provided by upstream parser
+            parsed = signal_data.get('parsed_alert') or {}
+            if isinstance(parsed, dict):
+                action = parsed.get('action_type') or parsed.get('action')
+                details = parsed.get('details') or {}
+
+            # Fallback: simple heuristics from raw content
+            if not action:
+                content = str(signal_data.get('content') or '').lower()
+                if any(x in content for x in ['stopped out', 'stop loss hit', 'stopped at be', 'stopped breakeven']):
+                    action = 'stop_loss_hit'
+                elif any(x in content for x in ['take profit', 'tp1', 'tp2']):
+                    action = 'take_profit'
+                elif any(x in content for x in ['close position', 'position closed', 'closed in profit']):
+                    action = 'position_closed'
+
+            # Trade id is required for processor
+            trade_id = trade_row.get('id')
+            if not trade_id:
+                return {"success": False, "message": "Trade row missing id"}
+
+            if not action:
+                return {"success": False, "message": "Unrecognized follow-up action"}
+
+            success, result = await self.process_trade_update(trade_id, action, details)
+            if success:
+                return {"success": True, "message": "Follow-up processed", "parsed_alert": parsed or {}, "result": result}
+            return {"success": False, "message": result.get('error') if isinstance(result, dict) else str(result), "parsed_alert": parsed or {}, "result": result}
+        except Exception as e:
+            logger.error(f"Error processing follow-up signal: {e}")
+            return {"success": False, "message": f"Error processing follow-up: {str(e)}"}
+
     async def update_stop_loss(self, active_trade: Dict, new_sl_price: float) -> Tuple[bool, Dict]:
         """
         Update stop loss for an active position.
@@ -452,7 +495,10 @@ class TradingEngine:
 
     async def close(self):
         """Close all exchange connections."""
-        await self.exchange.close_client()
+        try:
+            await self.exchange.close()
+        except Exception:
+            pass
         logger.info("TradingEngine connections closed.")
 
     async def close_position_at_market(self, trade_row: Dict, reason: str = "manual_close", close_percentage: float = 100.0) -> Tuple[bool, Dict]:
@@ -471,7 +517,7 @@ class TradingEngine:
             coin_symbol = trade_row.get('coin_symbol')
             if not coin_symbol:
                 return False, {"error": "Missing coin_symbol in trade_row"}
-            trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
+            trading_pair = f"{coin_symbol}USDT"
 
             # Pre-check open positions to avoid reduceOnly errors
             positions = await self.exchange.get_futures_position_information()

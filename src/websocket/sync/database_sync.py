@@ -265,11 +265,20 @@ class DatabaseSync:
                             exchange='binance'
                         )
                     elif status in ['CANCELED', 'REJECTED', 'EXPIRED']:
-                        # Send a failure/terminal notification
+                        # Send a failure/terminal notification via NotificationManager (centralized filtering)
                         local_symbol = trade.get('coin_symbol') or str(execution_data.get('s') or '')
-                        msg = f"❌ Order {status} for {local_symbol} | ID: {trade.get('exchange_order_id', '')} | Price: {avg_price} | Qty: {executed_qty}"
-                        from src.services.notifications.telegram_service import TelegramService
-                        await TelegramService().send_message(msg)
+                        from src.services.notifications.notification_manager import NotificationManager
+                        notifier = NotificationManager()
+                        await notifier.send_error_notification(
+                            error_type=f"ORDER_{status}",
+                            error_message=f"Order {status} for {local_symbol}",
+                            context={
+                                "symbol": local_symbol,
+                                "order_id": str(trade.get('exchange_order_id') or ''),
+                                "price": avg_price,
+                                "quantity": executed_qty,
+                            }
+                        )
                 except Exception as e:
                     logger.error(f"Failed to send websocket execution notification: {e}")
             else:
