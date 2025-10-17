@@ -66,6 +66,10 @@ class ActivityMonitor:
       last_alert_sec = (now - last_alert_dt).total_seconds() if last_alert_dt else 10**12
 
       if since_sec >= threshold and last_alert_sec >= cooldown:
+        if not ActivityMonitor._has_configured_traders(supabase):
+          logger.debug("[ActivityMonitor] No configured traders found - skipping inactivity alert")
+          return None
+
         msg = settings.INACTIVITY_ALERT_MESSAGE or "Discord is awefully silet today zzz"
         svc = TelegramService()
         sent = await svc.send_message(msg)
@@ -83,3 +87,19 @@ class ActivityMonitor:
     except Exception as e:
       logger.error(f"[ActivityMonitor] check_and_alert failed: {e}", exc_info=True)
       return None
+
+  @staticmethod
+  def _has_configured_traders(supabase: Client) -> bool:
+    """
+    Efficiently check if any traders are configured in Supabase.
+    Uses a simple count query to avoid loading all trader data.
+    """
+    try:
+      resp = supabase.table("trader_exchange_config").select("trader_id", count="exact").limit(1).execute()
+      count = getattr(resp, 'count', 0) or 0
+      has_traders = count > 0
+      logger.debug(f"[ActivityMonitor] Trader check: {count} traders configured")
+      return has_traders
+    except Exception as e:
+      logger.warning(f"[ActivityMonitor] Failed to check trader config: {e}")
+      return True
