@@ -21,6 +21,7 @@ def reload_env():
     KUCOIN_API_KEY = os.getenv("KUCOIN_API_KEY")
     KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
     KUCOIN_API_PASSPHRASE = os.getenv("KUCOIN_API_PASSPHRASE")
+
     KUCOIN_TESTNET = False
 
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -40,6 +41,8 @@ def reload_env():
 
 # Force reload on import with override=True to ensure fresh values
 load_dotenv(override=True)
+
+ENABLE_QUANTITY_MULTIPLIER=False
 
 # Binance
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")

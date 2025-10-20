@@ -389,11 +389,13 @@ class BinanceDatabaseSync:
             if symbol in db_trades_by_symbol:
                 for db_trade in db_trades_by_symbol[symbol]:
                     try:
-                        # CRITICAL: Update position information with all required fields
+                        # Update live position information, but do not stamp exit/realized fields here
                         update_data = {
                             'position_size': abs(position_amt),
-                            'binance_exit_price': mark_price,
                             'unrealized_pnl': unrealized_pnl,
+                            # Write mark price snapshot fields instead of exit price
+                            'mark_price': mark_price,
+                            'last_mark_sync': current_time,
                             'last_pnl_sync': current_time,
                             'updated_at': current_time,
                             'sync_error_count': 0,
@@ -650,10 +652,10 @@ class BinanceDatabaseSync:
                                     update_data['realized_pnl'] = realized_pnl
                                     update_data['pnl_usd'] = realized_pnl
                                 else:
-                                    # Calculate PnL from entry and exit prices
-                                    entry_price = db_trade.get('entry_price', 0)
+                                    # Calculate PnL from executed prices; prefer binance_entry_price
+                                    entry_price = db_trade.get('binance_entry_price') or db_trade.get('entry_price', 0)
                                     signal_type = db_trade.get('signal_type', 'LONG')
-                                    if entry_price and price > 0:
+                                    if entry_price and price > 0 and qty > 0:
                                         calculated_pnl = self.calculate_trade_pnl(
                                             float(entry_price), price, qty, signal_type
                                         )

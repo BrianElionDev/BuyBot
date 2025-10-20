@@ -1051,21 +1051,24 @@ def get_order_lifecycle(db_trade: Dict) -> Tuple[Optional[int], Optional[int], O
         else:
             start_time = int(created_at.timestamp() * 1000)
 
-        # Parse end time (updated_at) - more reliable than closed_at
-        if not updated_at:
-            # Fallback to created_at if no updated_at
+        # Prefer closed_at for end time; fallback to updated_at; finally created_at
+        closed_at = db_trade.get('closed_at')
+        candidate_end = closed_at or updated_at
+
+        if not candidate_end:
+            # Fallback to created_at if neither closed_at nor updated_at exists
             end_time = start_time
             duration = 0
-            logging.warning(f"Trade {db_trade.get('id')} has no updated_at - using created_at as end time")
+            logging.warning(f"Trade {db_trade.get('id')} has no closed_at/updated_at - using created_at as end time")
         else:
-            if isinstance(updated_at, str):
-                if 'T' in updated_at:
-                    dt = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+            if isinstance(candidate_end, str):
+                if 'T' in candidate_end:
+                    dt = datetime.fromisoformat(candidate_end.replace('Z', '+00:00'))
                     end_time = int(dt.timestamp() * 1000)
                 else:
-                    end_time = int(float(updated_at) * 1000)
+                    end_time = int(float(candidate_end) * 1000)
             else:
-                end_time = int(updated_at.timestamp() * 1000)
+                end_time = int(candidate_end.timestamp() * 1000)
             duration = end_time - start_time
 
         logging.info(f"Trade {db_trade.get('id')} lifecycle: {start_time} to {end_time} (duration: {duration}ms)")
@@ -1084,7 +1087,7 @@ async def get_income_for_trade_period(
     *,
     expand: bool = False,
     buffer_before_ms: int = 0,
-    buffer_after_ms: int = 60000,  # Default 1 minute buffer after end time
+    buffer_after_ms: int = 5000,  # Tighter default buffer to avoid overlap
 ) -> List[Dict]:
     """Get income history for a specific trade period.
 

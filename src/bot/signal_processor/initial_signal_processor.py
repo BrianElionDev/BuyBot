@@ -268,38 +268,32 @@ class InitialSignalProcessor:
                 exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
 
                 config = await trader_config_service.get_trader_config(trader_id)
-                if config and config.exchange.value == exchange_key:
-                    usdt_amount = config.position_size
-                    logger.info(f"Using database position_size: ${usdt_amount} for trader {trader_id}")
-                else:
-                    # Fallback to runtime_config
-                    from src.config.runtime_config import runtime_config as _rc
-                    if _rc:
-                        cfg = await _rc.get_trader_exchange_config(trader_id, exchange_key)
-                        if isinstance(cfg, dict) and 'position_size' in cfg:
-                            usdt_amount = float(cfg['position_size'])
-                            logger.info(f"Using runtime_config position_size: ${usdt_amount} for trader {trader_id}")
+                if not config or config.exchange.value != exchange_key:
+                    msg = f"Missing or mismatched trader config for trader={trader_id}, exchange={exchange_key}; refusing to fallback for position_size"
+                    logger.error(msg)
+                    return 0.0
+                usdt_amount = float(config.position_size)
+                logger.info(f"Using database position_size (final notional): ${usdt_amount} for trader {trader_id}")
             except Exception as e:
-                logger.warning(f"Failed to get position_size from database, using config fallback: {e}")
+                logger.error(f"Failed to get position_size from TraderConfigService: {e}")
+                return 0.0
 
             # Calculate trade amount based on USDT value and current price
+            # IMPORTANT: position_size is FINAL NOTIONAL (no leverage amplification here)
             trade_amount = usdt_amount / current_price
-            logger.info(f"Calculated trade amount: {trade_amount} {coin_symbol} (${usdt_amount:.2f} / ${current_price:.8f})")
+            logger.info(f"Calculated trade amount (no leverage amplification): {trade_amount} {coin_symbol} (${usdt_amount:.2f} / ${current_price:.8f})")
 
-            # Apply quantity multiplier if specified (for memecoins)
-            if quantity_multiplier and quantity_multiplier > 1:
+            # Optionally apply quantity multiplier only if explicitly enabled in config
+            try:
+                enable_multiplier = bool(getattr(self.trading_engine.config, 'ENABLE_QUANTITY_MULTIPLIER', False))
+            except Exception:
+                enable_multiplier = False
+            if enable_multiplier and quantity_multiplier and quantity_multiplier > 1:
                 trade_amount *= quantity_multiplier
                 logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
 
-            # Get symbol filters for precision formatting
-            quantities = await self.exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
-            minQuantity = float(quantities[0])  # First element is min_qty
-            maxQuantity = float(quantities[1])  # Second element is max_qty
-            print(f"Min Quantity: {minQuantity}, Max Quantity: {maxQuantity}")
-            trade_amount = max(minQuantity, min(maxQuantity, trade_amount))
-            print(f"Adjusted trade amount: {trade_amount}")
-
-            return trade_amount
+            # Do NOT auto-bump to minQty here; allow validator to reject below-min orders
+            return float(trade_amount)
 
         except Exception as e:
             logger.error(f"Failed to calculate trade amount: {e}", exc_info=True)
@@ -472,70 +466,8 @@ class InitialSignalProcessor:
                     logger.error(f"Failed to resolve leverage from services: {e}")
                     leverage_value = 1.0
 
-            try:
-                if is_futures and leverage_value is not None and leverage_value > 0:
-                    # CORRECT LEVERAGE CALCULATION:
-                    # With leverage, we want to control a larger position with our margin
-                    # Position Value = Margin × Leverage
-                    # Quantity = Position Value ÷ Price
-
-                    # Get position_size from database instead of hardcoded config
-                    margin_amount = self.trading_engine.config.TRADE_AMOUNT  # Fallback to config
-                    try:
-                        # Try to get position_size from database
-                        from src.services.trader_config_service import trader_config_service
-                        trader_id = getattr(self.trading_engine, 'trader_id', None) or ''
-                        exch_name = self.exchange.__class__.__name__.lower()
-                        exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
-
-                        config = await trader_config_service.get_trader_config(trader_id)
-                        if config and config.exchange.value == exchange_key:
-                            margin_amount = config.position_size
-                            logger.info(f"Using database position_size: ${margin_amount} for trader {trader_id}")
-                        else:
-                            # Fallback to runtime_config
-                            from src.config.runtime_config import runtime_config as _rc
-                            if _rc:
-                                cfg = await _rc.get_trader_exchange_config(trader_id, exchange_key)
-                                if isinstance(cfg, dict) and 'position_size' in cfg:
-                                    margin_amount = float(cfg['position_size'])
-                                    logger.info(f"Using runtime_config position_size: ${margin_amount} for trader {trader_id}")
-                    except Exception as e:
-                        logger.warning(f"Failed to get position_size from database, using config fallback: {e}")
-
-                    position_value = float(margin_amount) * float(leverage_value)  # Total position value
-
-                    quantities = await self.exchange.calculate_min_max_market_order_quantity(f"{coin_symbol}USDT")
-                    min_qty = float(quantities[0])
-                    max_qty = float(quantities[1])
-
-                    # Calculate quantity based on leveraged position value
-                    raw_qty = position_value / float(signal_price)
-
-                    # Round down to step size from LOT_SIZE filter when available
-                    step_size = None
-                    try:
-                        symbol_filters = await self.exchange.get_futures_symbol_filters(trading_pair)
-                        lot = symbol_filters.get('LOT_SIZE', {}) if symbol_filters else {}
-                        step_val = lot.get('stepSize')
-                        if step_val is not None:
-                            step_size = float(step_val)
-                    except Exception:
-                        step_size = None
-
-                    if step_size and step_size > 0:
-                        import math
-                        raw_qty = math.floor(raw_qty / step_size) * step_size
-
-                    recomputed_qty = max(min_qty, min(max_qty, raw_qty))
-
-                    logger.info(f"Leverage calculation: Margin=${margin_amount}, Leverage={leverage_value}x, Position Value=${position_value}, Price=${signal_price}, Quantity={recomputed_qty}")
-
-                    if abs(recomputed_qty - trade_amount) / max(trade_amount, 1e-9) > 0.01:
-                        logger.info(f"Adjusted futures quantity for leverage: {trade_amount} -> {recomputed_qty} ({leverage_value}x)")
-                    trade_amount = recomputed_qty
-            except Exception as e:
-                logger.warning(f"Failed to adjust quantity for leverage: {e}")
+            # IMPORTANT: Do not modify trade_amount using leverage. Leverage is set on the
+            # exchange for margin/risk but position_size already represents final notional.
 
             is_kucoin = 'kucoin' in self.exchange.__class__.__name__.lower()
             if is_futures and not is_kucoin:
