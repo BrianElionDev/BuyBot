@@ -248,23 +248,9 @@ class DatabaseSync:
 
             if response.data:
                 logger.info(f"Updated trade {trade_id} status to {updates.get('status')} order_status {updates.get('order_status')}")
-                # Notify via Telegram based on status
+                # Notify via Telegram for error states only (success notifications handled by initial signal processor)
                 try:
-                    from src.services.notifications.notification_manager import NotificationManager
-                    notifier = NotificationManager()
-                    # Only send on meaningful transitions
-                    if status == 'FILLED':
-                        # Prefer DB coin_symbol; fallback to execution symbol
-                        local_symbol = (trade.get('coin_symbol') or str(execution_data.get('s') or '')).replace('USDT','')
-                        await notifier.send_order_fill_notification(
-                            coin_symbol=local_symbol,
-                            position_type=trade.get('signal_type') or 'LONG',
-                            fill_price=avg_price,
-                            fill_quantity=executed_qty,
-                            order_id=str(trade.get('exchange_order_id') or ''),
-                            exchange='binance'
-                        )
-                    elif status in ['CANCELED', 'REJECTED', 'EXPIRED']:
+                    if status in ['CANCELED', 'REJECTED', 'EXPIRED']:
                         # Send a failure/terminal notification via NotificationManager (centralized filtering)
                         local_symbol = trade.get('coin_symbol') or str(execution_data.get('s') or '')
                         from src.services.notifications.notification_manager import NotificationManager
