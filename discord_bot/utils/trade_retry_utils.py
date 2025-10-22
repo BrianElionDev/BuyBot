@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Tuple
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from config import settings
 from discord_bot.discord_bot import DiscordBot
 from src.services.trader_config_service import trader_config_service
 
@@ -329,6 +330,57 @@ async def sync_trade_statuses_with_binance(bot: DiscordBot, supabase: Client):
         logging.error(f"Error in enhanced sync: {e}", exc_info=True)
 
 
+async def sync_trade_statuses_with_kucoin(bot: DiscordBot, supabase: Client):
+    """
+    Enhanced sync method for KuCoin orders to get actual execution details.
+    """
+    from datetime import datetime, timedelta, timezone
+    import json
+
+    logging.info("🔄 Enhanced KuCoin to Database Sync")
+    logging.info("=" * 50)
+
+    try:
+        # Get data from both sources
+        logging.info("📊 Fetching KuCoin data...")
+
+        # Initialize KuCoin exchange if not available
+        if not hasattr(bot, 'kucoin_exchange') or bot.kucoin_exchange is None:
+            from src.exchange.kucoin.kucoin_exchange import KucoinExchange
+            bot.kucoin_exchange = KucoinExchange(api_key=settings.KUCOIN_API_KEY or "", api_secret=settings.KUCOIN_API_SECRET or "", api_passphrase=settings.KUCOIN_API_PASSPHRASE or "", is_testnet=False)
+            await bot.kucoin_exchange.initialize()
+
+        # Get KuCoin data
+        kucoin_orders = await bot.kucoin_exchange.get_all_open_futures_orders()
+        kucoin_positions = await bot.kucoin_exchange.get_futures_position_information()
+
+        # Get database trades from last 7 days (optimized for performance)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        cutoff_iso = cutoff.isoformat()
+        response = supabase.from_("trades").select("*").gte("created_at", cutoff_iso).eq("exchange", "kucoin").execute()
+        db_trades = response.data or []
+
+        logging.info(f"Found {len(kucoin_orders)} open orders on KuCoin")
+        logging.info(f"Found {len(kucoin_positions)} active positions on KuCoin")
+        logging.info(f"Found {len(db_trades)} KuCoin trades in database (all statuses)")
+
+        # Sync orders to get actual execution details
+        logging.info("🔄 Syncing KuCoin orders...")
+        await sync_kucoin_orders_to_database_enhanced(bot, supabase, kucoin_orders, db_trades)
+
+        # Sync positions
+        logging.info("🔄 Syncing KuCoin positions...")
+        await sync_kucoin_positions_to_database_enhanced(bot, supabase, kucoin_positions, db_trades)
+
+        logging.info("✅ Enhanced KuCoin sync completed!")
+        logging.info(f"KuCoin Orders: {len(kucoin_orders)}")
+        logging.info(f"KuCoin Positions: {len(kucoin_positions)}")
+        logging.info(f"Database Trades: {len(db_trades)}")
+
+    except Exception as e:
+        logging.error(f"Error in enhanced KuCoin sync: {e}", exc_info=True)
+
+
 def extract_symbol_from_trade(trade: dict) -> Optional[str]:
     """
     Extract symbol from trade with fallback logic for missing coin_symbol.
@@ -504,6 +556,123 @@ async def sync_orders_to_database_enhanced(bot: DiscordBot, supabase: Client, bi
             logging.warning(f"Order {order_id} ({order.get('symbol')}) not found in database")
 
     logging.info(f"Order sync completed: {updates_made} updates made")
+
+
+async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Client, kucoin_orders: list, db_trades: list):
+    """Sync KuCoin orders to database"""
+    logging.info("Starting KuCoin order sync...")
+
+    # Create lookup for database trades by orderId
+    db_trades_by_order_id = {}
+    for trade in db_trades:
+        # Try sync_order_response first, then fallback to exchange_response
+        sync_order_response = trade.get('sync_order_response', '')
+        ex_resp = trade.get('exchange_response') or trade.get('kucoin_response', '')
+
+        if sync_order_response:
+            order_details = extract_order_details_from_response(sync_order_response)
+            order_id = order_details.get('orderId')
+            if order_id:
+                db_trades_by_order_id[str(order_id)] = trade
+        elif ex_resp:
+            order_details = extract_order_details_from_response(ex_resp)
+            order_id = order_details.get('orderId')
+            if order_id:
+                db_trades_by_order_id[str(order_id)] = trade
+
+    updates_made = 0
+    current_time = datetime.now(timezone.utc).isoformat()
+
+    for order in kucoin_orders:
+        order_id = str(order.get('orderId', ''))
+        if not order_id:
+            continue
+
+        if order_id in db_trades_by_order_id:
+            db_trade = db_trades_by_order_id[order_id]
+            try:
+                # Extract KuCoin-specific fields and map to exchange-independent fields
+                filled_size = float(order.get('filledSize', 0))
+                filled_value = float(order.get('filledValue', 0))
+
+                # Calculate average price from filled value and size
+                avg_price = 0.0
+                if filled_size > 0 and filled_value > 0:
+                    avg_price = filled_value / filled_size
+
+                # Update order information with sync_order_response
+                update_data = {
+                    'order_status': order.get('status'),
+                    'position_size': filled_size if filled_size > 0 else None,
+                    'entry_price': avg_price if avg_price > 0 else None,
+                    'last_order_sync': current_time,
+                    'updated_at': current_time,
+                    'sync_order_response': json.dumps(order)
+                }
+
+                # Update exchange-specific fields for KuCoin
+                if filled_size > 0:
+                    update_data['kucoin_entry_price'] = avg_price
+                if order.get('status') in ['FILLED', 'DONE']:
+                    update_data['kucoin_exit_price'] = avg_price
+
+                supabase.table("trades").update(update_data).eq("id", db_trade['id']).execute()
+                updates_made += 1
+                logging.info(f"Updated KuCoin order for trade {db_trade['id']} ({order.get('symbol')}) - Size: {filled_size}, Price: {avg_price}")
+
+            except Exception as e:
+                logging.error(f"Error updating KuCoin order for trade {db_trade['id']}: {e}")
+        else:
+            logging.warning(f"KuCoin order {order_id} ({order.get('symbol')}) not found in database")
+
+    logging.info(f"KuCoin order sync completed: {updates_made} updates made")
+
+
+async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: Client, kucoin_positions: list, db_trades: list):
+    """Sync KuCoin positions to database"""
+    logging.info("Starting KuCoin position sync...")
+
+    # Create lookup for database trades by symbol
+    db_trades_by_symbol = {}
+    for trade in db_trades:
+        coin_symbol = trade.get('coin_symbol', '')
+        if coin_symbol:
+            # Convert to KuCoin symbol format (e.g., BTC -> BTCUSDTM)
+            kucoin_symbol = f"{coin_symbol.upper()}USDTM"
+            if kucoin_symbol not in db_trades_by_symbol:
+                db_trades_by_symbol[kucoin_symbol] = []
+            db_trades_by_symbol[kucoin_symbol].append(trade)
+
+    updates_made = 0
+    current_time = datetime.now(timezone.utc).isoformat()
+
+    for position in kucoin_positions:
+        symbol = position.get('symbol', '')
+        if not symbol or symbol not in db_trades_by_symbol:
+            continue
+
+        matching_trades = db_trades_by_symbol[symbol]
+        for trade in matching_trades:
+            try:
+                # Update position information
+                update_data = {
+                    'mark_price': float(position.get('markPrice', 0)),
+                    'unrealized_pnl': float(position.get('unrealizedPnl', 0)),
+                    'last_mark_sync': current_time,
+                    'updated_at': current_time
+                }
+
+                # Update exchange-specific fields for KuCoin
+                update_data['kucoin_entry_price'] = float(position.get('entryPrice', 0))
+
+                supabase.table("trades").update(update_data).eq("id", trade['id']).execute()
+                updates_made += 1
+                logging.info(f"Updated KuCoin position for trade {trade['id']} ({symbol}) - Mark: {position.get('markPrice')}, PnL: {position.get('unrealizedPnl')}")
+
+            except Exception as e:
+                logging.error(f"Error updating KuCoin position for trade {trade['id']}: {e}")
+
+    logging.info(f"KuCoin position sync completed: {updates_made} updates made")
 
 
 async def sync_positions_to_database_enhanced(bot: DiscordBot, supabase: Client, binance_positions: list, db_trades: list):

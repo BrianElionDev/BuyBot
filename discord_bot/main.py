@@ -16,6 +16,7 @@ from discord_bot.endpoints.trader_config_endpoints import router as trader_confi
 from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
     sync_trade_statuses_with_binance,
+    sync_trade_statuses_with_kucoin,
 )
 
 from discord_bot.utils.activity_monitor import ActivityMonitor
@@ -357,7 +358,12 @@ async def trade_retry_scheduler():
             if current_time - last_daily_sync >= DAILY_SYNC_INTERVAL:
                 logger.info("[Scheduler] Running daily sync tasks...")
                 try:
+                    # Sync Binance trades
                     await sync_trade_statuses_with_binance(bot, supabase)
+
+                    # Sync KuCoin trades
+                    await sync_trade_statuses_with_kucoin(bot, supabase)
+
                     last_daily_sync = current_time
                     logger.info("[Scheduler] Daily sync completed successfully")
                     tasks_run += 1
