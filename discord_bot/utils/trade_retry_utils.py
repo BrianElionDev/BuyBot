@@ -831,19 +831,23 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
                 if matching_order:
                     order_status = matching_order.get('status')
 
-                    # Import status constants
-                    from discord_bot.constants import map_binance_order_status
+                    # Use centralized status mapping
+                    from src.core.status_manager import StatusManager
 
-                    # Update order status
-                    mapped_order_status = map_binance_order_status(order_status)
+                    # Get position size for proper status mapping
+                    position_size = float(matching_order.get('executedQty', 0))
+                    mapped_order_status, mapped_position_status = StatusManager.map_exchange_to_internal(
+                        order_status, position_size
+                    )
+
                     update_data = {
                         'order_status': mapped_order_status,
+                        'status': mapped_position_status,
                         'updated_at': current_time
                     }
 
-                    # Determine position status based on order status
+                    # For filled orders, check if position is still open and update accordingly
                     if order_status == 'FILLED':
-                        # Check if position is still open
                         try:
                             positions = await bot.binance_exchange.get_futures_position_information()
                             position_open = any(
@@ -852,20 +856,13 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
                                 for pos in positions
                             )
 
-                            if position_open:
-                                # Position is still open
-                                update_data['status'] = 'OPEN'  # Position status
-                            else:
-                                # Position is closed
-                                update_data['status'] = 'CLOSED'  # Position status
+                            if not position_open:
+                                # Position is closed, update status and exit price
+                                update_data['status'] = 'CLOSED'
                                 update_data['binance_exit_price'] = str(float(matching_order.get('avgPrice', 0)))
                         except Exception:
-                            # If we can't check position, assume closed
-                            update_data['status'] = 'CLOSED'  # Position status
-                            update_data['binance_exit_price'] = str(float(matching_order.get('avgPrice', 0)))
-
-                    elif order_status in ['CANCELED', 'EXPIRED', 'REJECTED']:
-                        update_data['status'] = 'NONE'  # No position exists
+                            # If we can't check position, keep the mapped status from StatusManager
+                            pass
 
                     elif order_status == 'NEW':
                         update_data = {

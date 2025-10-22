@@ -261,7 +261,7 @@ class DiscordBot:
                     )
 
                     if success:
-                        logger.info(f"✅ Trade executed successfully on Binance for {coin_symbol}")
+                        logger.info(f"✅ Trade executed successfully on {exchange_type.value} for {coin_symbol}")
 
                         # Update trade with exchange response
                         if isinstance(exchange_response, dict):
@@ -343,7 +343,7 @@ class DiscordBot:
                                 position_type,
                                 float(signal_price),
                                 float(parsed_signal.get('position_size') or 0.0),
-                                order_id=str((exchange_response or {}).get('orderId') or ''),
+                                order_id=str((exchange_response.get('orderId') if isinstance(exchange_response, dict) else '') or ''),
                                 status='FAILURE',
                                 exchange=exchange_type.value,
                                 error_message=error_message

@@ -17,7 +17,7 @@ project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
 from supabase import create_client, Client
-from discord_bot.constants import map_binance_order_status, determine_position_status_from_order
+from src.core.status_manager import StatusManager
 from config import settings
 
 # Setup logging
@@ -89,11 +89,8 @@ def migrate_trade_statuses(supabase: Client):
                         status_data = json.loads(order_status_response) if isinstance(order_status_response, str) else order_status_response
 
                         binance_status = status_data.get('status', '').upper()
-                        order_status = map_binance_order_status(binance_status)
-
-                        # Determine position status based on order status
                         position_size = float(trade.get('position_size', 0))
-                        position_status = determine_position_status_from_order(order_status, position_size)
+                        order_status, position_status = StatusManager.map_exchange_to_internal(binance_status, position_size)
                     except (json.JSONDecodeError, TypeError):
                         pass
 
