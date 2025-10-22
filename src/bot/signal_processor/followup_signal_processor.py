@@ -305,6 +305,10 @@ class FollowupSignalProcessor:
             return await self._process_stop_loss_update(
                 details, coin_symbol, position_type, position_size, entry_price, trading_pair, stop_loss_order_id
             )
+        elif action == 'limit_order_cancelled':
+            return await self._process_limit_order_cancellation(
+                coin_symbol, position_type, trading_pair, active_trade
+            )
         else:
             logger.error(f"Unknown action: {action}")
             return False, {"error": f"Unknown action: {action}"}
@@ -377,7 +381,7 @@ class FollowupSignalProcessor:
 
             # Cancel all TP/SL orders before closing position
             logger.info(f"Canceling all TP/SL orders for {trading_pair} before closing position")
-            cancel_result = await self.trading_engine.cancel_tp_sl_orders(trading_pair)
+            cancel_result = await self.trading_engine.cancel_tp_sl_orders(trading_pair, active_trade)
             if not cancel_result:
                 logger.warning(f"Failed to cancel TP/SL orders for {trading_pair} - proceeding with position close")
 
@@ -453,6 +457,35 @@ class FollowupSignalProcessor:
             logger.error(f"Error processing stop loss update: {e}")
             return False, {"error": f"Error updating stop loss: {str(e)}"}
 
+    async def _process_limit_order_cancellation(
+        self,
+        coin_symbol: str,
+        position_type: str,
+        trading_pair: str,
+        active_trade: Dict[str, Any]
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Process limit order cancellation."""
+        try:
+            logger.info(f"Cancelling limit order for {coin_symbol}")
+
+            # Cancel the main order
+            exchange_order_id = active_trade.get('exchange_order_id')
+            if exchange_order_id:
+                success, response = await self.exchange.cancel_futures_order(trading_pair, exchange_order_id)
+                if success:
+                    logger.info(f"Successfully cancelled limit order {exchange_order_id}")
+                    return True, response
+                else:
+                    logger.warning(f"Failed to cancel limit order {exchange_order_id}: {response}")
+                    return False, {"error": f"Failed to cancel order: {response}"}
+            else:
+                logger.warning(f"No exchange order ID found for trade {active_trade.get('id')}")
+                return False, {"error": "No exchange order ID found"}
+
+        except Exception as e:
+            logger.error(f"Error cancelling limit order: {e}")
+            return False, {"error": f"Error cancelling order: {str(e)}"}
+
     async def validate_trade_update(
         self,
         trade_id: int,
@@ -469,7 +502,10 @@ class FollowupSignalProcessor:
                 return False, f"Trade with ID {trade_id} not found"
 
             # Validate action type
-            valid_actions = ['take_profit', 'stop_loss_hit', 'position_closed', 'stop_loss_update']
+            valid_actions = [
+                'take_profit', 'stop_loss_hit', 'position_closed', 'stop_loss_update',
+                'limit_order_cancelled', 'break_even', 'stops_to_be'
+            ]
             valid_actions.extend([f'take_profit_{i}' for i in range(1, 11)])  # TP1, TP2, etc.
 
             if action not in valid_actions:

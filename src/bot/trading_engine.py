@@ -271,12 +271,17 @@ class TradingEngine:
             # Fallback: simple heuristics from raw content
             if not action:
                 content = str(signal_data.get('content') or '').lower()
-                if any(x in content for x in ['stopped out', 'stop loss hit', 'stopped at be', 'stopped breakeven']):
+                if any(x in content for x in ['stopped out', 'stop loss hit', 'stopped at be', 'stopped breakeven', 'stopped be']):
                     action = 'stop_loss_hit'
                 elif any(x in content for x in ['take profit', 'tp1', 'tp2']):
                     action = 'take_profit'
                 elif any(x in content for x in ['close position', 'position closed', 'closed in profit']):
                     action = 'position_closed'
+                elif any(x in content for x in ['stops moved to be', 'stops to be', 'moved to be']):
+                    action = 'stop_loss_update'
+                    details['stop_price'] = 'BE'
+                elif any(x in content for x in ['limit order cancelled', 'order cancelled']):
+                    action = 'limit_order_cancelled'
 
             # Trade id is required for processor
             trade_id = trade_row.get('id')

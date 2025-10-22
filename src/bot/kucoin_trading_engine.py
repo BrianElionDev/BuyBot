@@ -435,7 +435,7 @@ class KucoinTradingEngine:
             action_type = parsed_alert.get('action_type', '').lower()
 
             # Process based on AI-determined action
-            if action_type in ['stop_loss_update', 'move_to_be', 'break_even']:
+            if action_type in ['stop_loss_update', 'move_to_be', 'break_even'] or 'stops moved to be' in content.lower() or 'stops to be' in content.lower() or 'moved to be' in content.lower():
                 logger.info("Processing stop loss move to break-even")
                 # This would need to be implemented based on KuCoin's stop loss management
                 return {
@@ -455,7 +455,7 @@ class KucoinTradingEngine:
                     "exchange_response": response
                 }
 
-            elif action_type in ['take_profit', 'profit_close', 'closed_in_profit']:
+            elif action_type in ['take_profit', 'profit_close', 'closed_in_profit'] or 'tp1' in content.lower() or 'tp2' in content.lower():
                 logger.info("Processing position close in profit")
                 success, response = await self.close_position_at_market(trade_row, "profit_close")
                 return {
@@ -475,7 +475,7 @@ class KucoinTradingEngine:
                     "exchange_response": response
                 }
 
-            elif 'limit order cancelled' in content.lower() or 'limit order canceled' in content.lower():
+            elif 'limit order cancelled' in content.lower() or 'limit order canceled' in content.lower() or 'order cancelled' in content.lower():
                 logger.info("Processing limit order cancel")
                 # No-op for now, could cancel open orders if tracked
                 return {
