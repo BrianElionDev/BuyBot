@@ -26,16 +26,20 @@ class DiscordUpdateSignal(BaseModel):
     structured: Optional[str] = None # Not always present in updates
 
 async def process_initial_signal_background(signal: InitialDiscordSignal):
-    """Process an initial signal in the background."""
+    """Process an initial signal in the background ."""
     try:
         logger.info(f"[ENDPOINT] Processing initial signal from {signal.trader} (ID: {signal.discord_id})")
         result = await discord_bot.process_initial_signal(signal)
         if result.get("status") != "success":
             logger.error(f"[ENDPOINT] Failed to process initial signal: {result.get('message')}")
+
+            logger.info("[ENDPOINT] Signal processing failed - bot already sent notification")
         else:
             logger.info(f"[ENDPOINT] Initial signal processed successfully: {result.get('message')}")
     except Exception as e:
         logger.error(f"[ENDPOINT] Error processing initial signal in background: {str(e)}")
+
+        logger.info("[ENDPOINT] Signal processing exception - bot should have sent notification")
 
 async def process_update_signal_background(signal: DiscordUpdateSignal):
     """Process an update signal in the background."""
@@ -61,13 +65,13 @@ async def receive_initial_signal(signal: InitialDiscordSignal, background_tasks:
     import time
     start_time = time.time()
 
-    background_tasks.add_task(NotificationManager.notify_entry_signal, signal.model_dump())
+    logger.info("[ENDPOINT] Entry signal notification will be handled by bot processing")
 
     try:
         logger.info(f"[ENDPOINT] Received initial signal from {signal.trader} (ID: {signal.discord_id})")
         ActivityMonitor.mark_activity("entry")
 
-        # Telegram notification is handled by NotificationManager.notify_entry_signal above
+        # Process signal in background
         background_tasks.add_task(process_initial_signal_background, signal)
 
         duration = time.time() - start_time
@@ -80,6 +84,9 @@ async def receive_initial_signal(signal: InitialDiscordSignal, background_tasks:
     except Exception as e:
         duration = time.time() - start_time
         logger.error(f"[ENDPOINT] Error receiving initial signal after {duration:.3f}s: {str(e)}")
+
+        logger.error(f"[ENDPOINT] Endpoint failed, bot processing may still handle notifications")
+
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/discord/signal/update", summary="Receive a trade update signal")
@@ -94,13 +101,12 @@ async def receive_update_signal(signal: DiscordUpdateSignal, background_tasks: B
     import time
     start_time = time.time()
 
-    background_tasks.add_task(NotificationManager.notify_update_signal, signal.model_dump())
+    logger.info("[ENDPOINT] Update signal notification will be handled by bot processing")
 
     try:
         logger.info(f"[ENDPOINT] Received update signal for trade {signal.trade} from {signal.trader}")
         ActivityMonitor.mark_activity("update")
 
-        # Telegram notification is handled by NotificationManager.notify_update_signal above
         background_tasks.add_task(process_update_signal_background, signal)
 
         duration = time.time() - start_time

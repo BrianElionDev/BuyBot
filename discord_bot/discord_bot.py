@@ -153,9 +153,15 @@ class DiscordBot:
 
 
     async def process_initial_signal(self, signal: InitialDiscordSignal) -> Dict[str, Any]:
-        """Process an initial Discord signal."""
+        """Process an initial signal."""
         try:
             logger.info(f"Processing initial signal from {signal.trader} (discord_id: {signal.discord_id})")
+
+            try:
+                await self.notification_manager.notify_entry_signal(signal.model_dump())
+                logger.info("✅ Entry signal notification sent successfully")
+            except Exception as notify_error:
+                logger.error(f"❌ Failed to send entry signal notification: {notify_error}")
 
             if not await self.signal_router.is_trader_supported(signal.trader or ""):
                 logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
@@ -304,17 +310,29 @@ class DiscordBot:
                         logger.error(f"❌ Trade execution failed for {coin_symbol}: {exchange_response}")
 
                         # Update trade with error using existing columns
-                        # Update database with failure status
-                        db_update_success = await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
-                            'status': 'FAILED',
-                            'order_status': 'FAILED',
-                            'sync_error_count': 1,
-                            'exchange_response': [f'Trade execution failed: {exchange_response}'],
-                            'manual_verification_needed': True
-                        })
+                        db_update_success = False
+                        max_db_attempts = 3
 
-                        if not db_update_success:
-                            logger.error(f"❌ CRITICAL: Failed to update database for trade {trade_row['id']} - status validation or database error")
+                        for db_attempt in range(max_db_attempts):
+                            try:
+                                # Primary update method
+                                db_update_success = await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
+                                    'status': 'FAILED',
+                                    'order_status': 'FAILED',
+                                    'sync_error_count': 1,
+                                    'exchange_response': [f'Trade execution failed: {exchange_response}'],
+                                    'manual_verification_needed': True
+                                })
+
+                                if db_update_success:
+                                    logger.info(f"✅ Database updated successfully (attempt {db_attempt + 1})")
+                                    break
+                                else:
+                                    logger.warning(f"⚠️ Database update attempt {db_attempt + 1} returned False, trying alternative method...")
+
+                            except Exception as e:
+                                logger.error(f"❌ Database update attempt {db_attempt + 1} failed: {e}")
+
                             # Try alternative update method
                             try:
                                 await self.db_manager.update_trade_failure(
@@ -322,34 +340,95 @@ class DiscordBot:
                                     error_message=f"Trade execution failed: {exchange_response}",
                                     exchange_response=str(exchange_response)
                                 )
-                                logger.info(f"✅ Successfully updated trade {trade_row['id']} using alternative method")
+                                db_update_success = True
+                                logger.info(f"✅ Database updated using alternative method (attempt {db_attempt + 1})")
+                                break
                             except Exception as alt_error:
-                                logger.error(f"❌ CRITICAL: Alternative database update also failed for trade {trade_row['id']}: {alt_error}")
+                                logger.error(f"❌ Alternative database update attempt {db_attempt + 1} failed: {alt_error}")
+
+                            if db_attempt < max_db_attempts - 1:
+                                logger.info(f"🔄 Retrying database update in 1 second...")
+                                await asyncio.sleep(1)
+
+                        if not db_update_success:
+                            logger.error(f"🚨 CRITICAL: All {max_db_attempts} database update attempts failed for trade {trade_row['id']}")
+                            try:
+                                from discord_bot.database.database_manager import DatabaseManager
+                                supabase_client = self.db_manager.supabase
+                                fallback_updates = {
+                                    'status': 'FAILED',
+                                    'order_status': 'FAILED',
+                                    'sync_error_count': 1,
+                                    'manual_verification_needed': True,
+                                    'updated_at': 'now()'
+                                }
+                                response = supabase_client.table("trades").update(fallback_updates).eq("id", trade_row['id']).execute()
+                                if response.data:
+                                    logger.info("✅ Database updated using direct Supabase fallback")
+                                    db_update_success = True
+                                else:
+                                    logger.error("❌ Direct Supabase fallback also failed")
+                            except Exception as fallback_error:
+                                logger.error(f"🚨 CRITICAL: Even direct Supabase fallback failed: {fallback_error}")
                         else:
-                            logger.info(f"✅ Successfully updated trade {trade_row['id']} with failure status")
+                            logger.info("✅ Database update guarantee fulfilled")
 
-                        try:
-                            # Extract proper error message from exchange response
-                            error_message = None
-                            if isinstance(exchange_response, dict):
-                                error_message = exchange_response.get('error', exchange_response.get('message', str(exchange_response)))
-                            elif isinstance(exchange_response, str):
-                                error_message = exchange_response
-                            else:
-                                error_message = str(exchange_response)
+                        notification_sent = False
+                        max_notification_attempts = 3
 
-                            await self.notification_manager.send_trade_execution_notification(
-                                coin_symbol,
-                                position_type,
-                                float(signal_price),
-                                float(parsed_signal.get('position_size') or 0.0),
-                                order_id=str((exchange_response.get('orderId') if isinstance(exchange_response, dict) else '') or ''),
-                                status='FAILURE',
-                                exchange=exchange_type.value,
-                                error_message=error_message
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to send standardized failure notification: {e}")
+                        for attempt in range(max_notification_attempts):
+                            try:
+                                error_message = None
+                                if isinstance(exchange_response, dict):
+                                    error_message = exchange_response.get('error', exchange_response.get('message', str(exchange_response)))
+                                elif isinstance(exchange_response, str):
+                                    error_message = exchange_response
+                                else:
+                                    error_message = str(exchange_response)
+
+                                # Extract order_id safely
+                                order_id = ''
+                                if isinstance(exchange_response, dict):
+                                    order_id = str(exchange_response.get('orderId', ''))
+
+                                # Send notification
+                                success = await self.notification_manager.send_trade_execution_notification(
+                                    coin_symbol,
+                                    position_type,
+                                    float(signal_price),
+                                    float(parsed_signal.get('position_size') or 0.0),
+                                    order_id=order_id,
+                                    status='FAILURE',
+                                    exchange=exchange_type.value,
+                                    error_message=error_message
+                                )
+
+                                if success:
+                                    notification_sent = True
+                                    logger.info(f"✅ Telegram failure notification sent successfully (attempt {attempt + 1})")
+                                    break
+                                else:
+                                    logger.warning(f"⚠️ Telegram notification attempt {attempt + 1} returned False, retrying...")
+
+                            except Exception as e:
+                                logger.error(f"❌ Telegram notification attempt {attempt + 1} failed: {e}")
+                                if attempt < max_notification_attempts - 1:
+                                    logger.info(f"🔄 Retrying notification in 1 second...")
+                                    await asyncio.sleep(1)
+
+                        if not notification_sent:
+                            logger.error(f"🚨 CRITICAL: All {max_notification_attempts} Telegram notification attempts failed for trade {trade_row['id']}")
+                            # Try one final fallback notification with minimal data
+                            try:
+                                fallback_message = f"🚨 TRADE FAILURE ALERT\n\nSymbol: {coin_symbol}\nType: {position_type}\nExchange: {exchange_type.value}\nError: {str(exchange_response)[:200]}\nTrade ID: {trade_row['id']}"
+                                from src.services.notifications.telegram_service import TelegramService
+                                telegram_service = TelegramService()
+                                await telegram_service.send_message(fallback_message)
+                                logger.info("✅ Fallback Telegram notification sent successfully")
+                            except Exception as fallback_error:
+                                logger.error(f"🚨 CRITICAL: Even fallback notification failed: {fallback_error}")
+                        else:
+                            logger.info("✅ Telegram notification guarantee fulfilled")
 
                         exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader)
 
@@ -363,17 +442,30 @@ class DiscordBot:
                 except Exception as exec_error:
                     logger.error(f"Error executing trade for {parsed_signal['coin_symbol']}: {exec_error}")
 
-                    # Update database with failure status
-                    db_update_success = await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
-                        'status': 'FAILED',
-                        'order_status': 'FAILED',
-                        'sync_error_count': 1,
-                        'exchange_response': [f'Execution error: {str(exec_error)}'],
-                        'manual_verification_needed': True
-                    })
+                    # BULLETPROOF DATABASE UPDATE GUARANTEE FOR EXCEPTIONS
+                    db_update_success = False
+                    max_db_attempts = 3
 
-                    if not db_update_success:
-                        logger.error(f"❌ CRITICAL: Failed to update database for trade {trade_row['id']} - status validation or database error")
+                    for db_attempt in range(max_db_attempts):
+                        try:
+                            # Primary update method
+                            db_update_success = await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
+                                'status': 'FAILED',
+                                'order_status': 'FAILED',
+                                'sync_error_count': 1,
+                                'exchange_response': [f'Execution error: {str(exec_error)}'],
+                                'manual_verification_needed': True
+                            })
+
+                            if db_update_success:
+                                logger.info(f"✅ Database updated successfully for execution error (attempt {db_attempt + 1})")
+                                break
+                            else:
+                                logger.warning(f"⚠️ Database update attempt {db_attempt + 1} returned False, trying alternative method...")
+
+                        except Exception as e:
+                            logger.error(f"❌ Database update attempt {db_attempt + 1} failed: {e}")
+
                         # Try alternative update method
                         try:
                             await self.db_manager.update_trade_failure(
@@ -381,11 +473,78 @@ class DiscordBot:
                                 error_message=f"Execution error: {str(exec_error)}",
                                 exchange_response=str(exec_error)
                             )
-                            logger.info(f"✅ Successfully updated trade {trade_row['id']} using alternative method")
+                            db_update_success = True
+                            logger.info(f"✅ Database updated using alternative method for execution error (attempt {db_attempt + 1})")
+                            break
                         except Exception as alt_error:
-                            logger.error(f"❌ CRITICAL: Alternative database update also failed for trade {trade_row['id']}: {alt_error}")
+                            logger.error(f"❌ Alternative database update attempt {db_attempt + 1} failed: {alt_error}")
+
+                        if db_attempt < max_db_attempts - 1:
+                            logger.info(f"🔄 Retrying database update in 1 second...")
+                            await asyncio.sleep(1)
+
+                    if not db_update_success:
+                        logger.error(f"🚨 CRITICAL: All {max_db_attempts} database update attempts failed for execution error in trade {trade_row['id']}")
+                        try:
+                            supabase_client = self.db_manager.supabase
+                            fallback_updates = {
+                                'status': 'FAILED',
+                                'order_status': 'FAILED',
+                                'sync_error_count': 1,
+                                'manual_verification_needed': True,
+                                'updated_at': 'now()'
+                            }
+                            response = supabase_client.table("trades").update(fallback_updates).eq("id", trade_row['id']).execute()
+                            if response.data:
+                                logger.info("✅ Database updated using direct Supabase fallback for execution error")
+                                db_update_success = True
+                            else:
+                                logger.error("❌ Direct Supabase fallback also failed for execution error")
+                        except Exception as fallback_error:
+                            logger.error(f"🚨 CRITICAL: Even direct Supabase fallback failed for execution error: {fallback_error}")
                     else:
-                        logger.info(f"✅ Successfully updated trade {trade_row['id']} with failure status")
+                        logger.info("✅ Database update guarantee fulfilled for execution error")
+
+                    notification_sent = False
+                    max_notification_attempts = 3
+
+                    for attempt in range(max_notification_attempts):
+                        try:
+                            # Send notification for execution error
+                            success = await self.notification_manager.send_trade_execution_notification(
+                                coin_symbol=parsed_signal.get('coin_symbol', 'UNKNOWN'),
+                                position_type=parsed_signal.get('position_type', 'UNKNOWN'),
+                                entry_price=0.0,
+                                quantity=0.0,
+                                order_id='',
+                                status='FAILURE',
+                                exchange=exchange_type.value,
+                                error_message=f"Execution error: {str(exec_error)}"
+                            )
+
+                            if success:
+                                notification_sent = True
+                                logger.info(f"✅ Telegram execution error notification sent successfully (attempt {attempt + 1})")
+                                break
+                            else:
+                                logger.warning(f"⚠️ Telegram notification attempt {attempt + 1} returned False, retrying...")
+
+                        except Exception as e:
+                            logger.error(f"❌ Telegram notification attempt {attempt + 1} failed: {e}")
+                            if attempt < max_notification_attempts - 1:
+                                logger.info(f"🔄 Retrying notification in 1 second...")
+                                await asyncio.sleep(1)
+
+                    if not notification_sent:
+                        logger.error(f"🚨 CRITICAL: All {max_notification_attempts} Telegram notification attempts failed for execution error in trade {trade_row['id']}")
+                        try:
+                            fallback_message = f"🚨 EXECUTION ERROR ALERT\n\nSymbol: {parsed_signal.get('coin_symbol', 'UNKNOWN')}\nType: {parsed_signal.get('position_type', 'UNKNOWN')}\nExchange: {exchange_type.value}\nError: {str(exec_error)[:200]}\nTrade ID: {trade_row['id']}"
+                            from src.services.notifications.telegram_service import TelegramService
+                            telegram_service = TelegramService()
+                            await telegram_service.send_message(fallback_message)
+                            logger.info("✅ Fallback Telegram notification sent successfully")
+                        except Exception as fallback_error:
+                            logger.error(f"🚨 CRITICAL: Even fallback notification failed: {fallback_error}")
 
                     return {
                         "status": "error",
@@ -442,10 +601,17 @@ class DiscordBot:
         """
         Process follow-up signal (stop loss hit, position closed, etc.)
         Routes the signal to the appropriate exchange based on trader.
+        This method handles ALL notifications to prevent redundancy.
         """
         try:
             signal = DiscordUpdateSignal(**signal_data)
             logger.info(f"Processing update signal from trader {signal.trader}: {signal.content}")
+
+            try:
+                await self.notification_manager.notify_update_signal(signal_data)
+                logger.info("✅ Update signal notification sent successfully")
+            except Exception as notify_error:
+                logger.error(f"❌ Failed to send update signal notification: {notify_error}")
 
             # Validate trader and determine exchange
             if not await self.signal_router.is_trader_supported(signal.trader or ""):
