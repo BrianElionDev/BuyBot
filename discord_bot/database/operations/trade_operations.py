@@ -53,6 +53,20 @@ class TradeOperations:
             else:
                 updates['updated_at'] = datetime.now(timezone.utc).isoformat()
 
+            # Validate status consistency before updating
+            from src.database.validators.status_validator import StatusValidator
+            current_trade = await self.get_trade_by_id(trade_id)
+            is_valid, error_msg, corrected_updates = StatusValidator.validate_trade_update(updates, current_trade)
+
+            if not is_valid:
+                logger.error(f"Status validation failed for trade {trade_id}: {error_msg}")
+                return False
+
+            # Use corrected updates if validation made changes
+            if corrected_updates != updates:
+                logger.info(f"Status validation corrected updates for trade {trade_id}")
+                updates = corrected_updates
+
             response = self.supabase.table("trades").update(updates).eq("id", trade_id).execute()
             if response.data and len(response.data) > 0:
                 logger.info(f"Updated trade {trade_id} successfully")
@@ -65,6 +79,9 @@ class TradeOperations:
     async def update_trade_with_original_response(self, trade_id: int, original_response: Dict[str, Any]) -> bool:
         """Update trade with original exchange response and extract key fields."""
         try:
+            # Get current trade data for validation
+            current_trade = await self.get_trade_by_id(trade_id)
+
             updates = {
                 # Store unified exchange_response for UI/notifications
                 'exchange_response': original_response,
@@ -112,20 +129,12 @@ class TradeOperations:
             # Update trade status from "pending" to the status from response (set both status and order_status)
             if isinstance(original_response, dict) and 'status' in original_response:
                 response_status = original_response['status']
-                # Map Binance status to internal canonical enums
-                binance_to_internal = {
-                    'NEW': ('PENDING', 'NEW'),
-                    'OPEN': ('OPEN', 'NEW'),
-                    'PARTIALLY_FILLED': ('OPEN', 'PARTIALLY_FILLED'),
-                    'FILLED': ('CLOSED', 'FILLED'),
-                    'CANCELED': ('CANCELLED', 'CANCELED'),
-                    'REJECTED': ('FAILED', 'REJECTED'),
-                    'EXPIRED': ('CANCELLED', 'EXPIRED')
-                }
-                status_pair = binance_to_internal.get(str(response_status).upper(), ('OPEN', str(response_status).upper()))
-                updates['status'] = status_pair[0]
-                updates['order_status'] = status_pair[1]
-                logger.info(f"Updated trade {trade_id} status to {updates.get('status')} and order_status to {updates.get('order_status')}")
+                # Use unified status mapping
+                from src.core.status_manager import StatusManager
+                order_status, position_status = StatusManager.map_exchange_to_internal(response_status, position_size or 0)
+                updates['status'] = position_status
+                updates['order_status'] = order_status
+                logger.info(f"Updated trade {trade_id} status to {position_status} and order_status to {order_status}")
 
             # Extract position size from tp_sl_orders if available
             if isinstance(original_response, dict) and 'tp_sl_orders' in original_response:

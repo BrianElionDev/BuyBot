@@ -301,19 +301,16 @@ class BinanceDatabaseSync:
                         'manual_verification_needed': False
                     }
 
-                    # Import status constants
+                    # Use unified status mapping
                     import sys
                     import os
                     sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-                    from discord_bot.constants import map_binance_order_status, determine_position_status_from_order
+                    from src.core.status_manager import StatusManager
 
-                    # Update order status
-                    order_status = map_binance_order_status(status)
+                    # Update order status and position status
+                    order_status, position_status = StatusManager.map_exchange_to_internal(status, 0)
                     update_data['order_status'] = order_status
-
-                    # Determine position status
-                    position_status = determine_position_status_from_order(order_status, 0)  # We'll get position size from positions sync
-                    update_data['status'] = position_status  # status column now holds position status
+                    update_data['status'] = position_status
 
                     # Get additional data for filled orders
                     if status == 'FILLED':

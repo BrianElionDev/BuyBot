@@ -219,20 +219,11 @@ class DatabaseSync:
                 'exchange_response': json.dumps(execution_data)
             }
 
-            # Map Binance status to internal status and order_status enums
-            # Use canonical values defined in src/core/constants.py
-            binance_to_internal = {
-                'NEW': ('PENDING', 'NEW'),
-                'PARTIALLY_FILLED': ('OPEN', 'PARTIALLY_FILLED'),
-                'FILLED': ('CLOSED', 'FILLED'),
-                'CANCELED': ('CANCELLED', 'CANCELED'),
-                'REJECTED': ('FAILED', 'REJECTED'),
-                'EXPIRED': ('CANCELLED', 'EXPIRED')
-            }
-
-            status_pair = binance_to_internal.get(status, ('OPEN', status if isinstance(status, str) else 'UNKNOWN'))
-            updates['status'] = status_pair[0]
-            updates['order_status'] = status_pair[1]
+            # Use unified status mapping
+            from src.core.status_manager import StatusManager
+            order_status, position_status = StatusManager.map_exchange_to_internal(status, executed_qty)
+            updates['status'] = position_status
+            updates['order_status'] = order_status
 
             # Update quantities and prices using canonical columns
             if executed_qty > 0:
