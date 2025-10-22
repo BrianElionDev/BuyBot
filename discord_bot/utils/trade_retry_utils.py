@@ -562,6 +562,9 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
     """Sync KuCoin orders to database"""
     logging.info("Starting KuCoin order sync...")
 
+    # Import centralized status manager
+    from src.core.status_manager import StatusManager
+
     # Create lookup for database trades by orderId
     db_trades_by_order_id = {}
     for trade in db_trades:
@@ -600,9 +603,16 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                 if filled_size > 0 and filled_value > 0:
                     avg_price = filled_value / filled_size
 
-                # Update order information with sync_order_response
+                # Get KuCoin order status and map it using centralized StatusManager
+                kucoin_status = order.get('status', 'NEW')
+                mapped_order_status, mapped_position_status = StatusManager.map_exchange_to_internal(
+                    kucoin_status, filled_size
+                )
+
+                # Update order information with proper status mapping
                 update_data = {
-                    'order_status': order.get('status'),
+                    'order_status': mapped_order_status,
+                    'status': mapped_position_status,  # Use mapped position status
                     'position_size': filled_size if filled_size > 0 else None,
                     'entry_price': avg_price if avg_price > 0 else None,
                     'last_order_sync': current_time,
@@ -613,12 +623,12 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                 # Update exchange-specific fields for KuCoin
                 if filled_size > 0:
                     update_data['kucoin_entry_price'] = avg_price
-                if order.get('status') in ['FILLED', 'DONE']:
+                if kucoin_status in ['FILLED', 'DONE']:
                     update_data['kucoin_exit_price'] = avg_price
 
                 supabase.table("trades").update(update_data).eq("id", db_trade['id']).execute()
                 updates_made += 1
-                logging.info(f"Updated KuCoin order for trade {db_trade['id']} ({order.get('symbol')}) - Size: {filled_size}, Price: {avg_price}")
+                logging.info(f"Updated KuCoin order for trade {db_trade['id']} ({order.get('symbol')}) - Status: {kucoin_status} -> {mapped_order_status}/{mapped_position_status}, Size: {filled_size}, Price: {avg_price}")
 
             except Exception as e:
                 logging.error(f"Error updating KuCoin order for trade {db_trade['id']}: {e}")

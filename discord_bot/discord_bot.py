@@ -304,7 +304,8 @@ class DiscordBot:
                         logger.error(f"❌ Trade execution failed for {coin_symbol}: {exchange_response}")
 
                         # Update trade with error using existing columns
-                        await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
+                        # Update database with failure status
+                        db_update_success = await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                             'status': 'FAILED',
                             'order_status': 'FAILED',
                             'sync_error_count': 1,
@@ -312,7 +313,31 @@ class DiscordBot:
                             'manual_verification_needed': True
                         })
 
+                        if not db_update_success:
+                            logger.error(f"❌ CRITICAL: Failed to update database for trade {trade_row['id']} - status validation or database error")
+                            # Try alternative update method
+                            try:
+                                await self.db_manager.update_trade_failure(
+                                    trade_id=trade_row['id'],
+                                    error_message=f"Trade execution failed: {exchange_response}",
+                                    exchange_response=str(exchange_response)
+                                )
+                                logger.info(f"✅ Successfully updated trade {trade_row['id']} using alternative method")
+                            except Exception as alt_error:
+                                logger.error(f"❌ CRITICAL: Alternative database update also failed for trade {trade_row['id']}: {alt_error}")
+                        else:
+                            logger.info(f"✅ Successfully updated trade {trade_row['id']} with failure status")
+
                         try:
+                            # Extract proper error message from exchange response
+                            error_message = None
+                            if isinstance(exchange_response, dict):
+                                error_message = exchange_response.get('error', exchange_response.get('message', str(exchange_response)))
+                            elif isinstance(exchange_response, str):
+                                error_message = exchange_response
+                            else:
+                                error_message = str(exchange_response)
+
                             await self.notification_manager.send_trade_execution_notification(
                                 coin_symbol,
                                 position_type,
@@ -321,7 +346,7 @@ class DiscordBot:
                                 order_id=str((exchange_response or {}).get('orderId') or ''),
                                 status='FAILURE',
                                 exchange=exchange_type.value,
-                                error_message=str(exchange_response)
+                                error_message=error_message
                             )
                         except Exception as e:
                             logger.error(f"Failed to send standardized failure notification: {e}")
@@ -338,13 +363,29 @@ class DiscordBot:
                 except Exception as exec_error:
                     logger.error(f"Error executing trade for {parsed_signal['coin_symbol']}: {exec_error}")
 
-                    await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
+                    # Update database with failure status
+                    db_update_success = await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
                         'status': 'FAILED',
                         'order_status': 'FAILED',
                         'sync_error_count': 1,
                         'exchange_response': [f'Execution error: {str(exec_error)}'],
                         'manual_verification_needed': True
                     })
+
+                    if not db_update_success:
+                        logger.error(f"❌ CRITICAL: Failed to update database for trade {trade_row['id']} - status validation or database error")
+                        # Try alternative update method
+                        try:
+                            await self.db_manager.update_trade_failure(
+                                trade_id=trade_row['id'],
+                                error_message=f"Execution error: {str(exec_error)}",
+                                exchange_response=str(exec_error)
+                            )
+                            logger.info(f"✅ Successfully updated trade {trade_row['id']} using alternative method")
+                        except Exception as alt_error:
+                            logger.error(f"❌ CRITICAL: Alternative database update also failed for trade {trade_row['id']}: {alt_error}")
+                    else:
+                        logger.info(f"✅ Successfully updated trade {trade_row['id']} with failure status")
 
                     return {
                         "status": "error",

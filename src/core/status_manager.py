@@ -99,6 +99,7 @@ class StatusManager:
             'CANCELED': ['CANCELLED'],
             'CANCELLED': ['CANCELLED'],
             'REJECTED': ['FAILED'],
+            'FAILED': ['FAILED'],  # Allow FAILED order_status with FAILED position_status
             'EXPIRED': ['CANCELLED']
         }
 

@@ -74,11 +74,46 @@ async def process_single_trade(bot: DiscordBot, supabase: Client, discord_id: st
             # Do NOT set client_order_id here; let the bot generate a new UUID
             from discord_bot.models import InitialDiscordSignal
             signal_model = InitialDiscordSignal(**initial_signal_data)  # type: ignore
+
+            # Send entry signal notification (like the endpoint would)
+            try:
+                from src.services.notifications.notification_manager import NotificationManager
+                notification_manager = NotificationManager()
+                await notification_manager.notify_entry_signal(initial_signal_data)
+                logging.info("✅ Sent entry signal notification")
+            except Exception as notify_error:
+                logging.error(f"Failed to send entry signal notification: {notify_error}")
+
             result = await bot.process_initial_signal(signal_model)
             if result.get("status") == "success":
                 logging.info(f"✅ Successfully re-processed initial signal.")
             else:
                 logging.error(f"❌ Failed to re-process initial signal. Reason: {result.get('message')}")
+
+                # Send failure notification if the retry failed
+                try:
+                    from src.services.notifications.notification_manager import NotificationManager
+                    notification_manager = NotificationManager()
+
+                    # Extract trade details for failure notification
+                    coin_symbol = result.get('coin_symbol', 'UNKNOWN')
+                    position_type = result.get('position_type', 'UNKNOWN')
+                    error_message = result.get('message', 'Unknown error')
+
+                    await notification_manager.send_trade_execution_notification(
+                        coin_symbol=coin_symbol,
+                        position_type=position_type,
+                        entry_price=0.0,  # No entry price for failed trades
+                        quantity=0.0,     # No quantity for failed trades
+                        order_id='',
+                        status='FAILURE',
+                        exchange=result.get('exchange', 'UNKNOWN'),
+                        error_message=error_message
+                    )
+                    logging.info("✅ Sent trade failure notification")
+                except Exception as failure_notify_error:
+                    logging.error(f"Failed to send failure notification: {failure_notify_error}")
+
         except Exception as e:
             logging.error(f"An unexpected error occurred while re-processing the initial signal: {e}", exc_info=True)
 
