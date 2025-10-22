@@ -113,21 +113,31 @@ class KucoinTradingEngine:
         quantity_multiplier: Optional[int] = None
     ) -> float:
         """
-        Calculate the trade amount based on USDT value and current price.
-
-        Args:
-            coin_symbol: The trading symbol
-            current_price: Current market price
-            quantity_multiplier: Optional quantity multiplier
-
-        Returns:
-            Calculated trade amount
+        Calculate the trade amount based on live database position_size and current price.
         """
         try:
+            # Get position_size from database instead of hardcoded config
+            usdt_amount = self.config.TRADE_AMOUNT  # Fallback to config
+            try:
+                from src.services.trader_config_service import trader_config_service
+                trader_id = (getattr(self, 'trader_id', None) or '').strip().lower()
+                exchange_key = 'kucoin'
+
+                config = await trader_config_service.get_trader_config(trader_id)
+                if not config or config.exchange.value != exchange_key:
+                    msg = f"Missing or mismatched trader config for trader={trader_id}, exchange={exchange_key}; refusing to fallback for position_size"
+                    logger.error(msg)
+                    return 0.0
+                usdt_amount = float(config.position_size)
+                logger.info(f"Using database position_size (final notional): ${usdt_amount} for trader {trader_id}")
+            except Exception as e:
+                logger.error(f"Failed to get position_size from TraderConfigService: {e}")
+                return 0.0
+
             # Calculate trade amount based on USDT value and current price
-            usdt_amount = self.config.TRADE_AMOUNT
+            # IMPORTANT: position_size is FINAL NOTIONAL (no leverage amplification here)
             trade_amount = usdt_amount / current_price
-            logger.info(f"Calculated trade amount: {trade_amount} {coin_symbol} (${usdt_amount:.2f} / ${current_price:.8f})")
+            logger.info(f"Calculated trade amount (no leverage amplification): {trade_amount} {coin_symbol} (${usdt_amount:.2f} / ${current_price:.8f})")
 
             # Apply quantity multiplier if specified (for memecoins)
             if quantity_multiplier and quantity_multiplier > 1:
@@ -285,15 +295,32 @@ class KucoinTradingEngine:
                 logger.error(f"Invalid trade amount calculated: {trade_amount}")
                 return False, f"Invalid trade amount calculated: {trade_amount}"
 
+            # Get leverage from database
+            leverage_value = 1.0  # Default leverage
+            try:
+                from src.services.trader_config_service import trader_config_service
+                trader_id = (getattr(self, 'trader_id', None) or '').strip().lower()
+                exchange_key = 'kucoin'
+
+                config = await trader_config_service.get_trader_config(trader_id)
+                if config and config.exchange.value == exchange_key:
+                    leverage_value = float(config.leverage)
+                    logger.info(f"Using leverage from database: {leverage_value}x for trader {trader_id}")
+                else:
+                    logger.warning(f"No leverage config found for trader {trader_id}, using default 1x")
+            except Exception as e:
+                logger.error(f"Failed to get leverage from TraderConfigService: {e}")
+
             # Execute the order using correct parameter names and KuCoin symbol format
-            logger.info(f"Executing KuCoin order: {kucoin_symbol} {SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL} {order_type.upper()} amount={trade_amount}")
+            logger.info(f"Executing KuCoin order: {kucoin_symbol} {SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL} {order_type.upper()} amount={trade_amount} leverage={leverage_value}x")
             result = await self.kucoin_exchange.create_futures_order(
                 pair=kucoin_symbol,  # Use the correct KuCoin symbol format
                 side=SIDE_BUY if position_type.upper() == 'LONG' else SIDE_SELL,
                 order_type=order_type.upper(),
                 amount=trade_amount,
                 price=final_price if order_type.upper() == 'LIMIT' else None,
-                client_order_id=client_order_id
+                client_order_id=client_order_id,
+                leverage=leverage_value
             )
 
             if 'error' in result:
