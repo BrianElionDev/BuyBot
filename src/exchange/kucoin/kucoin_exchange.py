@@ -213,7 +213,7 @@ class KucoinExchange(ExchangeBase):
         try:
             await self._init_client()
 
-            logger.info(f"Creating KuCoin futures order: {pair} {side} {order_type} {amount}")
+            logger.info(f"Creating KuCoin futures order: {pair} {side} {order_type} {amount} (asset quantity)")
 
             # Enhanced Precision Handling and Validation
             filters = await self.get_futures_symbol_filters(pair)
@@ -253,13 +253,24 @@ class KucoinExchange(ExchangeBase):
             # Convert pair to KuCoin futures symbol format using proper converter
             kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(pair)
 
+            # Get contract multiplier for proper size calculation
+            contract_multiplier = 1
+            if filters and 'multiplier' in filters:
+                contract_multiplier = int(filters['multiplier'])
+                logger.info(f"Using contract multiplier: {contract_multiplier} for {kucoin_symbol}")
+
+            # Calculate proper contract size (amount / multiplier)
+            contract_size = amount / contract_multiplier if contract_multiplier > 1 else amount
+            contract_size = int(contract_size) if contract_size >= 1 else 1  # Minimum 1 contract
+            logger.info(f"Contract size calculation: {amount} assets ÷ {contract_multiplier} multiplier = {contract_size} contracts")
+
             # Prepare order parameters
             order_params = {
                 "clientOid": client_order_id or f"kucoin_{int(asyncio.get_event_loop().time() * 1000)}",
                 "side": kucoin_side,
                 "symbol": kucoin_symbol,  # Use converted symbol
                 "type": kucoin_type,
-                "size": int(amount)  # KuCoin futures expects integer size
+                "size": contract_size  # KuCoin futures expects contract count, not asset quantity
             }
 
             if price and kucoin_type in ["limit", "stop_limit"]:
