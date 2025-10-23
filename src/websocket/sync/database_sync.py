@@ -27,6 +27,8 @@ class DatabaseSync:
         """
         self.db_manager = db_manager
         self.order_id_cache = {}  # Cache for orderId -> trade_id mapping
+        # Track processed notifications to prevent duplicates (max 1000 entries)
+        self.processed_notifications = set()
         self.sync_state = DatabaseSyncState(
             last_sync_time=datetime.now(timezone.utc),
             sync_status='idle',
@@ -242,20 +244,37 @@ class DatabaseSync:
                 # Notify via Telegram for error states only (success notifications handled by initial signal processor)
                 try:
                     if status in ['CANCELED', 'REJECTED', 'EXPIRED']:
-                        # Send a failure/terminal notification via NotificationManager (centralized filtering)
+                        # Get local symbol first
                         local_symbol = trade.get('coin_symbol') or str(execution_data.get('s') or '')
-                        from src.services.notifications.notification_manager import NotificationManager
-                        notifier = NotificationManager()
-                        await notifier.send_error_notification(
-                            error_type=f"ORDER_{status}",
-                            error_message=f"Order {status} for {local_symbol}",
-                            context={
-                                "symbol": local_symbol,
-                                "order_id": str(trade.get('exchange_order_id') or ''),
-                                "price": avg_price,
-                                "quantity": executed_qty,
-                            }
-                        )
+                        # Create a unique key for this notification to prevent duplicates
+                        order_id = str(trade.get('exchange_order_id') or '')
+                        notification_key = f"{order_id}_{status}_{local_symbol}"
+
+                        # Check if we've already sent this notification
+                        if notification_key not in self.processed_notifications:
+                            # Send a failure/terminal notification via NotificationManager (centralized filtering)
+                            from src.services.notifications.notification_manager import NotificationManager
+                            notifier = NotificationManager()
+                            await notifier.send_error_notification(
+                                error_type=f"ORDER_{status}",
+                                error_message=f"Order {status} for {local_symbol}",
+                                context={
+                                    "symbol": local_symbol,
+                                    "order_id": order_id,
+                                    "price": avg_price,
+                                    "quantity": executed_qty,
+                                }
+                            )
+                            # Mark this notification as processed
+                            self.processed_notifications.add(notification_key)
+                            # Clean up old entries to prevent memory growth (keep last 1000)
+                            if len(self.processed_notifications) > 1000:
+                                # Remove oldest entries (convert to list, remove first 200, convert back)
+                                old_entries = list(self.processed_notifications)[:200]
+                                self.processed_notifications = self.processed_notifications - set(old_entries)
+                            logger.info(f"Sent error notification for {notification_key}")
+                        else:
+                            logger.info(f"Skipping duplicate notification for {notification_key}")
                 except Exception as e:
                     logger.error(f"Failed to send websocket execution notification: {e}")
             else:
