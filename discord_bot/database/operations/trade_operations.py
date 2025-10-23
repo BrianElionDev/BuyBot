@@ -131,8 +131,30 @@ class TradeOperations:
 
                 # Extract position size (quantity) - prioritize KuCoin execution details
                 if 'filledSize' in original_response and original_response['filledSize']:
-                    position_size = float(original_response['filledSize'])
-                    logger.info(f"Using KuCoin filled size: {position_size}")
+                    filled_size_contracts = float(original_response['filledSize'])
+
+                    # For KuCoin, convert contract size back to asset quantity
+                    # Check if this is a KuCoin response by looking for KuCoin-specific fields
+                    if 'executionDetails' in original_response and original_response.get('executionDetails'):
+                        execution_details = original_response['executionDetails']
+                        # Try to get contract multiplier from execution details
+                        contract_multiplier = 1
+                        if hasattr(execution_details, 'contract_multiplier'):
+                            contract_multiplier = int(execution_details.contract_multiplier)
+                        elif isinstance(execution_details, dict) and 'contract_multiplier' in execution_details:
+                            contract_multiplier = int(execution_details['contract_multiplier'])
+                        elif hasattr(execution_details, 'multiplier'):
+                            contract_multiplier = int(getattr(execution_details, 'multiplier', 1))
+                        elif isinstance(execution_details, dict) and 'multiplier' in execution_details:
+                            contract_multiplier = int(execution_details.get('multiplier', 1))
+
+                        # Convert contract size back to asset quantity
+                        position_size = filled_size_contracts * contract_multiplier
+                        logger.info(f"Converted KuCoin contract size {filled_size_contracts} × {contract_multiplier} = {position_size} assets")
+                    else:
+                        # Fallback: use contract size as asset quantity (for backward compatibility)
+                        position_size = filled_size_contracts
+                        logger.info(f"Using KuCoin filled size as asset quantity: {position_size}")
                 elif 'executedQty' in original_response and original_response['executedQty']:
                     position_size = float(original_response['executedQty'])
                 elif 'origQty' in original_response and original_response['origQty']:

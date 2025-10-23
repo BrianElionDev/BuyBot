@@ -358,16 +358,42 @@ class KucoinTradingEngine:
                         'executionDetails': status_result
                     })
 
+                    if 'executionDetails' in result and result['executionDetails']:
+                        # Get contract multiplier from the original order creation
+                        filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)
+                        contract_multiplier = 1
+                        if filters and 'multiplier' in filters:
+                            contract_multiplier = int(filters['multiplier'])
+
+                        # Add multiplier to execution details for database conversion
+                        if isinstance(result['executionDetails'], dict):
+                            result['executionDetails']['contract_multiplier'] = contract_multiplier
+                        else:
+                            # If executionDetails is not a dict, create a new dict with the info
+                            result['executionDetails'] = {
+                                'contract_multiplier': contract_multiplier,
+                                'original_details': result['executionDetails']
+                            }
+
                     logger.info(f"✅ KuCoin order executed with details - Size: {filled_size}, Entry Price: {actual_entry_price}")
                 else:
                     logger.warning(f"Could not retrieve order status for {order_id}, using original result")
                     if final_price and trade_amount:
+                        # Get contract multiplier for fallback case
+                        filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)
+                        contract_multiplier = 1
+                        if filters and 'multiplier' in filters:
+                            contract_multiplier = int(filters['multiplier'])
+
                         result.update({
                             'filledSize': trade_amount,
                             'filledValue': trade_amount * final_price,
                             'actualEntryPrice': final_price,
                             'orderStatus': 'NEW',
-                            'executionDetails': {'note': 'Status check failed, using order data'}
+                            'executionDetails': {
+                                'note': 'Status check failed, using order data',
+                                'contract_multiplier': contract_multiplier
+                            }
                         })
                         logger.info(f"Added fallback execution details - Size: {trade_amount}, Entry Price: {final_price}")
             else:
