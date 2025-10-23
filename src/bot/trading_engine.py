@@ -253,48 +253,86 @@ class TradingEngine:
 
     async def process_followup_signal(self, signal_data: Dict[str, Any], trade_row: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Adapter method to process a follow-up signal for Binance via the FollowupSignalProcessor.
+        Process a follow-up signal for Binance using dynamic parsing.
 
-        Expects signal_data to already contain parsed information about the intended action.
+        Args:
+            signal_data: The follow-up signal data
+            trade_row: The original trade row
+
+        Returns:
+            Response data
         """
         try:
-            # Extract action and details; fallback to content parsing if present
-            action = None
-            details: Dict[str, Any] = {}
+            logger.info(f"Processing Binance follow-up signal: {signal_data}")
 
-            # Prefer structured fields if provided by upstream parser
-            parsed = signal_data.get('parsed_alert') or {}
-            if isinstance(parsed, dict):
-                action = parsed.get('action_type') or parsed.get('action')
-                details = parsed.get('details') or {}
+            # Use dynamic alert parser for consistent parsing
+            from src.core.dynamic_alert_parser import DynamicAlertParser
+            parser = DynamicAlertParser()
 
-            # Fallback: simple heuristics from raw content
-            if not action:
-                content = str(signal_data.get('content') or '').lower()
-                if any(x in content for x in ['stopped out', 'stop loss hit', 'stopped at be', 'stopped breakeven', 'stopped be']):
-                    action = 'stop_loss_hit'
-                elif any(x in content for x in ['take profit', 'tp1', 'tp2']):
-                    action = 'take_profit'
-                elif any(x in content for x in ['close position', 'position closed', 'closed in profit']):
-                    action = 'position_closed'
-                elif any(x in content for x in ['stops moved to be', 'stops to be', 'moved to be']):
-                    action = 'stop_loss_update'
-                    details['stop_price'] = 'BE'
-                elif any(x in content for x in ['limit order cancelled', 'order cancelled']):
-                    action = 'limit_order_cancelled'
+            content = signal_data.get('content', '')
+            if not content:
+                return {"success": False, "message": "No content provided in signal data"}
+
+            # Parse the alert content dynamically
+            parsed_alert = await parser.parse_alert_content(content, trade_row)
+            if not parsed_alert:
+                return {"success": False, "message": "Failed to parse alert content"}
+
+            logger.info(f"Dynamic parsing result: {parsed_alert}")
+
+            # Update signal_data with parsed alert
+            signal_data['parsed_alert'] = parsed_alert
+
+            # Extract action and details from parsed result
+            action = parsed_alert.get('action_type')
+            details = {
+                'stop_price': parsed_alert.get('stop_loss_price'),
+                'close_percentage': parsed_alert.get('close_percentage'),
+                'reason': parsed_alert.get('reason'),
+                'exchange_action': parsed_alert.get('exchange_action')
+            }
 
             # Trade id is required for processor
             trade_id = trade_row.get('id')
             if not trade_id:
                 return {"success": False, "message": "Trade row missing id"}
 
-            if not action:
-                return {"success": False, "message": "Unrecognized follow-up action"}
+            if not action or action == 'unknown':
+                return {"success": False, "message": f"Unrecognized follow-up action: {action}"}
 
+            # Handle special combined actions
+            if action == 'tp1_and_break_even':
+                # Process TP1 first, then move stops to BE
+                success1, result1 = await self.process_trade_update(trade_id, 'take_profit_1', details)
+                if success1:
+                    # Move stops to break even
+                    success2, result2 = await self.process_trade_update(trade_id, 'stop_loss_update', {'stop_price': 'BE'})
+                    return {
+                        "success": success2,
+                        "message": "TP1 and break-even processed",
+                        "parsed_alert": parsed_alert,
+                        "result": {"tp1": result1, "break_even": result2}
+                    }
+                else:
+                    return {"success": False, "message": f"TP1 processing failed: {result1}", "parsed_alert": parsed_alert}
+
+            # Process single action
             success, result = await self.process_trade_update(trade_id, action, details)
             if success:
-                return {"success": True, "message": "Follow-up processed", "parsed_alert": parsed or {}, "result": result}
-            return {"success": False, "message": result.get('error') if isinstance(result, dict) else str(result), "parsed_alert": parsed or {}, "result": result}
+                return {
+                    "success": True,
+                    "message": "Follow-up processed successfully",
+                    "parsed_alert": parsed_alert,
+                    "result": result
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": result.get('error') if isinstance(result, dict) else str(result),
+                    "parsed_alert": parsed_alert,
+                    "result": result
+                }
+
         except Exception as e:
             logger.error(f"Error processing follow-up signal: {e}")
             return {"success": False, "message": f"Error processing follow-up: {str(e)}"}
