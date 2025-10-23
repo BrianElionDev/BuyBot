@@ -524,47 +524,6 @@ class DiscordBot:
                     else:
                         logger.info("✅ Database update guarantee fulfilled for execution error")
 
-                    notification_sent = False
-                    max_notification_attempts = 3
-
-                    for attempt in range(max_notification_attempts):
-                        try:
-                            # Send notification for execution error
-                            success = await self.notification_manager.send_trade_execution_notification(
-                                coin_symbol=parsed_signal.get('coin_symbol', 'UNKNOWN'),
-                                position_type=parsed_signal.get('position_type', 'UNKNOWN'),
-                                entry_price=0.0,
-                                quantity=0.0,
-                                order_id='',
-                                status='FAILURE',
-                                exchange=exchange_type.value,
-                                error_message=f"Execution error: {str(exec_error)}"
-                            )
-
-                            if success:
-                                notification_sent = True
-                                logger.info(f"✅ Telegram execution error notification sent successfully (attempt {attempt + 1})")
-                                break
-                            else:
-                                logger.warning(f"⚠️ Telegram notification attempt {attempt + 1} returned False, retrying...")
-
-                        except Exception as e:
-                            logger.error(f"❌ Telegram notification attempt {attempt + 1} failed: {e}")
-                            if attempt < max_notification_attempts - 1:
-                                logger.info(f"🔄 Retrying notification in 1 second...")
-                                await asyncio.sleep(1)
-
-                    if not notification_sent:
-                        logger.error(f"🚨 CRITICAL: All {max_notification_attempts} Telegram notification attempts failed for execution error in trade {trade_row['id']}")
-                        try:
-                            fallback_message = f"🚨 EXECUTION ERROR ALERT\n\nSymbol: {parsed_signal.get('coin_symbol', 'UNKNOWN')}\nType: {parsed_signal.get('position_type', 'UNKNOWN')}\nExchange: {exchange_type.value}\nError: {str(exec_error)[:200]}\nTrade ID: {trade_row['id']}"
-                            from src.services.notifications.telegram_service import TelegramService
-                            telegram_service = TelegramService()
-                            await telegram_service.send_message(fallback_message)
-                            logger.info("✅ Fallback Telegram notification sent successfully")
-                        except Exception as fallback_error:
-                            logger.error(f"🚨 CRITICAL: Even fallback notification failed: {fallback_error}")
-
                     return {
                         "status": "error",
                         "message": f"Execution error: {str(exec_error)}",
