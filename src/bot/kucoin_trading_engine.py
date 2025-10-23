@@ -5,6 +5,7 @@ This module provides a trading engine specifically for KuCoin exchange operation
 It mirrors the functionality of the main TradingEngine but uses KuCoin-specific implementations.
 """
 
+import asyncio
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -327,10 +328,60 @@ class KucoinTradingEngine:
                 logger.error(f"KuCoin order failed: {result['error']}")
                 return False, result['error']
 
+            # CRITICAL: Get order status immediately after placement to get execution details
+            order_id = result.get('orderId') or result.get('order_id')
+            if order_id:
+                logger.info(f"Order placed successfully, checking status for order ID: {order_id}")
+
+                await asyncio.sleep(1)
+
+                status_result = await self.kucoin_exchange.get_order_status(kucoin_symbol, str(order_id))
+                if status_result:
+                    logger.info(f"Retrieved order status: {status_result}")
+
+                    filled_size = float(status_result.get('filledSize', 0))
+                    filled_value = float(status_result.get('filledValue', 0))
+
+                    actual_entry_price = 0.0
+                    if filled_size > 0 and filled_value > 0:
+                        actual_entry_price = filled_value / filled_size
+                        logger.info(f"Calculated actual entry price: {actual_entry_price} (filled_value: {filled_value}, filled_size: {filled_size})")
+                    elif filled_size > 0 and final_price:
+                        actual_entry_price = final_price
+                        logger.info(f"Using final price as entry price: {actual_entry_price}")
+
+                    result.update({
+                        'filledSize': filled_size,
+                        'filledValue': filled_value,
+                        'actualEntryPrice': actual_entry_price,
+                        'orderStatus': status_result.get('status'),
+                        'executionDetails': status_result
+                    })
+
+                    logger.info(f"✅ KuCoin order executed with details - Size: {filled_size}, Entry Price: {actual_entry_price}")
+                else:
+                    logger.warning(f"Could not retrieve order status for {order_id}, using original result")
+                    if final_price and trade_amount:
+                        result.update({
+                            'filledSize': trade_amount,
+                            'filledValue': trade_amount * final_price,
+                            'actualEntryPrice': final_price,
+                            'orderStatus': 'NEW',
+                            'executionDetails': {'note': 'Status check failed, using order data'}
+                        })
+                        logger.info(f"Added fallback execution details - Size: {trade_amount}, Entry Price: {final_price}")
+            else:
+                logger.warning("No order ID found in result, cannot check execution details")
+
             # Update cooldown
             self.trade_cooldowns[cooldown_key] = time.time()
 
             logger.info(f"✅ KuCoin order executed successfully: {result}")
+
+            # Log execution details for debugging
+            if 'filledSize' in result and 'actualEntryPrice' in result:
+                logger.info(f"📊 Execution Summary - Symbol: {coin_symbol}, Size: {result['filledSize']}, Entry Price: {result['actualEntryPrice']}, Order ID: {order_id}")
+
             return True, result
 
         except Exception as e:

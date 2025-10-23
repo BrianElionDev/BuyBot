@@ -104,20 +104,36 @@ class TradeOperations:
 
             # Extract entry price and position size from the response
             if isinstance(original_response, dict):
-                # For MARKET orders, use avgPrice if available, otherwise use price
                 entry_price = None
-                if 'avgPrice' in original_response and original_response['avgPrice']:
-                    entry_price = float(original_response['avgPrice'])
-                elif 'price' in original_response and original_response['price']:
-                    entry_price = float(original_response['price'])
+                position_size = None
+
+                # Check for KuCoin execution details (from post-order status check)
+                if 'actualEntryPrice' in original_response and original_response['actualEntryPrice']:
+                    entry_price = float(original_response['actualEntryPrice'])
+                    logger.info(f"Using KuCoin actual entry price: {entry_price}")
+                elif 'filledSize' in original_response and 'filledValue' in original_response:
+                    filled_size = float(original_response.get('filledSize', 0))
+                    filled_value = float(original_response.get('filledValue', 0))
+                    if filled_size > 0 and filled_value > 0:
+                        entry_price = filled_value / filled_size
+                        logger.info(f"Calculated KuCoin entry price from execution: {entry_price}")
+
+                # For Binance orders, use avgPrice if available, otherwise use price
+                if not entry_price:
+                    if 'avgPrice' in original_response and original_response['avgPrice']:
+                        entry_price = float(original_response['avgPrice'])
+                    elif 'price' in original_response and original_response['price']:
+                        entry_price = float(original_response['price'])
 
                 if entry_price and entry_price > 0:
                     updates['entry_price'] = entry_price
                     logger.info(f"Stored entry_price {entry_price} for trade {trade_id}")
 
-                # Extract position size (quantity)
-                position_size = None
-                if 'executedQty' in original_response and original_response['executedQty']:
+                # Extract position size (quantity) - prioritize KuCoin execution details
+                if 'filledSize' in original_response and original_response['filledSize']:
+                    position_size = float(original_response['filledSize'])
+                    logger.info(f"Using KuCoin filled size: {position_size}")
+                elif 'executedQty' in original_response and original_response['executedQty']:
                     position_size = float(original_response['executedQty'])
                 elif 'origQty' in original_response and original_response['origQty']:
                     position_size = float(original_response['origQty'])
@@ -125,6 +141,19 @@ class TradeOperations:
                 if position_size and position_size > 0:
                     updates['position_size'] = position_size
                     logger.info(f"Stored position_size {position_size} for trade {trade_id}")
+
+                # Store KuCoin-specific execution details
+                if 'filledSize' in original_response or 'filledValue' in original_response:
+                    updates['kucoin_entry_price'] = entry_price if entry_price else None
+                    if 'orderStatus' in original_response:
+                        updates['order_status'] = original_response['orderStatus']
+
+                    # Store execution details in sync_order_response for future sync operations
+                    if 'executionDetails' in original_response:
+                        updates['sync_order_response'] = original_response['executionDetails']
+                        logger.info(f"Stored execution details in sync_order_response for trade {trade_id}")
+
+                    logger.info(f"Stored KuCoin execution details for trade {trade_id}")
 
             # Update trade status from "pending" to the status from response (set both status and order_status)
             if isinstance(original_response, dict) and 'status' in original_response:
