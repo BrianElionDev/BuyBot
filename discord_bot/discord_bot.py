@@ -276,43 +276,8 @@ class DiscordBot:
                                 original_response=exchange_response
                             )
 
-                            try:
-                                order_id = str(exchange_response.get('orderId') or exchange_response.get('order_id') or '')
-
-                                entry_price_val = None
-                                quantity_val = None
-
-                                if exchange_type.value == 'kucoin':
-                                    if 'actualEntryPrice' in exchange_response and exchange_response['actualEntryPrice']:
-                                        entry_price_val = float(exchange_response['actualEntryPrice'])
-                                    elif 'filledSize' in exchange_response and 'filledValue' in exchange_response:
-                                        filled_size = float(exchange_response.get('filledSize', 0))
-                                        filled_value = float(exchange_response.get('filledValue', 0))
-                                        if filled_size > 0 and filled_value > 0:
-                                            entry_price_val = filled_value / filled_size
-
-                                    if 'filledSize' in exchange_response and exchange_response['filledSize']:
-                                        quantity_val = float(exchange_response['filledSize'])
-
-                                if not entry_price_val:
-                                    raw_avg = exchange_response.get('avgPrice') or exchange_response.get('price')
-                                    entry_price_val = float(raw_avg) if raw_avg else float(signal_price)
-
-                                if not quantity_val:
-                                    raw_qty = exchange_response.get('executedQty') or exchange_response.get('origQty') or trade_updates.get('position_size')
-                                    quantity_val = float(raw_qty) if raw_qty else 0.0
-                                await self.notification_manager.send_trade_execution_notification(
-                                    coin_symbol,
-                                    position_type,
-                                    entry_price_val,
-                                    quantity_val,
-                                    order_id,
-                                    status='SUCCESS',
-                                    exchange=exchange_type.value,
-                                    error_message=None
-                                )
-                            except Exception as e:
-                                logger.error(f"Failed to send standardized execution notification: {e}")
+                            # Note: Success notifications are handled by the Initial Signal Processor
+                            # to avoid duplication. This section only updates the database.
                         else:
                             # If exchange_response is a string (error message), store it generically
                             await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
