@@ -472,6 +472,13 @@ class BinanceExchange(ExchangeBase):
         """Get position risk information (alias for get_futures_position_information)."""
         return await self.get_futures_position_information()
 
+    async def get_positions(self, symbol: str = "") -> List[Dict[str, Any]]:
+        """Get positions for a specific symbol or all positions."""
+        positions = await self.get_futures_position_information()
+        if symbol:
+            return [pos for pos in positions if pos.get('symbol') == symbol]
+        return positions
+
     async def get_futures_mark_price(self, symbol: str) -> Optional[float]:
         """Get futures mark price for a symbol."""
         await self._init_client()
