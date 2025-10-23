@@ -358,22 +358,20 @@ class KucoinTradingEngine:
                         'executionDetails': status_result
                     })
 
-                    if 'executionDetails' in result and result['executionDetails']:
-                        # Get contract multiplier from the original order creation
-                        filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)
-                        contract_multiplier = 1
-                        if filters and 'multiplier' in filters:
-                            contract_multiplier = int(filters['multiplier'])
+                    # Add contract multiplier for asset quantity conversion
+                    filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)
+                    contract_multiplier = 1
+                    if filters and 'multiplier' in filters:
+                        contract_multiplier = int(filters['multiplier'])
 
-                        # Add multiplier to execution details for database conversion
-                        if isinstance(result['executionDetails'], dict):
-                            result['executionDetails']['contract_multiplier'] = contract_multiplier
-                        else:
-                            # If executionDetails is not a dict, create a new dict with the info
-                            result['executionDetails'] = {
-                                'contract_multiplier': contract_multiplier,
-                                'original_details': result['executionDetails']
-                            }
+                    # Add multiplier to execution details
+                    if isinstance(result['executionDetails'], dict):
+                        result['executionDetails']['contract_multiplier'] = contract_multiplier
+                    else:
+                        result['executionDetails'] = {
+                            'contract_multiplier': contract_multiplier,
+                            'original_details': result['executionDetails']
+                        }
 
                     logger.info(f"✅ KuCoin order executed with details - Size: {filled_size}, Entry Price: {actual_entry_price}")
                 else:
