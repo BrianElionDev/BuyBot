@@ -17,14 +17,6 @@ from ..core.exchange_base import ExchangeBase
 from ..core.exchange_config import ExchangeConfig, format_value
 from .binance_models import BinanceOrder, BinancePosition, BinanceBalance, BinanceTrade, BinanceIncome
 
-# Import symbol whitelist for validation
-try:
-    from config.binance_futures_whitelist import is_symbol_supported
-    WHITELIST_AVAILABLE = True
-except ImportError:
-    WHITELIST_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning("Futures whitelist not available - all symbols will be allowed")
 
 logger = logging.getLogger(__name__)
 
@@ -400,13 +392,31 @@ class BinanceExchange(ExchangeBase):
             return None
 
     async def is_futures_symbol_supported(self, symbol: str) -> bool:
-        """Check if symbol is supported for futures trading."""
-        if WHITELIST_AVAILABLE:
-            return is_symbol_supported(symbol)  # pyright: ignore[reportPossiblyUnboundVariable]
+        """Check if symbol is supported for futures trading using dynamic validation."""
+        try:
+            # Import here to avoid circular imports
+            from src.core.dynamic_symbol_validator import dynamic_validator
 
-        # Fallback: check if symbol exists in exchange info
-        filters = await self.get_futures_symbol_filters(symbol)
-        return filters is not None
+            # Use dynamic validation with caching
+            is_supported = await dynamic_validator.is_symbol_supported(
+                symbol=symbol,
+                exchange='binance',
+                exchange_client=self,
+                trading_type='futures'
+            )
+
+            return is_supported
+
+        except Exception as e:
+            logger.error(f"Error in dynamic symbol validation for {symbol}: {e}")
+
+            # Final fallback: check if symbol exists in exchange info
+            try:
+                filters = await self.get_futures_symbol_filters(symbol)
+                return filters is not None
+            except Exception as fallback_error:
+                logger.error(f"All validation methods failed for {symbol}: {fallback_error}")
+                return False
 
     # Trade History
     async def get_user_trades(self, symbol: str = "", limit: int = 1000,

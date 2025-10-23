@@ -969,7 +969,7 @@ class KucoinExchange(ExchangeBase):
 
     async def is_futures_symbol_supported(self, symbol: str) -> bool:
         """
-        Check if symbol is supported for futures trading.
+        Check if symbol is supported for futures trading using dynamic validation.
 
         Args:
             symbol: Trading pair symbol
@@ -978,43 +978,18 @@ class KucoinExchange(ExchangeBase):
             True if supported, False otherwise
         """
         try:
-            # Get all available futures symbols
-            all_symbols = await self.get_futures_symbols()
-            symbol_converter.available_symbols = all_symbols
+            # Import here to avoid circular imports
+            from src.core.dynamic_symbol_validator import dynamic_validator
 
-            base = (symbol or "").strip().upper().lstrip('@').replace(' ', '')
+            # Use dynamic validation with caching
+            is_supported = await dynamic_validator.is_symbol_supported(
+                symbol=symbol,
+                exchange='kucoin',
+                exchange_client=self,
+                trading_type='futures'
+            )
 
-            # Normalize BTC to XBT for KuCoin
-            if base.startswith('BTC'):
-                base = base.replace('BTC', 'XBT', 1)
-            if base.startswith('BTC-'):
-                base = base.replace('BTC-', 'XBT-', 1)
-
-            candidates = []
-            if base.endswith('USDTM'):
-                candidates.append(base)
-            elif base.endswith('USDT'):
-                # Convert USDT to USDTM for futures
-                candidates.extend([base + 'M', base])
-            elif '-' in base:
-                no_dash = base.replace('-', '')
-                candidates.extend([no_dash + 'M', no_dash, base])
-            else:
-                candidates.extend([f"{base}USDTM", f"{base}USDT", f"{base}-USDT"])
-
-            for cand in candidates:
-                if cand in all_symbols:
-                    logger.info(f"Symbol {symbol} is supported on KuCoin futures (as {cand})")
-                    return True
-
-            is_supported = symbol_converter.is_symbol_supported(symbol, all_symbols, "futures")
-            if is_supported:
-                matching_symbol = symbol_converter.find_matching_symbol(symbol, all_symbols, "futures")
-                logger.info(f"Symbol {symbol} is supported on KuCoin futures (as {matching_symbol})")
-                return True
-
-            logger.warning(f"Symbol {symbol} not supported on KuCoin futures (candidates tried: {candidates[:3]}...)")
-            return False
+            return is_supported
 
         except Exception as e:
             logger.error(f"Failed to check KuCoin symbol support for {symbol}: {e}")

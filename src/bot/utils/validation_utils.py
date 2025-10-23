@@ -23,10 +23,11 @@ class ValidationUtils:
     ) -> Tuple[bool, Optional[str]]:
         """
         Validate if a symbol is supported and in TRADING status.
+        This method now serves as a fallback for when dynamic validation is not available.
 
         Args:
             trading_pair: The trading pair to validate
-            exchange_info: Exchange information from Binance API
+            exchange_info: Exchange information from exchange API
 
         Returns:
             Tuple of (is_valid, error_message)
@@ -46,6 +47,42 @@ class ValidationUtils:
             return False, f"Symbol {trading_pair} is not in TRADING status: {symbol_info.get('status')}"
 
         return True, None
+
+    @staticmethod
+    async def validate_symbol_support_dynamic(
+        trading_pair: str,
+        exchange: str,
+        exchange_client
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Validate if a symbol is supported using dynamic validation.
+
+        Args:
+            trading_pair: The trading pair to validate
+            exchange: Exchange name ('binance' or 'kucoin')
+            exchange_client: Exchange client instance
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        try:
+            from src.core.dynamic_symbol_validator import dynamic_validator
+
+            is_supported = await dynamic_validator.is_symbol_supported(
+                symbol=trading_pair,
+                exchange=exchange,
+                exchange_client=exchange_client,
+                trading_type='futures'
+            )
+
+            if is_supported:
+                return True, None
+            else:
+                return False, f"Symbol {trading_pair} not supported or not trading on {exchange}"
+
+        except Exception as e:
+            logger.error(f"Error in dynamic symbol validation for {trading_pair}: {e}")
+            return False, f"Error validating symbol: {str(e)}"
 
     @staticmethod
     def validate_price_threshold(

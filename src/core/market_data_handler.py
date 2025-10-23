@@ -154,7 +154,7 @@ class MarketDataHandler:
 
     async def validate_symbol_support(self, trading_pair: str) -> Tuple[bool, Optional[str]]:
         """
-        Validate if a symbol is supported and in TRADING status.
+        Validate if a symbol is supported and in TRADING status using dynamic validation.
 
         Args:
             trading_pair: The trading pair to validate
@@ -163,6 +163,25 @@ class MarketDataHandler:
             Tuple of (is_valid, error_message)
         """
         try:
+            # Use dynamic validation first
+            from src.bot.utils.validation_utils import ValidationUtils
+
+            # Determine exchange name from the exchange instance
+            exchange_name = 'binance' if 'binance' in str(type(self.exchange)).lower() else 'kucoin'
+
+            # Try dynamic validation first
+            is_valid, error_msg = await ValidationUtils.validate_symbol_support_dynamic(
+                trading_pair=trading_pair,
+                exchange=exchange_name,
+                exchange_client=self.exchange
+            )
+
+            if is_valid:
+                return True, None
+
+            # Fallback to original method if dynamic validation fails
+            logger.warning(f"Dynamic validation failed for {trading_pair}, using fallback method")
+
             # Check if symbol is supported
             if hasattr(self.exchange, 'is_futures_symbol_supported'):
                 is_supported = await self.exchange.is_futures_symbol_supported(trading_pair)
@@ -172,7 +191,6 @@ class MarketDataHandler:
             # Check if symbol is in TRADING status
             exchange_info = await self.get_exchange_info()
             if exchange_info:
-                from src.bot.utils.validation_utils import ValidationUtils
                 return ValidationUtils.validate_symbol_support(trading_pair, exchange_info)
             else:
                 # If no exchange info available, just check if symbol is supported
