@@ -507,6 +507,10 @@ class BinanceExchange(ExchangeBase):
             logger.error(f"Error getting exchange info: {e}")
             return None
 
+    async def futures_exchange_info(self) -> Optional[Dict[str, Any]]:
+        """Get futures exchange information (alias for get_exchange_info for compatibility)."""
+        return await self.get_exchange_info()
+
     async def calculate_min_max_market_order_quantity(self, symbol: str) -> Tuple[float, float]:
         """Calculate minimum and maximum market order quantities for a symbol."""
         await self._init_client()

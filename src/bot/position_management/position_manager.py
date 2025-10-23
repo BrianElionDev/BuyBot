@@ -142,7 +142,6 @@ class PositionManager:
                 try:
                     import asyncio
                     from src.services.notifications.trade_notification_service import trade_notification_service, PnLUpdateData
-                    from datetime import datetime, timezone
 
                     if hasattr(self, '_last_pnl_cache'):
                         last_pnl = self._last_pnl_cache.get(position_key, 0)
