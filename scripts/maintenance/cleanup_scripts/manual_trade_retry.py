@@ -108,7 +108,8 @@ async def process_single_trade(bot: DiscordBot, supabase: Client, discord_id: st
                         order_id='',
                         status='FAILURE',
                         exchange=result.get('exchange', 'UNKNOWN'),
-                        error_message=error_message
+                        error_message=error_message,
+                        trade_id=discord_id  # Pass trade_id for deduplication
                     )
                     logging.info("✅ Sent trade failure notification")
                 except Exception as failure_notify_error:

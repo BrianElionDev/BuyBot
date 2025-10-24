@@ -7,7 +7,7 @@ and KuCoin symbol format (COIN-USDT) for both spot and futures trading.
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +239,7 @@ class KucoinSymbolConverter:
         matching_symbol = self.find_matching_symbol(bot_symbol, available_symbols, trading_type)
         return matching_symbol is not None
 
-    def get_symbol_info(self, bot_symbol: str, available_symbols: List[str], trading_type: str = "futures") -> Dict[str, any]:
+    def get_symbol_info(self, bot_symbol: str, available_symbols: List[str], trading_type: str = "futures") -> Dict[str, Any]:
         """
         Get comprehensive symbol information.
 

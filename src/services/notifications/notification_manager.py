@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from .telegram_service import TelegramService
 from .message_formatter import MessageFormatter
+from .alert_deduplicator import alert_deduplicator
 from .notification_models import (
     TradeNotification, OrderFillNotification, PnLNotification,
     StopLossNotification, TakeProfitNotification, ErrorNotification,
@@ -34,11 +35,19 @@ class NotificationManager:
         order_id: str,
         status: str,
         exchange: str,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
+        trade_id: Optional[str] = None
     ) -> bool:
-        """Send trade execution notification"""
+        """Send trade execution notification with deduplication"""
         if not self.enabled:
             return False
+
+        # For failure notifications, check for duplicates
+        if status.upper() == "FAILURE" and trade_id:
+            error_type = "EXECUTION_FAILED"
+            if not alert_deduplicator.should_send_alert(trade_id, error_type, coin_symbol, exchange):
+                logger.info(f"Skipping duplicate failure notification for trade {trade_id}")
+                return True  # Return True to indicate "handled" (even though we didn't send)
 
         try:
             notification = TradeNotification(
@@ -54,7 +63,13 @@ class NotificationManager:
             )
 
             message = self.message_formatter.format_trade_execution_notification(notification)
-            return await self.telegram_service.send_message(message)
+            success = await self.telegram_service.send_message(message)
+
+            # Mark as sent for deduplication if it was a failure notification
+            if status.upper() == "FAILURE" and trade_id and success:
+                alert_deduplicator.mark_alert_sent(trade_id, "EXECUTION_FAILED", coin_symbol, exchange)
+
+            return success
         except Exception as e:
             logger.error(f"Failed to send trade execution notification: {e}")
             return False

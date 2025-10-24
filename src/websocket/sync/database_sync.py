@@ -254,17 +254,30 @@ class DatabaseSync:
                         if notification_key not in self.processed_notifications:
                             # Send a failure/terminal notification via NotificationManager (centralized filtering)
                             from src.services.notifications.notification_manager import NotificationManager
-                            notifier = NotificationManager()
-                            await notifier.send_error_notification(
+                            from src.services.notifications.alert_deduplicator import alert_deduplicator
+
+                            # Check for duplicates using the centralized deduplicator
+                            if alert_deduplicator.should_send_alert(
+                                trade_id=str(trade_id),
                                 error_type=f"ORDER_{status}",
-                                error_message=f"Order {status} for {local_symbol}",
-                                context={
-                                    "symbol": local_symbol,
-                                    "order_id": order_id,
-                                    "price": avg_price,
-                                    "quantity": executed_qty,
-                                }
-                            )
+                                symbol=local_symbol,
+                                exchange="kucoin"  # Assuming this is from KuCoin websocket
+                            ):
+                                notifier = NotificationManager()
+                                await notifier.send_error_notification(
+                                    error_type=f"ORDER_{status}",
+                                    error_message=f"Order {status} for {local_symbol}",
+                                    context={
+                                        "symbol": local_symbol,
+                                        "order_id": order_id,
+                                        "price": avg_price,
+                                        "quantity": executed_qty,
+                                    }
+                                )
+                                logger.info(f"Sent error notification for {notification_key}")
+                            else:
+                                logger.info(f"Skipping duplicate error notification for {notification_key}")
+
                             # Mark this notification as processed
                             self.processed_notifications.add(notification_key)
                             # Clean up old entries to prevent memory growth (keep last 1000)
@@ -272,7 +285,6 @@ class DatabaseSync:
                                 # Remove oldest entries (convert to list, remove first 200, convert back)
                                 old_entries = list(self.processed_notifications)[:200]
                                 self.processed_notifications = self.processed_notifications - set(old_entries)
-                            logger.info(f"Sent error notification for {notification_key}")
                         else:
                             logger.info(f"Skipping duplicate notification for {notification_key}")
                 except Exception as e:
