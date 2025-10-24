@@ -271,21 +271,16 @@ class KucoinTradingEngine:
             # Convert to KuCoin trading pair format
             trading_pair = f"{coin_symbol.upper()}-USDT"
 
-            # Validate symbol is supported and get the correct KuCoin symbol format
+            # Use symbol converter to get the correct KuCoin symbol format
+            from src.exchange.kucoin.kucoin_symbol_converter import symbol_converter
+            kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(trading_pair)
+            logger.info(f"Converted {trading_pair} to KuCoin symbol: {kucoin_symbol}")
+
+            # Validate symbol is supported using the converted symbol
             is_supported = await self.kucoin_exchange.is_futures_symbol_supported(trading_pair)
             if not is_supported:
-                logger.error(f"Symbol {trading_pair} not listed on KuCoin Futures")
+                logger.error(f"Symbol {trading_pair} (converted to {kucoin_symbol}) not listed on KuCoin Futures")
                 return False, f"Symbol {trading_pair} not listed on KuCoin Futures"
-
-            # Get the correct KuCoin symbol format for order creation
-            filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)
-            if filters and 'kucoin_symbol' in filters:
-                kucoin_symbol = filters['kucoin_symbol']
-                logger.info(f"Using KuCoin symbol format: {kucoin_symbol} for {trading_pair}")
-            else:
-                # Fallback to original format
-                kucoin_symbol = trading_pair.replace('-', '')
-                logger.warning(f"Using fallback KuCoin symbol format: {kucoin_symbol}")
 
             # Calculate trade amount
             trade_amount = await self._calculate_trade_amount(
@@ -333,9 +328,14 @@ class KucoinTradingEngine:
             if order_id:
                 logger.info(f"Order placed successfully, checking status for order ID: {order_id}")
 
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)  # Wait a bit longer for order processing
 
-                status_result = await self.kucoin_exchange.get_order_status(kucoin_symbol, str(order_id))
+                try:
+                    status_result = await self.kucoin_exchange.get_order_status(kucoin_symbol, str(order_id))
+                except Exception as status_error:
+                    logger.warning(f"Order status check failed for {order_id}: {status_error}")
+                    status_result = None
+
                 if status_result:
                     logger.info(f"Retrieved order status: {status_result}")
 
@@ -384,16 +384,16 @@ class KucoinTradingEngine:
                             contract_multiplier = int(filters['multiplier'])
 
                         result.update({
-                            'filledSize': trade_amount,
-                            'filledValue': trade_amount * final_price,
+                            'filledSize': 0,  # No fill yet for NEW orders
+                            'filledValue': 0,  # No fill yet for NEW orders
                             'actualEntryPrice': final_price,
                             'orderStatus': 'NEW',
                             'executionDetails': {
-                                'note': 'Status check failed, using order data',
+                                'note': 'Status check failed, using order data - order not yet filled',
                                 'contract_multiplier': contract_multiplier
                             }
                         })
-                        logger.info(f"Added fallback execution details - Size: {trade_amount}, Entry Price: {final_price}")
+                        logger.info(f"Added fallback execution details - Order placed but not yet filled, Entry Price: {final_price}")
             else:
                 logger.warning("No order ID found in result, cannot check execution details")
 

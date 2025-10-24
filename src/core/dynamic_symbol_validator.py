@@ -203,9 +203,25 @@ class DynamicSymbolValidator:
         """
         try:
             active_symbols = await self.get_active_symbols(exchange, exchange_client, trading_type)
-            is_supported = symbol.upper() in active_symbols
 
-            logger.debug(f"Symbol {symbol} support check on {exchange}: {is_supported}")
+            # For KuCoin, convert the symbol to the proper format before checking
+            if exchange.lower() == 'kucoin':
+                from src.exchange.kucoin.kucoin_symbol_converter import symbol_converter
+
+                # Convert the symbol to KuCoin format
+                if trading_type.lower() == 'futures':
+                    converted_symbol = symbol_converter.convert_bot_to_kucoin_futures(symbol)
+                else:
+                    converted_symbol = symbol_converter.convert_bot_to_kucoin_spot(symbol)
+
+                # Check if the converted symbol is supported
+                is_supported = converted_symbol.upper() in active_symbols
+                logger.debug(f"Symbol {symbol} -> {converted_symbol} support check on {exchange}: {is_supported}")
+            else:
+                # For other exchanges, check directly
+                is_supported = symbol.upper() in active_symbols
+                logger.debug(f"Symbol {symbol} support check on {exchange}: {is_supported}")
+
             return is_supported
 
         except Exception as e:

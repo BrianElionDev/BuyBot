@@ -50,6 +50,8 @@ class KucoinSymbolConverter:
             return "XBT-USDT"
         elif bot_symbol == "BTC":
             return "XBT-USDT"
+        elif bot_symbol == "BTC-USDT":
+            return "XBT-USDT"
 
         # Check special mappings first
         if bot_symbol in self.special_mappings:
