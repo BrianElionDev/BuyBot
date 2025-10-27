@@ -636,15 +636,15 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
 
                 # Only update position_size and entry_price if we have valid values
                 if position_size and position_size > 0:
-                    update_data['position_size'] = str(position_size)
+                    update_data['position_size'] = f"{position_size:.8f}"
                 if avg_price and avg_price > 0:
-                    update_data['entry_price'] = str(avg_price)
+                    update_data['entry_price'] = f"{avg_price:.8f}"
 
                 # Update exchange-specific fields for KuCoin
                 if avg_price and avg_price > 0:
-                    update_data['kucoin_entry_price'] = str(avg_price)
+                    update_data['kucoin_entry_price'] = f"{avg_price:.8f}"
                 if kucoin_status in ['FILLED', 'DONE']:
-                    update_data['kucoin_exit_price'] = str(avg_price)
+                    update_data['kucoin_exit_price'] = f"{avg_price:.8f}"
 
                 supabase.table("trades").update(update_data).eq("id", db_trade['id']).execute()
                 updates_made += 1
@@ -879,7 +879,7 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
                             if not position_open:
                                 # Position is closed, update status and exit price
                                 update_data['status'] = 'CLOSED'
-                                update_data['binance_exit_price'] = str(float(matching_order.get('avgPrice', 0)))
+                                update_data['binance_exit_price'] = f"{float(matching_order.get('avgPrice', 0)):.8f}"
                         except Exception:
                             # If we can't check position, keep the mapped status from StatusManager
                             pass
