@@ -85,23 +85,61 @@ class WebSocketIntegrationExample:
 
                 if status == 'FILLED':
                     if executed_qty > 0:
-                        updates.update({
-                            'status': 'CLOSED',
-                            'exit_price': avg_price,
-                            'binance_exit_price': avg_price,
-                            'pnl_usd': realized_pnl,
-                            'position_size': executed_qty  # Update final position size
-                        })
-                        logger.info(f"Trade {trade['id']} FILLED at {avg_price} - PnL: {realized_pnl}")
+                        # Determine if this is an entry or exit order
+                        order_side = order_data.get('S', '')  # BUY/SELL
+                        reduce_only = order_data.get('R', False)  # reduceOnly flag
+                        close_position = order_data.get('cp', False)  # closePosition flag
+
+                        # Check if this is an exit order (reduce-only or close-position)
+                        is_exit_order = reduce_only or close_position
+
+                        if is_exit_order:
+                            # This is an exit order - set exit price and close position
+                            updates.update({
+                                'status': 'CLOSED',
+                                'exit_price': avg_price,
+                                'binance_exit_price': avg_price,
+                                'pnl_usd': realized_pnl,
+                                'position_size': executed_qty
+                            })
+                            logger.info(f"Trade {trade['id']} EXIT ORDER FILLED at {avg_price} - PnL: {realized_pnl}")
+                        else:
+                            # This is an entry order - set entry price and activate position
+                            updates.update({
+                                'status': 'ACTIVE',
+                                'entry_price': avg_price,
+                                'binance_entry_price': avg_price,
+                                'position_size': executed_qty
+                            })
+                            logger.info(f"Trade {trade['id']} ENTRY ORDER FILLED at {avg_price}")
 
                 elif status == 'PARTIALLY_FILLED':
-                    updates.update({
-                        'status': 'PARTIALLY_CLOSED',
-                        'exit_price': avg_price,
-                        'binance_exit_price': avg_price,
-                        'position_size': executed_qty  # Update current position size
-                    })
-                    logger.info(f"Trade {trade['id']} PARTIALLY_FILLED at {avg_price}")
+                    # Determine if this is an entry or exit order
+                    order_side = order_data.get('S', '')  # BUY/SELL
+                    reduce_only = order_data.get('R', False)  # reduceOnly flag
+                    close_position = order_data.get('cp', False)  # closePosition flag
+
+                    # Check if this is an exit order (reduce-only or close-position)
+                    is_exit_order = reduce_only or close_position
+
+                    if is_exit_order:
+                        # This is a partial exit order
+                        updates.update({
+                            'status': 'PARTIALLY_CLOSED',
+                            'exit_price': avg_price,
+                            'binance_exit_price': avg_price,
+                            'position_size': executed_qty
+                        })
+                        logger.info(f"Trade {trade['id']} PARTIAL EXIT ORDER FILLED at {avg_price}")
+                    else:
+                        # This is a partial entry order
+                        updates.update({
+                            'status': 'ACTIVE',
+                            'entry_price': avg_price,
+                            'binance_entry_price': avg_price,
+                            'position_size': executed_qty
+                        })
+                        logger.info(f"Trade {trade['id']} PARTIAL ENTRY ORDER FILLED at {avg_price}")
 
                 elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
                     terminal_map = {
