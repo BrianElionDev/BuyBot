@@ -597,11 +597,14 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                 # Extract KuCoin-specific fields and map to exchange-independent fields
                 filled_size = float(order.get('filledSize', 0))
                 filled_value = float(order.get('filledValue', 0))
+                orig_qty = float(order.get('origQty', 0))
 
                 # Calculate average price from filled value and size
                 avg_price = 0.0
                 if filled_size > 0 and filled_value > 0:
                     avg_price = filled_value / filled_size
+                elif orig_qty > 0 and order.get('price'):
+                    avg_price = float(order.get('price', 0))
 
                 # Get KuCoin order status and map it using centralized StatusManager
                 kucoin_status = order.get('status', 'NEW')
@@ -609,22 +612,39 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                     kucoin_status, filled_size
                 )
 
+                # Calculate position size - prioritize origQty for consistency (represents asset quantity)
+                position_size = None
+                if orig_qty > 0:
+                    # For NEW orders, use origQty (this represents actual asset quantity)
+                    position_size = orig_qty
+                    logging.info(f"Using origQty as position_size (asset quantity): {position_size}")
+                elif filled_size > 0:
+                    # For filled orders, use filledSize (this represents contract size)
+                    # Note: This should be converted to asset quantity using contract multiplier
+                    # but for now, we'll use it as-is for consistency with the main logic
+                    position_size = filled_size
+                    logging.info(f"Using filledSize as position_size: {position_size}")
+
                 # Update order information with proper status mapping
                 update_data = {
                     'order_status': mapped_order_status,
                     'status': mapped_position_status,  # Use mapped position status
-                    'position_size': filled_size if filled_size > 0 else None,
-                    'entry_price': avg_price if avg_price > 0 else None,
                     'last_order_sync': current_time,
                     'updated_at': current_time,
                     'sync_order_response': json.dumps(order)
                 }
 
+                # Only update position_size and entry_price if we have valid values
+                if position_size and position_size > 0:
+                    update_data['position_size'] = str(position_size)
+                if avg_price and avg_price > 0:
+                    update_data['entry_price'] = str(avg_price)
+
                 # Update exchange-specific fields for KuCoin
-                if filled_size > 0:
-                    update_data['kucoin_entry_price'] = avg_price
+                if avg_price and avg_price > 0:
+                    update_data['kucoin_entry_price'] = str(avg_price)
                 if kucoin_status in ['FILLED', 'DONE']:
-                    update_data['kucoin_exit_price'] = avg_price
+                    update_data['kucoin_exit_price'] = str(avg_price)
 
                 supabase.table("trades").update(update_data).eq("id", db_trade['id']).execute()
                 updates_made += 1

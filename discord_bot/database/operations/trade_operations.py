@@ -129,11 +129,15 @@ class TradeOperations:
                     updates['entry_price'] = entry_price
                     logger.info(f"Stored entry_price {entry_price} for trade {trade_id}")
 
-                # Extract position size (quantity) - prioritize KuCoin execution details
-                if 'filledSize' in original_response and original_response['filledSize']:
+                position_size = None
+
+                if 'origQty' in original_response and original_response['origQty']:
+                    position_size = float(original_response['origQty'])
+                    logger.info(f"Using origQty as position_size (asset quantity): {position_size}")
+                elif 'filledSize' in original_response and original_response['filledSize']:
                     filled_size_contracts = float(original_response['filledSize'])
 
-                    # For KuCoin, convert contract size to asset quantity for consistency
+                    # For filled orders, convert contract size back to asset quantity
                     if 'executionDetails' in original_response and original_response.get('executionDetails'):
                         execution_details = original_response['executionDetails']
                         contract_multiplier = 1
@@ -142,7 +146,7 @@ class TradeOperations:
                         if isinstance(execution_details, dict) and 'contract_multiplier' in execution_details:
                             contract_multiplier = int(execution_details['contract_multiplier'])
                         elif hasattr(execution_details, 'contract_multiplier'):
-                            contract_multiplier = int(execution_details.contract_multiplier)
+                            contract_multiplier = int(getattr(execution_details, 'contract_multiplier', 1))
 
                         # Convert contract size to asset quantity
                         position_size = filled_size_contracts * contract_multiplier
@@ -153,8 +157,7 @@ class TradeOperations:
                         logger.info(f"Using KuCoin filled size as asset quantity: {position_size}")
                 elif 'executedQty' in original_response and original_response['executedQty']:
                     position_size = float(original_response['executedQty'])
-                elif 'origQty' in original_response and original_response['origQty']:
-                    position_size = float(original_response['origQty'])
+                    logger.info(f"Using executedQty as position_size: {position_size}")
 
                 if position_size and position_size > 0:
                     updates['position_size'] = position_size
