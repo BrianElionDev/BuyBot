@@ -82,20 +82,27 @@ class TradeOperations:
             # Get current trade data for validation
             current_trade = await self.get_trade_by_id(trade_id)
 
+            # Normalize response first
+            try:
+                from src.core.response_normalizer import normalize_exchange_response
+                normalized = normalize_exchange_response(str(current_trade.get('exchange') or ''), original_response)
+            except Exception:
+                normalized = original_response if isinstance(original_response, dict) else {}
+
             updates = {
                 # Store unified exchange_response for UI/notifications
-                'exchange_response': original_response,
+                'exchange_response': normalized or original_response,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
             # Extract and store the exchange_order_id from the response
-            if isinstance(original_response, dict) and 'order_id' in original_response:
-                updates['exchange_order_id'] = str(original_response['order_id'])
+            if isinstance(normalized, dict) and 'order_id' in normalized:
+                updates['exchange_order_id'] = str(normalized['order_id'])
                 logger.info(f"Stored exchange_order_id {original_response['order_id']} for trade {trade_id}")
-            elif isinstance(original_response, dict) and 'orderId' in original_response:
+            elif isinstance(normalized, dict) and 'orderId' in normalized:
                 # Handle direct Binance API response format
-                updates['exchange_order_id'] = str(original_response['orderId'])
-                logger.info(f"Stored exchange_order_id {original_response['orderId']} for trade {trade_id}")
+                updates['exchange_order_id'] = str(normalized['orderId'])
+                logger.info(f"Stored exchange_order_id {normalized['orderId']} for trade {trade_id}")
 
             # Extract stop_loss_order_id if available
             if isinstance(original_response, dict) and 'stop_loss_order_id' in original_response:
@@ -103,27 +110,27 @@ class TradeOperations:
                 logger.info(f"Stored stop_loss_order_id {original_response['stop_loss_order_id']} for trade {trade_id}")
 
             # Extract entry price and position size from the response
-            if isinstance(original_response, dict):
+            if isinstance(normalized, dict):
                 entry_price = None
                 position_size = None
 
                 # Check for KuCoin execution details (from post-order status check)
-                if 'actualEntryPrice' in original_response and original_response['actualEntryPrice']:
-                    entry_price = float(original_response['actualEntryPrice'])
+                if 'actualEntryPrice' in normalized and normalized['actualEntryPrice']:
+                    entry_price = float(normalized['actualEntryPrice'])
                     logger.info(f"Using KuCoin actual entry price: {entry_price}")
-                elif 'filledSize' in original_response and 'filledValue' in original_response:
-                    filled_size = float(original_response.get('filledSize', 0))
-                    filled_value = float(original_response.get('filledValue', 0))
+                elif 'filledSize' in normalized and 'filledValue' in normalized:
+                    filled_size = float(normalized.get('filledSize', 0))
+                    filled_value = float(normalized.get('filledValue', 0))
                     if filled_size > 0 and filled_value > 0:
                         entry_price = filled_value / filled_size
                         logger.info(f"Calculated KuCoin entry price from execution: {entry_price}")
 
                 # For Binance orders, use avgPrice if available, otherwise use price
                 if not entry_price:
-                    if 'avgPrice' in original_response and original_response['avgPrice']:
-                        entry_price = float(original_response['avgPrice'])
-                    elif 'price' in original_response and original_response['price']:
-                        entry_price = float(original_response['price'])
+                    if 'avgPrice' in normalized and normalized['avgPrice']:
+                        entry_price = float(normalized['avgPrice'])
+                    elif 'price' in normalized and normalized['price']:
+                        entry_price = float(normalized['price'])
 
                 if entry_price and entry_price > 0:
                     updates['entry_price'] = entry_price
@@ -131,15 +138,15 @@ class TradeOperations:
 
                 position_size = None
 
-                if 'origQty' in original_response and original_response['origQty']:
-                    position_size = float(original_response['origQty'])
+                if 'origQty' in normalized and normalized['origQty']:
+                    position_size = float(normalized['origQty'])
                     logger.info(f"Using origQty as position_size (asset quantity): {position_size}")
-                elif 'filledSize' in original_response and original_response['filledSize']:
-                    filled_size_contracts = float(original_response['filledSize'])
+                elif 'filledSize' in normalized and normalized['filledSize']:
+                    filled_size_contracts = float(normalized['filledSize'])
 
                     # For filled orders, convert contract size back to asset quantity
-                    if 'executionDetails' in original_response and original_response.get('executionDetails'):
-                        execution_details = original_response['executionDetails']
+                    if 'executionDetails' in normalized and normalized.get('executionDetails'):
+                        execution_details = normalized['executionDetails']
                         contract_multiplier = 1
 
                         # Get contract multiplier from execution details
@@ -155,8 +162,8 @@ class TradeOperations:
                         # Fallback: use contract size as asset quantity
                         position_size = filled_size_contracts
                         logger.info(f"Using KuCoin filled size as asset quantity: {position_size}")
-                elif 'executedQty' in original_response and original_response['executedQty']:
-                    position_size = float(original_response['executedQty'])
+                elif 'executedQty' in normalized and normalized['executedQty']:
+                    position_size = float(normalized['executedQty'])
                     logger.info(f"Using executedQty as position_size: {position_size}")
 
                 if position_size and position_size > 0:
@@ -164,21 +171,21 @@ class TradeOperations:
                     logger.info(f"Stored position_size {position_size} for trade {trade_id}")
 
                 # Store KuCoin-specific execution details
-                if 'filledSize' in original_response or 'filledValue' in original_response:
+                if 'filledSize' in normalized or 'filledValue' in normalized:
                     updates['kucoin_entry_price'] = entry_price if entry_price else None
-                    if 'orderStatus' in original_response:
-                        updates['order_status'] = original_response['orderStatus']
+                    if 'orderStatus' in normalized:
+                        updates['order_status'] = normalized['orderStatus']
 
                     # Store execution details in sync_order_response for future sync operations
-                    if 'executionDetails' in original_response:
-                        updates['sync_order_response'] = original_response['executionDetails']
+                    if 'executionDetails' in normalized:
+                        updates['sync_order_response'] = normalized['executionDetails']
                         logger.info(f"Stored execution details in sync_order_response for trade {trade_id}")
 
                     logger.info(f"Stored KuCoin execution details for trade {trade_id}")
 
             # Update trade status from "pending" to the status from response (set both status and order_status)
-            if isinstance(original_response, dict) and 'status' in original_response:
-                response_status = original_response['status']
+            if isinstance(normalized, dict) and 'status' in normalized:
+                response_status = normalized['status']
                 # Use unified status mapping
                 from src.core.status_manager import StatusManager
                 order_status, position_status = StatusManager.map_exchange_to_internal(response_status, position_size or 0)

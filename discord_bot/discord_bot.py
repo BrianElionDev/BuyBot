@@ -575,6 +575,30 @@ class DiscordBot:
                 return {"status": "skipped", "message": "Duplicate alert"}
 
             alert_result = None
+
+            try:
+                trade_id = None
+                if 'trade_id' in signal_data:
+                    raw_id = signal_data.get('trade_id')
+                    if raw_id is not None:
+                        try:
+                            trade_id = int(raw_id)
+                        except Exception:
+                            trade_id = None
+                else:
+                    # best-effort lookup by discord_id
+                    trade_row = await self.db_manager.find_trade_by_discord_id(signal.discord_id)
+                    if trade_row and trade_row.get('id') is not None:
+                        try:
+                            trade_id = int(trade_row['id'])
+                        except Exception:
+                            trade_id = None
+                if trade_id:
+                    current = await self.db_manager.get_trade_by_id(trade_id)
+                    if current and str(current.get('status', '')).upper() == 'CLOSED':
+                        return {"status": "skipped", "message": "Trade already closed"}
+            except Exception:
+                pass
             try:
                 existing_alert = self.db_manager.supabase.table("alerts").select("id").eq("discord_id", signal.discord_id).limit(1).execute()
                 if existing_alert.data:
