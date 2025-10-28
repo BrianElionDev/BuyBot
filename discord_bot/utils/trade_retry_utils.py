@@ -675,32 +675,64 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
 
     updates_made = 0
     current_time = datetime.now(timezone.utc).isoformat()
+    active_symbols = set()
 
     for position in kucoin_positions:
         symbol = position.get('symbol', '')
-        if not symbol or symbol not in db_trades_by_symbol:
+        if not symbol:
             continue
+        if symbol in db_trades_by_symbol:
+            active_symbols.add(symbol)
+            matching_trades = db_trades_by_symbol[symbol]
+            for trade in matching_trades:
+                try:
+                    # Update position information
+                    update_data = {
+                        'position_size': abs(float(position.get('size', 0))),
+                        'mark_price': float(position.get('markPrice', 0)),
+                        'unrealized_pnl': float(position.get('unrealizedPnl', 0)),
+                        'last_mark_sync': current_time,
+                        'updated_at': current_time
+                    }
 
-        matching_trades = db_trades_by_symbol[symbol]
-        for trade in matching_trades:
-            try:
-                # Update position information
-                update_data = {
-                    'mark_price': float(position.get('markPrice', 0)),
-                    'unrealized_pnl': float(position.get('unrealizedPnl', 0)),
-                    'last_mark_sync': current_time,
-                    'updated_at': current_time
-                }
+                    # Update exchange-specific fields for KuCoin
+                    kucoin_entry = float(position.get('entryPrice', 0))
+                    update_data['kucoin_entry_price'] = kucoin_entry
+                    if not trade.get('entry_price') and kucoin_entry:
+                        update_data['entry_price'] = kucoin_entry
 
-                # Update exchange-specific fields for KuCoin
-                update_data['kucoin_entry_price'] = float(position.get('entryPrice', 0))
+                    # If trade is not ACTIVE/OPEN, mark ACTIVE when we see a live position
+                    status = str(trade.get('status', '')).upper()
+                    if status not in ['ACTIVE', 'OPEN'] and abs(float(position.get('size', 0))) > 0:
+                        update_data['status'] = 'ACTIVE'
 
-                supabase.table("trades").update(update_data).eq("id", trade['id']).execute()
-                updates_made += 1
-                logging.info(f"Updated KuCoin position for trade {trade['id']} ({symbol}) - Mark: {position.get('markPrice')}, PnL: {position.get('unrealizedPnl')}")
+                    supabase.table("trades").update(update_data).eq("id", trade['id']).execute()
+                    updates_made += 1
+                    logging.info(f"Updated KuCoin position for trade {trade['id']} ({symbol}) - Size: {position.get('size')}, Mark: {position.get('markPrice')}")
 
-            except Exception as e:
-                logging.error(f"Error updating KuCoin position for trade {trade['id']}: {e}")
+                except Exception as e:
+                    logging.error(f"Error updating KuCoin position for trade {trade['id']}: {e}")
+
+    # Detect and mark CLOSED for previously ACTIVE symbols no longer present
+    try:
+        for symbol, matching_trades in db_trades_by_symbol.items():
+            if symbol in active_symbols:
+                continue
+            for trade in matching_trades:
+                try:
+                    status = str(trade.get('status', '')).upper()
+                    if status in ['ACTIVE', 'OPEN']:
+                        close_update = {
+                            'status': 'CLOSED',
+                            'updated_at': current_time
+                        }
+                        supabase.table("trades").update(close_update).eq("id", trade['id']).execute()
+                        updates_made += 1
+                        logging.info(f"Marked KuCoin trade {trade['id']} ({symbol}) as CLOSED (no active position)")
+                except Exception as e:
+                    logging.error(f"Error marking trade {trade['id']} as CLOSED: {e}")
+    except Exception as e:
+        logging.error(f"Closed-position detection failed: {e}")
 
     logging.info(f"KuCoin position sync completed: {updates_made} updates made")
 
