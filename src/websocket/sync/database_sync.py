@@ -236,6 +236,12 @@ class DatabaseSync:
             if realized_pnl != 0:
                 updates['realized_pnl'] = realized_pnl
 
+            if updates.get('status') == 'CLOSED':
+                if avg_price and avg_price > 0:
+                    updates['exit_price'] = avg_price
+                if realized_pnl is not None:
+                    updates['pnl_usd'] = realized_pnl
+
             # Update database
             response = self.db_manager.supabase.from_("trades").update(updates).eq("id", trade_id).execute()
 
