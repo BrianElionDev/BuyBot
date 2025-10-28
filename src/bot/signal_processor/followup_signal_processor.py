@@ -309,6 +309,8 @@ class FollowupSignalProcessor:
             return await self._process_limit_order_cancellation(
                 coin_symbol, position_type, trading_pair, active_trade
             )
+        elif action == 'order_filled':
+            return True, {"message": "Order fill acknowledged"}
         else:
             logger.error(f"Unknown action: {action}")
             return False, {"error": f"Unknown action: {action}"}

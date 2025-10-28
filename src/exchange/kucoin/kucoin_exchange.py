@@ -9,7 +9,7 @@ import asyncio
 import json
 import aiohttp
 import logging
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, cast
 from decimal import Decimal
 
 from ..core.exchange_base import ExchangeBase
@@ -167,7 +167,7 @@ class KucoinExchange(ExchangeBase):
             if not hasattr(spot_service, 'get_account_api'):
                 logger.error("Spot service does not have get_account_api method")
                 return {}
-            account_api = spot_service.get_account_api()
+            account_api = cast(Any, spot_service).get_account_api()
 
             # Get all spot accounts
             request = GetSpotAccountListReqBuilder().build()
@@ -304,14 +304,14 @@ class KucoinExchange(ExchangeBase):
 
             logger.info(f"Using leverage: {leverage_int}x for {order_params['symbol']}")
 
-            # Build the order request
-            order_request = AddOrderReqBuilder() \
-                .set_client_oid(order_params["clientOid"]) \
-                .set_side(order_params["side"]) \
-                .set_symbol(order_params["symbol"]) \
-                .set_type(order_params["type"]) \
-                .set_size(order_params["size"]) \
-                .set_leverage(leverage_int)
+            # SDK expects enums; cast to Any to satisfy type checker while passing valid values
+            order_request = (AddOrderReqBuilder()
+                .set_client_oid(order_params["clientOid"])
+                .set_side(cast(Any, order_params["side"]))
+                .set_symbol(order_params["symbol"])
+                .set_type(cast(Any, order_params["type"]))
+                .set_size(order_params["size"])
+                .set_leverage(leverage_int))
 
             if "price" in order_params:
                 order_request.set_price(order_params["price"])
@@ -422,10 +422,11 @@ class KucoinExchange(ExchangeBase):
 
             # Try to get data attribute safely
             order_data = None
-            if hasattr(response, 'data'):
-                order_data = response.data
-            elif hasattr(response, 'order'):
-                order_data = response.order
+            resp_any = cast(Any, response)
+            if hasattr(resp_any, 'data'):
+                order_data = resp_any.data
+            elif hasattr(resp_any, 'order'):
+                order_data = resp_any.order
             else:
                 logger.warning(f"Order {order_id} response format not recognized")
                 return None
@@ -610,11 +611,11 @@ class KucoinExchange(ExchangeBase):
 
             order_request = AddOrderReqBuilder() \
                 .set_client_oid(client_oid) \
-                .set_side(side) \
+                .set_side(cast(Any, side)) \
                 .set_symbol(kucoin_symbol) \
-                .set_type("limit") \
+                .set_type(cast(Any, "market")) \
                 .set_size(int(amount)) \
-                .set_price(str(current_price)) \
+                .set_reduce_only(True) \
                 .set_leverage(close_leverage)
 
             request = order_request.build()
@@ -626,7 +627,7 @@ class KucoinExchange(ExchangeBase):
                     "clientOrderId": client_oid,
                     "symbol": pair,
                     "side": side.upper(),
-                    "type": "MARKET",
+                "type": "MARKET",
                     "origQty": str(amount),
                     "status": "NEW",
                     "time": int(asyncio.get_event_loop().time() * 1000)
@@ -784,8 +785,6 @@ class KucoinExchange(ExchangeBase):
             symbols = []
             if hasattr(symbols_response, 'data') and symbols_response.data:
                 symbols = symbols_response.data
-            elif hasattr(symbols_response, 'items') and symbols_response.items:
-                symbols = symbols_response.items
 
             # Find matching symbol
             matching_symbol = None
@@ -1241,10 +1240,11 @@ class KucoinExchange(ExchangeBase):
 
             # Try to get data attribute safely
             trade_data_list = []
-            if hasattr(response, 'data') and response.data:
-                trade_data_list = response.data
-            elif hasattr(response, 'items') and response.items:
-                trade_data_list = response.items
+            resp_any = cast(Any, response)
+            if hasattr(resp_any, 'data') and resp_any.data:
+                trade_data_list = resp_any.data
+            elif hasattr(resp_any, 'items') and resp_any.items:
+                trade_data_list = resp_any.items
 
             if not trade_data_list:
                 logger.info("No trade history found")
@@ -1321,10 +1321,11 @@ class KucoinExchange(ExchangeBase):
 
             # Try to get data attribute safely
             income_data_list = []
-            if hasattr(response, 'data') and response.data:
-                income_data_list = response.data
-            elif hasattr(response, 'items') and response.items:
-                income_data_list = response.items
+            resp_any = cast(Any, response)
+            if hasattr(resp_any, 'data') and resp_any.data:
+                income_data_list = resp_any.data
+            elif hasattr(resp_any, 'items') and resp_any.items:
+                income_data_list = resp_any.items
 
             if not income_data_list:
                 logger.info("No income history found")
@@ -1557,7 +1558,7 @@ class KucoinExchange(ExchangeBase):
         }
         return type_mapping.get(order_type.upper(), "limit")
 
-    async def _make_direct_api_call(self, method: str, endpoint: str, params: dict = None) -> List[Dict[str, Any]]:
+    async def _make_direct_api_call(self, method: str, endpoint: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         Make a direct API call to KuCoin using the existing client.
 
@@ -1607,9 +1608,9 @@ class KucoinExchange(ExchangeBase):
 
             from kucoin_universal_sdk.generate.futures.order.model_get_order_list_req import GetOrderListReqBuilder
 
-            # Get all open orders
-            # Use string status instead of enum to avoid import issues
-            request = GetOrderListReqBuilder().set_status("active").build()
+            # Get all open orders using enum for status
+            # Some SDK versions may not expose StatusEnum; use cast with literal value
+            request = GetOrderListReqBuilder().set_status(cast(Any, "active")).build()
             response = order_api.get_order_list(request)
 
             orders = []
@@ -1619,13 +1620,14 @@ class KucoinExchange(ExchangeBase):
 
             # Try to get data attribute safely
             order_data_list = []
-            if hasattr(response, 'data') and response.data:
-                if hasattr(response.data, 'items') and response.data.items:
-                    order_data_list = response.data.items
-                elif hasattr(response.data, 'data') and response.data.data:
-                    order_data_list = response.data.data
-            elif hasattr(response, 'items') and response.items:
-                order_data_list = response.items
+            resp_any = cast(Any, response)
+            if hasattr(resp_any, 'data') and resp_any.data:
+                if hasattr(resp_any.data, 'items') and resp_any.data.items:
+                    order_data_list = resp_any.data.items
+                elif hasattr(resp_any.data, 'data') and resp_any.data.data:
+                    order_data_list = resp_any.data.data
+            elif hasattr(resp_any, 'items') and resp_any.items:
+                order_data_list = resp_any.items
 
             if not order_data_list:
                 logger.info("No open orders found")

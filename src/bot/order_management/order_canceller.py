@@ -33,6 +33,9 @@ class OrderCanceller:
         try:
             cancelled_count = 0
 
+            if active_trade is None:
+                active_trade = {}
+
             # If we have an active trade with stored order IDs, use those
             if active_trade:
                 # Cancel stop loss order if we have its ID

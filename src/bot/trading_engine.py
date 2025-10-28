@@ -229,11 +229,11 @@ class TradingEngine:
             logger.error(f"Error updating TP/SL orders for {trading_pair}: {e}")
             return False, []
 
-    async def cancel_tp_sl_orders(self, trading_pair: str, active_trade: Dict) -> bool:
+    async def cancel_tp_sl_orders(self, trading_pair: str, active_trade: Dict = None) -> bool:
         """
         Cancel TP/SL orders for a specific symbol using stored order IDs.
         """
-        return await self.order_canceller.cancel_tp_sl_orders(trading_pair, active_trade)
+        return await self.order_canceller.cancel_tp_sl_orders(trading_pair, active_trade or {})
 
     async def cancel_order(self, active_trade: Dict) -> Tuple[bool, Dict]:
         """
@@ -285,6 +285,13 @@ class TradingEngine:
 
             # Extract action and details from parsed result
             action = parsed_alert.get('action_type')
+            try:
+                # Normalize action to canonical internal schema
+                from src.core.action_normalizer import ActionNormalizer
+                action = ActionNormalizer.normalize(action)
+            except Exception:
+                # Fallback to raw if normalizer unavailable for any reason
+                action = action or 'unknown'
             details = {
                 'stop_price': parsed_alert.get('stop_loss_price'),
                 'close_percentage': parsed_alert.get('close_percentage'),

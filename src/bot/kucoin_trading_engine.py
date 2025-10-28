@@ -536,6 +536,11 @@ class KucoinTradingEngine:
 
             # Extract action and details from parsed result
             action = parsed_alert.get('action_type')
+            try:
+                from src.core.action_normalizer import ActionNormalizer
+                action = ActionNormalizer.normalize(action)
+            except Exception:
+                action = action or 'unknown'
             details = {
                 'stop_price': parsed_alert.get('stop_loss_price'),
                 'close_percentage': parsed_alert.get('close_percentage'),

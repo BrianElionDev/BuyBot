@@ -1,6 +1,5 @@
 """
 Discord Endpoint Module
-
 This module contains the Discord API endpoint for backward compatibility.
 """
 
@@ -10,9 +9,7 @@ from typing import Optional
 from discord_bot.discord_bot import discord_bot
 from discord_bot.models import InitialDiscordSignal
 from config.logging_config import get_endpoint_logger, get_trade_logger
-from src.services.notifications.notification_manager import NotificationManager
 from discord_bot.utils.activity_monitor import ActivityMonitor
-from src.services.notifications.telegram_service import TelegramService
 
 logger = get_endpoint_logger()
 trade_logger = get_trade_logger()
