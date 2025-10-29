@@ -1,7 +1,5 @@
 import asyncio
 from datetime import datetime, timezone
-from datetime import datetime, timezone
-from datetime import datetime, timezone
 import logging
 import re
 import time
@@ -12,7 +10,6 @@ import uuid
 import json
 
 import sys
-import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from config.logging_config import get_trade_logger

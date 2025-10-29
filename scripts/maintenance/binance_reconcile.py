@@ -55,6 +55,13 @@ async def main() -> None:
     # Run enhanced sync (orders, positions, cleanup, history)
     await sync_trade_statuses_with_binance(bot, supabase)
 
+    # Cleanly close the Binance client session to avoid warnings
+    try:
+        if hasattr(bot, 'binance_exchange') and bot.binance_exchange:
+            await bot.binance_exchange.close_client()
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     asyncio.run(main())

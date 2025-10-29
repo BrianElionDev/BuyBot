@@ -646,6 +646,40 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                 if kucoin_status in ['FILLED', 'DONE']:
                     update_data['kucoin_exit_price'] = f"{avg_price:.8f}"
 
+                # For closed trades missing exit_price, try to get from trade history
+                if (db_trade.get('status') == 'CLOSED' and
+                    not db_trade.get('exit_price') and
+                    not db_trade.get('kucoin_exit_price')):
+                    try:
+                        symbol = extract_symbol_from_trade(db_trade)
+                        if symbol and bot.kucoin_exchange:
+                            trade_history = await bot.kucoin_exchange.get_user_trades(symbol=f"{symbol}USDTM")
+                            matching_trades = [t for t in trade_history if str(t.get('orderId', '')) == order_id]
+                            if matching_trades:
+                                last_trade = matching_trades[-1]
+                                exit_price = float(last_trade.get('price', 0))
+                                if exit_price > 0:
+                                    update_data['exit_price'] = f"{exit_price:.8f}"
+                                    update_data['kucoin_exit_price'] = f"{exit_price:.8f}"
+
+                                    # Calculate PnL if we have all required data
+                                    entry_price = float(db_trade.get('entry_price') or avg_price or 0)
+                                    position_size = float(db_trade.get('position_size') or position_size or 0)
+                                    position_type = str(db_trade.get('signal_type') or '').upper()
+
+                                    if entry_price > 0 and position_size > 0 and exit_price > 0:
+                                        if position_type == 'LONG':
+                                            pnl = (exit_price - entry_price) * position_size
+                                        elif position_type == 'SHORT':
+                                            pnl = (entry_price - exit_price) * position_size
+                                        else:
+                                            pnl = 0.0
+
+                                        update_data['pnl_usd'] = f"{pnl:.8f}"
+                                        update_data['net_pnl'] = f"{pnl:.8f}"
+                    except Exception as e:
+                        logging.warning(f"Could not get trade history for KuCoin trade {db_trade['id']}: {e}")
+
                 supabase.table("trades").update(update_data).eq("id", db_trade['id']).execute()
                 updates_made += 1
                 logging.info(f"Updated KuCoin order for trade {db_trade['id']} ({order.get('symbol')}) - Status: {kucoin_status} -> {mapped_order_status}/{mapped_position_status}, Size: {filled_size}, Price: {avg_price}")
@@ -701,6 +735,10 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
                     if not trade.get('entry_price') and kucoin_entry:
                         update_data['entry_price'] = kucoin_entry
 
+                    # Set position size if missing
+                    if not trade.get('position_size') and abs(float(position.get('size', 0))) > 0:
+                        update_data['position_size'] = str(abs(float(position.get('size', 0))))
+
                     # If trade is not ACTIVE/OPEN, mark ACTIVE when we see a live position
                     status = str(trade.get('status', '')).upper()
                     if status not in ['ACTIVE', 'OPEN'] and abs(float(position.get('size', 0))) > 0:
@@ -726,6 +764,24 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
                             'status': 'CLOSED',
                             'updated_at': current_time
                         }
+
+                        # Ensure completeness for exit_price and pnl fields if missing
+                        if not trade.get('exit_price') and not trade.get('kucoin_exit_price'):
+                            close_update['exit_price'] = '0'
+                            close_update['kucoin_exit_price'] = '0'
+                        if trade.get('pnl_usd') in [None, 0, '0', '0.0']:
+                            close_update['pnl_usd'] = '0'
+                        if not trade.get('net_pnl'):
+                            close_update['net_pnl'] = '0'
+
+                        # Set closed_at timestamp
+                        try:
+                            from discord_bot.utils.timestamp_manager import ensure_closed_at
+                            await ensure_closed_at(supabase, trade['id'])
+                            logging.info(f"✅ Set closed_at timestamp for KuCoin trade {trade['id']} via cleanup closure")
+                        except Exception as e:
+                            logging.warning(f"Could not set closed_at timestamp for KuCoin trade {trade['id']}: {e}")
+
                         supabase.table("trades").update(close_update).eq("id", trade['id']).execute()
                         updates_made += 1
                         logging.info(f"Marked KuCoin trade {trade['id']} ({symbol}) as CLOSED (no active position)")
@@ -788,7 +844,12 @@ async def sync_positions_to_database_enhanced(bot: DiscordBot, supabase: Client,
 
 
 async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, binance_positions: list, db_trades: list):
-    """Mark trades as closed if position is no longer active on Binance"""
+    """Mark trades as closed if position is no longer active on Binance.
+
+    Also close trades that exist in DB but have no active position and no corresponding
+    open order on Binance. When closing, if exit_price/pnl are missing, default to 0 to
+    make the record complete (won't overwrite existing values).
+    """
     logging.info("Starting cleanup of closed positions...")
 
     # Get all symbols with active positions on Binance
@@ -797,16 +858,12 @@ async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, b
     # Find database trades that should be marked as closed
     trades_to_close = []
     for trade in db_trades:
-        status = trade.get('status', '')
-
-        if status != 'OPEN' or not trade.get('exchange_order_id'):
-            continue
+        status = str(trade.get('status', '')).upper()
 
         # Get symbol with fallback logic
         symbol = extract_symbol_from_trade(trade)
 
-        # If trade is OPEN but symbol is not in active positions
-        if symbol and symbol not in active_symbols:
+        if symbol and symbol not in active_symbols and status in ['ACTIVE', 'OPEN', 'PENDING']:
             trades_to_close.append(trade)
 
     updates_made = 0
@@ -818,6 +875,15 @@ async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, b
                 'status': 'CLOSED',
                 'updated_at': current_time
             }
+
+            # Ensure completeness for exit_price and pnl fields if missing
+            if not trade.get('exit_price') and not trade.get('binance_exit_price'):
+                update_data['exit_price'] = '0'
+                update_data['binance_exit_price'] = '0'
+            if trade.get('pnl_usd') in [None, 0, '0', '0.0']:
+                update_data['pnl_usd'] = '0'
+            if not trade.get('net_pnl'):
+                update_data['net_pnl'] = '0'
 
             # Set closed_at timestamp when trade is marked as closed
             try:
@@ -1427,6 +1493,74 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> Op
 
         if not income_records:
             logging.info(f"Trade {trade_id} ({symbol}): No income records found during order lifecycle")
+            # Fallback path: compute PnL from entry/exit and size when income is missing
+            fallback_update = {
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }
+
+            try:
+                # Resolve entry price
+                entry_price = float(trade.get('entry_price') or trade.get('binance_entry_price') or 0.0)
+                # Resolve position size
+                size_raw = trade.get('position_size')
+                position_size = float(size_raw) if size_raw is not None else 0.0
+                # Resolve side
+                position_type = str(trade.get('signal_type') or '').upper()
+
+                exit_price_val = float(trade.get('exit_price') or trade.get('binance_exit_price') or 0.0)
+
+                # If missing exit price, try to fetch last trade fill price during lifecycle
+                if exit_price_val <= 0 and hasattr(bot, 'binance_exchange') and bot.binance_exchange:
+                    try:
+                        # Use account trades endpoint for symbol & window
+                        trades_hist = await bot.binance_exchange.get_user_trades(symbol=f"{symbol}USDT", start_time=start_time, end_time=end_time)
+                        if trades_hist:
+                            last_trade = trades_hist[-1]
+                            price_candidate = last_trade.get('price') or last_trade.get('p')
+                            if price_candidate:
+                                exit_price_val = float(price_candidate)
+                    except Exception as e:
+                        logging.warning(f"Failed to fetch user trades for {symbol}: {e}")
+
+                # As last resort, use mark price
+                if exit_price_val <= 0 and hasattr(bot, 'binance_exchange') and bot.binance_exchange:
+                    try:
+                        mp = await bot.binance_exchange.get_futures_mark_price(f"{symbol}USDT")
+                        if mp:
+                            exit_price_val = float(mp)
+                    except Exception as e:
+                        logging.warning(f"Failed to fetch mark price for {symbol}: {e}")
+
+                # Compute pnl if we have required inputs
+                if entry_price > 0 and exit_price_val > 0 and position_size > 0 and position_type in ['LONG', 'SHORT']:
+                    if position_type == 'LONG':
+                        pnl = (exit_price_val - entry_price) * position_size
+                    else:
+                        pnl = (entry_price - exit_price_val) * position_size
+
+                    # Only update if pnl_usd is missing/zero
+                    pnl_existing = trade.get('pnl_usd')
+                    if pnl_existing is None or float(pnl_existing) == 0.0:
+                        fallback_update['pnl_usd'] = str(pnl)
+                        # If no net_pnl, mirror pnl
+                        if not trade.get('net_pnl'):
+                            fallback_update['net_pnl'] = str(pnl)
+
+                    # Persist exit price if we derived it
+                    if not trade.get('exit_price') and exit_price_val > 0:
+                        fallback_update['exit_price'] = str(exit_price_val)
+                    if not trade.get('binance_exit_price') and exit_price_val > 0:
+                        fallback_update['binance_exit_price'] = str(exit_price_val)
+
+                # Update if we prepared any fields
+                if len(fallback_update) > 1:
+                    response = supabase.from_("trades").update(fallback_update).eq("id", trade_id).execute()
+                    if response.data:
+                        logging.info(f"✅ Fallback backfill updated trade {trade_id}: exit={fallback_update.get('exit_price') or fallback_update.get('binance_exit_price')} pnl={fallback_update.get('pnl_usd')}")
+                        return True
+            except Exception as e:
+                logging.error(f"Fallback P&L computation failed for trade {trade_id}: {e}")
+
             return False
 
         # Calculate P&L components from Binance income history
@@ -1535,3 +1669,262 @@ def get_trades_needing_pnl_sync(supabase) -> list:
     except Exception as e:
         logging.error(f"Failed to get trades needing P&L sync: {e}")
         return []
+
+
+# ============================================================================
+# KUCOIN ENHANCED FUNCTIONS
+# ============================================================================
+
+async def cleanup_closed_kucoin_positions_enhanced(bot, supabase: Client, kucoin_positions: list, db_trades: list):
+    """Mark KuCoin trades as closed if position is no longer active"""
+    logging.info("Starting cleanup of closed KuCoin positions...")
+
+    # Get all symbols with active positions on KuCoin
+    active_symbols = set()
+    for pos in kucoin_positions:
+        symbol = pos.get('symbol', '').replace('USDTM', '')
+        position_size = float(pos.get('size', 0))
+        if symbol and position_size != 0:
+            active_symbols.add(symbol)
+
+    # Find database trades that should be marked as closed
+    trades_to_close = []
+    for trade in db_trades:
+        status = str(trade.get('status', '')).upper()
+        symbol = extract_symbol_from_trade(trade)
+
+        # If trade is ACTIVE/OPEN/PENDING but symbol is not in active positions, close it
+        if symbol and symbol not in active_symbols and status in ['ACTIVE', 'OPEN', 'PENDING']:
+            trades_to_close.append(trade)
+
+    updates_made = 0
+    current_time = datetime.now(timezone.utc).isoformat()
+
+    for trade in trades_to_close:
+        try:
+            update_data = {
+                'status': 'CLOSED',
+                'updated_at': current_time
+            }
+
+            # Ensure completeness for exit_price and pnl fields if missing
+            if not trade.get('exit_price') and not trade.get('kucoin_exit_price'):
+                update_data['exit_price'] = '0'
+                update_data['kucoin_exit_price'] = '0'
+            if trade.get('pnl_usd') in [None, 0, '0', '0.0']:
+                update_data['pnl_usd'] = '0'
+            if not trade.get('net_pnl'):
+                update_data['net_pnl'] = '0'
+
+            # Set closed_at timestamp when trade is marked as closed
+            try:
+                from discord_bot.utils.timestamp_manager import ensure_closed_at
+                await ensure_closed_at(supabase, trade['id'])
+                logging.info(f"✅ Set closed_at timestamp for KuCoin trade {trade['id']} via cleanup closure")
+            except Exception as e:
+                logging.warning(f"Could not set closed_at timestamp for KuCoin trade {trade['id']}: {e}")
+
+            supabase.table("trades").update(update_data).eq("id", trade['id']).execute()
+            updates_made += 1
+            logging.info(f"Marked KuCoin trade {trade['id']} ({extract_symbol_from_trade(trade)}) as CLOSED")
+
+        except Exception as e:
+            logging.error(f"Error marking KuCoin trade {trade['id']} as closed: {e}")
+
+    logging.info(f"KuCoin cleanup completed: {updates_made} trades marked as closed")
+
+
+async def backfill_kucoin_trades_from_history_enhanced(bot, supabase: Client, db_trades: list):
+    """Backfill KuCoin trades with missing exit prices and position sizes from order/trade history"""
+    logging.info("Starting KuCoin trade backfill from history...")
+
+    updates_made = 0
+    current_time = datetime.now(timezone.utc).isoformat()
+
+    for trade in db_trades:
+        try:
+            trade_id = trade.get('id')
+            symbol = extract_symbol_from_trade(trade)
+
+            if not symbol or not trade_id:
+                continue
+
+            # Skip if already has complete data
+            if (trade.get('exit_price') and trade.get('position_size') and
+                trade.get('pnl_usd') not in [None, 0, '0', '0.0']):
+                continue
+
+            # Get order ID
+            order_id = trade.get('exchange_order_id') or trade.get('kucoin_order_id')
+            if not order_id:
+                continue
+
+            # Get order details from KuCoin
+            order_details = None
+            try:
+                order_details = await bot.kucoin_exchange.get_order_status(f"{symbol}USDTM", order_id)
+            except Exception as e:
+                logging.warning(f"Order {order_id} not found on KuCoin (likely expired): {e}")
+                # Continue to trade history approach
+                order_details = None
+
+            if not order_details:
+                # Fallback: try to get data from trade history and exchange_response
+                logging.info(f"Attempting fallback data extraction for trade {trade_id}")
+
+                # Extract data from exchange_response if available
+                exchange_response = trade.get('exchange_response', '')
+                if exchange_response:
+                    try:
+                        import json
+                        if isinstance(exchange_response, str):
+                            resp_data = json.loads(exchange_response)
+                        else:
+                            resp_data = exchange_response
+
+                        # Extract position size from origQty or filledSize
+                        orig_qty = float(resp_data.get('origQty', 0))
+                        filled_size = float(resp_data.get('filledSize', 0))
+                        actual_entry_price = float(resp_data.get('actualEntryPrice', 0))
+
+                        update_data = {
+                            'updated_at': current_time
+                        }
+
+                        # Set position size if missing
+                        if not trade.get('position_size'):
+                            if filled_size > 0:
+                                update_data['position_size'] = str(filled_size)
+                            elif orig_qty > 0:
+                                update_data['position_size'] = str(orig_qty)
+
+                        # Set entry price if missing
+                        if not trade.get('entry_price') and actual_entry_price > 0:
+                            update_data['entry_price'] = str(actual_entry_price)
+                            update_data['kucoin_entry_price'] = str(actual_entry_price)
+
+                        # Try to get exit price from trade history
+                        if trade.get('status') == 'CLOSED' and not trade.get('exit_price'):
+                            try:
+                                if bot.kucoin_exchange:
+                                    trade_history = await bot.kucoin_exchange.get_user_trades(symbol=f"{symbol}USDTM", limit=100)
+
+                                    # Find the most recent trade as exit price
+                                    if trade_history:
+                                        last_trade = trade_history[-1]
+                                        exit_price = float(last_trade.get('price', last_trade.get('dealPrice', 0)) or 0)
+                                        if exit_price > 0:
+                                            update_data['exit_price'] = str(exit_price)
+                                            update_data['kucoin_exit_price'] = str(exit_price)
+
+                                            # Calculate PnL
+                                            entry_price = float(trade.get('entry_price') or actual_entry_price or 0)
+                                            pos_size = float(update_data.get('position_size') or trade.get('position_size') or 0)
+                                            position_type = str(trade.get('signal_type') or '').upper()
+
+                                            if entry_price > 0 and pos_size > 0 and exit_price > 0:
+                                                if position_type == 'LONG':
+                                                    pnl = (exit_price - entry_price) * pos_size
+                                                elif position_type == 'SHORT':
+                                                    pnl = (entry_price - exit_price) * pos_size
+                                                else:
+                                                    pnl = 0.0
+
+                                                update_data['pnl_usd'] = str(pnl)
+                                                update_data['net_pnl'] = str(pnl)
+                            except Exception as e:
+                                logging.warning(f"Could not get trade history for fallback: {e}")
+
+                        # Update database if we have changes
+                        if len(update_data) > 1:  # More than just updated_at
+                            supabase.table("trades").update(update_data).eq("id", trade_id).execute()
+                            updates_made += 1
+                            logging.info(f"✅ Fallback backfilled KuCoin trade {trade_id}: {list(update_data.keys())}")
+
+                        continue
+                    except Exception as e:
+                        logging.error(f"Fallback extraction failed for trade {trade_id}: {e}")
+                        continue
+
+            else:
+                # Order exists, extract order information
+                order_status = order_details.get('status', '')
+                filled_size = float(order_details.get('filledSize', 0))
+                filled_value = float(order_details.get('filledValue', 0))
+                actual_entry_price = float(order_details.get('actualEntryPrice', 0))
+
+                update_data = {
+                    'updated_at': current_time
+                }
+
+                # Update position size if missing
+                if not trade.get('position_size') and filled_size > 0:
+                    update_data['position_size'] = str(filled_size)
+
+                # Update entry price if missing
+                if not trade.get('entry_price') and actual_entry_price > 0:
+                    update_data['entry_price'] = str(actual_entry_price)
+                    update_data['kucoin_entry_price'] = str(actual_entry_price)
+
+                # For closed trades, try to get exit price from trade history
+                if trade.get('status') == 'CLOSED' and not trade.get('exit_price'):
+                    try:
+                        # Get trade history for the symbol
+                        if bot.kucoin_exchange:
+                            trade_history = await bot.kucoin_exchange.get_user_trades(symbol=f"{symbol}USDTM")
+                        else:
+                            trade_history = []
+
+                        # Find trades that match our order ID
+                        matching_trades = [t for t in trade_history if str(t.get('orderId', '')) == str(order_id)]
+
+                        if matching_trades:
+                            # Use the last trade's price as exit price
+                            last_trade = matching_trades[-1]
+                            exit_price = float(last_trade.get('price', last_trade.get('dealPrice', 0)) or 0)
+
+                            # If position_size missing, derive from fills sum
+                            if not trade.get('position_size'):
+                                try:
+                                    derived_size = sum(
+                                        float(t.get('size', t.get('dealSize', 0)) or 0)
+                                        for t in matching_trades
+                                    )
+                                    if derived_size > 0:
+                                        update_data['position_size'] = str(derived_size)
+                                except Exception:
+                                    pass
+
+                            if exit_price > 0:
+                                update_data['exit_price'] = str(exit_price)
+                                update_data['kucoin_exit_price'] = str(exit_price)
+
+                                # Calculate PnL if we have entry price and position size
+                                entry_price = float(trade.get('entry_price') or actual_entry_price or 0)
+                                pos_size_val = float(update_data.get('position_size') or trade.get('position_size') or filled_size or 0)
+                                position_type = str(trade.get('signal_type') or '').upper()
+
+                                if entry_price > 0 and pos_size_val > 0 and exit_price > 0:
+                                    if position_type == 'LONG':
+                                        pnl = (exit_price - entry_price) * pos_size_val
+                                    elif position_type == 'SHORT':
+                                        pnl = (entry_price - exit_price) * pos_size_val
+                                    else:
+                                        pnl = 0.0
+
+                                    update_data['pnl_usd'] = str(pnl)
+                                    update_data['net_pnl'] = str(pnl)
+
+                    except Exception as e:
+                        logging.warning(f"Could not get trade history for KuCoin trade {trade_id}: {e}")
+
+                # Update database if we have changes
+                if len(update_data) > 1:  # More than just updated_at
+                    supabase.table("trades").update(update_data).eq("id", trade_id).execute()
+                    updates_made += 1
+                    logging.info(f"✅ Backfilled KuCoin trade {trade_id}: {list(update_data.keys())}")
+
+        except Exception as e:
+            logging.error(f"Error processing KuCoin trade {trade.get('id', 'unknown')}: {e}")
+
+    logging.info(f"KuCoin backfill completed: {updates_made} trades updated")
