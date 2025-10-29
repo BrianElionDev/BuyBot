@@ -173,6 +173,13 @@ class MessageFormatter:
         timestamp = notification.timestamp or datetime.now(timezone.utc)
         formatted_time = timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
 
+        # Derive readable cancel/expire reason if provided in context
+        reason_text = ""
+        ctx = notification.context or {}
+        expire_reason = str(ctx.get("expire_reason") or "").upper()
+        if expire_reason == "EXPIRE_MAKER":
+            reason_text = " (post-only would take liquidity)"
+
         message = f"""
 ⚠️ <b>Error Alert</b>
 
@@ -180,10 +187,19 @@ class MessageFormatter:
 ❌ <b>Error Message:</b> {notification.error_message}
 """
 
+        # Print exchange prominently if available
+        exchange = ctx.get("exchange")
+        if exchange:
+            message += f"\n🏦 <b>Exchange:</b> {exchange}\n"
+
         if notification.context:
             message += "\n📋 <b>Context:</b>\n"
             for key, value in notification.context.items():
-                message += f"• {key}: <code>{value}</code>\n"
+                # For expire_reason, append a human hint
+                if key == "expire_reason" and reason_text:
+                    message += f"• {key}: <code>{value}</code>{reason_text}\n"
+                else:
+                    message += f"• {key}: <code>{value}</code>\n"
 
         message += f"""
 ⏰ <b>Time:</b> {formatted_time}

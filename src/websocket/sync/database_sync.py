@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, List
 from decimal import Decimal
 
 from .sync_models import SyncEvent, DatabaseSyncState, TradeSyncData, PositionSyncData, BalanceSyncData
+from src.core.response_normalizer import normalize_exchange_response
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +233,20 @@ class DatabaseSync:
                 updates['position_size'] = executed_qty
                 updates['entry_price'] = avg_price
 
+            # Ensure terminal-cancel defaults for unfilled orders to avoid nulls
+            if status in ['CANCELED', 'CANCELLED', 'REJECTED', 'EXPIRED'] and executed_qty == 0:
+                # Only backfill defaults if currently missing in DB
+                try:
+                    if not trade.get('position_size'):
+                        updates['position_size'] = 0.0
+                except Exception:
+                    updates['position_size'] = 0.0
+                if trade.get('pnl_usd') is None:
+                    updates['pnl_usd'] = 0.0
+                # Exit price for never-opened orders should be explicit zero for UI consistency
+                if trade.get('exit_price') is None:
+                    updates['exit_price'] = 0.0
+
             # Update PnL if available
             if realized_pnl != 0:
                 updates['realized_pnl'] = realized_pnl
@@ -253,12 +268,53 @@ class DatabaseSync:
                         # Get local symbol first
                         local_symbol = trade.get('coin_symbol') or str(execution_data.get('s') or '')
                         # Create a unique key for this notification to prevent duplicates
-                        order_id = str(trade.get('exchange_order_id') or '')
+                        order_id = str(trade.get('exchange_order_id') or execution_data.get('i') or '')
                         notification_key = f"{order_id}_{status}_{local_symbol}"
+
+                        # Determine exchange from trade (fallback 'binance')
+                        exchange_name = str(trade.get('exchange') or 'binance')
+
+                        # Prepare enriched context
+                        normalized = normalize_exchange_response(exchange_name, execution_data)
+                        # Prefer requested data for non-filled terminal states
+                        requested_price = execution_data.get('p') or execution_data.get('sp') or normalized.get('price') or normalized.get('stopPrice') or 0
+                        requested_qty = execution_data.get('q') or normalized.get('origQty') or 0
+
+                        # Extract helpful raw WS fields if present
+                        context: Dict[str, Any] = {
+                            "exchange": exchange_name,
+                            "symbol": local_symbol or normalized.get('symbol') or '',
+                            "order_id": order_id,
+                            "client_order_id": execution_data.get('c') or normalized.get('clientOrderId') or '',
+                            "order_type": execution_data.get('o') or normalized.get('type') or '',
+                            "time_in_force": execution_data.get('f') or '',
+                            "requested_price": float(requested_price) if requested_price else 0,
+                            "requested_qty": float(requested_qty) if requested_qty else 0,
+                            "avg_price": float(execution_data.get('ap') or normalized.get('avgPrice') or 0),
+                            "filled_qty": float(execution_data.get('z') or normalized.get('executedQty') or 0),
+                            "stop_price": float(execution_data.get('sp') or normalized.get('stopPrice') or 0),
+                            "expire_reason": execution_data.get('V') or '',
+                            "reduce_only": bool(execution_data.get('R')) if 'R' in execution_data else False,
+                            "working_type": execution_data.get('wt') or '',
+                            "price_protection": execution_data.get('pm') or '',
+                            "error_code": execution_data.get('er') or '',
+                        }
+
+                        # Enrich with DB trade context when available
+                        if trade:
+                            if trade.get('entry_price') is not None:
+                                context['entry_price'] = float(trade.get('entry_price') or 0)
+                            if trade.get('exit_price') is not None:
+                                context['exit_price'] = float(trade.get('exit_price') or 0)
+                            if trade.get('position_size') is not None:
+                                context['position_size'] = float(trade.get('position_size') or 0)
+                            if trade.get('pnl_usd') is not None:
+                                context['pnl_usd'] = float(trade.get('pnl_usd') or 0)
+                            if trade.get('signal_type') is not None:
+                                context['position_type'] = str(trade.get('signal_type'))
 
                         # Check if we've already sent this notification
                         if notification_key not in self.processed_notifications:
-                            # Send a failure/terminal notification via NotificationManager (centralized filtering)
                             from src.services.notifications.notification_manager import NotificationManager
                             from src.services.notifications.alert_deduplicator import alert_deduplicator
 
@@ -267,18 +323,13 @@ class DatabaseSync:
                                 trade_id=str(trade_id),
                                 error_type=f"ORDER_{status}",
                                 symbol=local_symbol,
-                                exchange="kucoin"  # Assuming this is from KuCoin websocket
+                                exchange=exchange_name
                             ):
                                 notifier = NotificationManager()
                                 await notifier.send_error_notification(
                                     error_type=f"ORDER_{status}",
                                     error_message=f"Order {status} for {local_symbol}",
-                                    context={
-                                        "symbol": local_symbol,
-                                        "order_id": order_id,
-                                        "price": avg_price,
-                                        "quantity": executed_qty,
-                                    }
+                                    context=context
                                 )
                                 logger.info(f"Sent error notification for {notification_key}")
                             else:
@@ -288,7 +339,6 @@ class DatabaseSync:
                             self.processed_notifications.add(notification_key)
                             # Clean up old entries to prevent memory growth (keep last 1000)
                             if len(self.processed_notifications) > 1000:
-                                # Remove oldest entries (convert to list, remove first 200, convert back)
                                 old_entries = list(self.processed_notifications)[:200]
                                 self.processed_notifications = self.processed_notifications - set(old_entries)
                         else:

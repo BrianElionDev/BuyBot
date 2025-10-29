@@ -22,9 +22,6 @@ def normalize_exchange_response(exchange: str, response: Any) -> Dict[str, Any]:
 
     data: Dict[str, Any] = dict(response)
 
-    # Map common aliases
-    if "order_id" in data and "orderId" not in data:
-        data["orderId"] = data.get("order_id")
     if "clientOid" in data and "clientOrderId" not in data:
         data["clientOrderId"] = data.get("clientOid")
     if "size" in data and "origQty" not in data:
