@@ -20,7 +20,7 @@ import logging
 import json
 import os
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Set
 from pathlib import Path
 
 # Add project root to path
@@ -31,6 +31,7 @@ if project_root not in sys.path:
 
 from discord_bot.database import DatabaseManager
 from config import settings
+from src.exchange.kucoin.kucoin_exchange import KucoinExchange
 from supabase import create_client
 
 # Setup logging
@@ -47,8 +48,81 @@ class HistoricalTradeBackfillManager:
         if not supabase_url or not supabase_key:
             raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
         self.supabase = create_client(supabase_url, supabase_key)
-        self.db_manager = DatabaseManager(self.supabase)
-        self.binance_exchange = None  # Will be set by the caller
+        self.db_manager: Any = DatabaseManager(self.supabase)
+        self.binance_exchange: Any = None  # Optionally set by caller
+        self.kucoin_exchange: Optional[KucoinExchange] = None  # Optionally set by caller
+
+    # ------------------------
+    # KuCoin helpers
+    # ------------------------
+    def _ms(self, v: Any) -> int:
+        try:
+            return int(v or 0)
+        except Exception:
+            return 0
+
+    def _kucoin_time_bounds(self, trade: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
+        created_ms = None
+        closed_ms = None
+        try:
+            created_at = trade.get('created_at') or trade.get('createdAt')
+            closed_at = trade.get('closed_at') or trade.get('updated_at') or trade.get('closedAt')
+            if created_at:
+                if isinstance(created_at, str):
+                    created_ms = int(datetime.fromisoformat(created_at.replace('Z', '+00:00')).timestamp() * 1000)
+                else:
+                    created_ms = int(created_at.timestamp() * 1000)
+            if closed_at:
+                if isinstance(closed_at, str):
+                    closed_ms = int(datetime.fromisoformat(closed_at.replace('Z', '+00:00')).timestamp() * 1000)
+                else:
+                    closed_ms = int(closed_at.timestamp() * 1000)
+        except Exception:
+            pass
+        return created_ms, closed_ms
+
+    def _pick_kucoin_position(self, records: List[Dict[str, Any]], symbol: str, created_ms: int, closed_ms: int, position_type: str, used_close_ids: Set[str]) -> Optional[Dict[str, Any]]:
+        if not records:
+            return None
+        futures_symbol = str(symbol)
+        # strict filter
+        created_pad = 5 * 60 * 1000
+        end_pad = 15 * 60 * 1000
+        end_ms = (closed_ms or 0) + end_pad
+        expected_close_type = 'CLOSE_LONG' if position_type == 'LONG' else ('CLOSE_SHORT' if position_type == 'SHORT' else None)
+        expected_side = 'LONG' if position_type == 'LONG' else ('SHORT' if position_type == 'SHORT' else None)
+
+        def ok(r: Dict[str, Any]) -> bool:
+            if str(r.get('symbol') or '') != futures_symbol:
+                return False
+            if str(r.get('closeId') or '') in used_close_ids:
+                return False
+            o_ms = self._ms(r.get('openTime'))
+            c_ms = self._ms(r.get('closeTime'))
+            if created_ms and o_ms and o_ms < max(0, created_ms - created_pad):
+                return False
+            if c_ms and c_ms > end_ms:
+                return False
+            r_type = str(r.get('type') or '').upper()
+            r_side = str(r.get('side') or '').upper()
+            if expected_close_type and r_type not in (expected_close_type, '') and expected_close_type not in r_type:
+                return False
+            if expected_side and r_side not in (expected_side, ''):
+                return False
+            return True
+
+        candidates = [r for r in records if ok(r)]
+        if not candidates:
+            candidates = [r for r in records if str(r.get('symbol') or '') == futures_symbol and str(r.get('closeId') or '') not in used_close_ids]
+            if not candidates:
+                return None
+
+        def score(r: Dict[str, Any]) -> Tuple[int, int]:
+            c_ms = self._ms(r.get('closeTime'))
+            o_ms = self._ms(r.get('openTime'))
+            return (abs((closed_ms or 0) - (c_ms or 0)), abs((created_ms or 0) - (o_ms or 0)))
+
+        return min(candidates, key=score)
 
     def get_order_lifecycle(self, db_trade: Dict) -> Tuple[Optional[int], Optional[int], Optional[int]]:
         """Get order start, end, and duration in milliseconds using created_at to updated_at range."""
@@ -418,8 +492,15 @@ class HistoricalTradeBackfillManager:
             mode = "missing and existing" if update_existing else "missing only"
             logger.info(f"Starting backfill for trades from last {days} days ({mode})")
 
-            # Initialize Binance client
-            await self.binance_exchange._init_client()
+            # Initialize Binance client when available
+            if not self.binance_exchange:
+                logger.info("Binance exchange client not set; skipping Binance price backfill")
+                return
+            try:
+                await self.binance_exchange._init_client()
+            except Exception:
+                logger.warning("Failed to init Binance client; skipping Binance price backfill")
+                return
 
             # Find trades with missing prices (and optionally existing ones)
             trades = await self.find_trades_with_missing_prices(days, update_existing)
@@ -461,7 +542,8 @@ class HistoricalTradeBackfillManager:
                 logger.debug(f"Trade {trade_id} lifecycle: {start_time} to {end_time} (duration: {duration}ms)")
 
                 # Get all executions within the trade window
-                executions = await self.get_executions_in_trade_window(symbol, start_time, end_time)
+                safe_end = end_time if end_time is not None else start_time
+                executions = await self.get_executions_in_trade_window(symbol, int(start_time), int(safe_end))
                 buy_executions = executions['buys']
                 sell_executions = executions['sells']
 
@@ -483,7 +565,10 @@ class HistoricalTradeBackfillManager:
                 price_comparison = self.compare_prices(trade, entry_price, exit_price)
 
                 # Update trade with calculated prices
-                success = await self.update_trade_prices(trade_id, entry_price, exit_price)
+                if trade_id is None:
+                    stats['trades_failed'] += 1
+                    continue
+                success = await self.update_trade_prices(int(trade_id), entry_price, exit_price)
                 if success:
                     if entry_price > 0:
                         stats['entry_prices_filled'] += 1
@@ -519,19 +604,125 @@ class HistoricalTradeBackfillManager:
         except Exception as e:
             logger.error(f"Error during backfill: {e}")
 
+    async def backfill_kucoin_prices(self, days: int = 7, update_existing: bool = False):
+        """Backfill KuCoin entry/exit prices using strict position history matching (no PnL here)."""
+        try:
+            if not self.kucoin_exchange:
+                logger.warning("KuCoin exchange client not set; skipping KuCoin backfill")
+                return
+            await self.kucoin_exchange.initialize()
+
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_iso = cutoff.isoformat()
+
+            resp = self.db_manager.supabase.from_("trades").select(
+                "id, exchange, status, coin_symbol, signal_type, created_at, updated_at, closed_at, entry_price, exit_price, kucoin_entry_price, kucoin_exit_price"
+            ).eq("exchange", "kucoin").gte("created_at", cutoff_iso).execute()
+
+            trades = resp.data or []
+            if not trades:
+                logger.info("No KuCoin trades found for backfill window")
+                return
+
+            used_close_ids: Set[str] = set()
+            updated = 0
+            for tr in trades:
+                tid = tr.get('id')
+                # Skip if complete and not updating existing
+                e = tr.get('entry_price') or tr.get('kucoin_entry_price')
+                x = tr.get('exit_price') or tr.get('kucoin_exit_price')
+                if not update_existing and e and float(e or 0) > 0 and x and float(x or 0) > 0:
+                    continue
+
+                symbol = str(tr.get('coin_symbol') or '').upper()
+                if not symbol:
+                    continue
+                fut_symbol = self.kucoin_exchange.get_futures_trading_pair(symbol)
+
+                created_ms, closed_ms = self._kucoin_time_bounds(tr)
+                if not created_ms or not closed_ms:
+                    continue
+
+                # fetch position history with fallback (with/without symbol)
+                params = {"symbol": fut_symbol, "startAt": created_ms - 15*60*1000, "endAt": closed_ms + 15*60*1000}
+                pos = await self.kucoin_exchange._make_direct_api_call('GET', '/api/v1/history-positions', params)
+                records: List[Dict[str, Any]] = []
+                if isinstance(pos, list):
+                    records = pos
+                elif isinstance(pos, dict):
+                    items = pos.get('items') or pos.get('data') or []
+                    if isinstance(items, list):
+                        records = items
+                if not records:
+                    pos2 = await self.kucoin_exchange._make_direct_api_call('GET', '/api/v1/history-positions', {"startAt": created_ms - 15*60*1000, "endAt": closed_ms + 15*60*1000})
+                    if isinstance(pos2, list):
+                        records = pos2
+                    elif isinstance(pos2, dict):
+                        items2 = pos2.get('items') or pos2.get('data') or []
+                        if isinstance(items2, list):
+                            records = items2
+                if not records:
+                    continue
+
+                position_type = str(tr.get('signal_type') or '').upper()
+                rec = self._pick_kucoin_position(records, fut_symbol, created_ms, closed_ms, position_type, used_close_ids)
+                if not rec:
+                    continue
+
+                # Extract prices
+                try:
+                    entry_price_val = rec.get('avgEntryPrice') or rec.get('openPrice')
+                    exit_price_val = rec.get('closePrice') or rec.get('avgExitPrice')
+                    updates: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc).isoformat()}
+                    if entry_price_val:
+                        updates['entry_price'] = float(entry_price_val)
+                        updates['kucoin_entry_price'] = float(entry_price_val)
+                    if exit_price_val:
+                        updates['exit_price'] = float(exit_price_val)
+                        updates['kucoin_exit_price'] = float(exit_price_val)
+                    if len(updates) > 1:
+                        self.db_manager.supabase.table("trades").update(updates).eq("id", tid).execute()
+                        updated += 1
+                        cid = rec.get('closeId')
+                        if cid:
+                            used_close_ids.add(str(cid))
+                        logger.info(f"KuCoin trade {tid} backfilled prices: {updates}")
+                except Exception:
+                    continue
+
+            logger.info(f"KuCoin price backfill completed: {updated} trades updated")
+        except Exception as e:
+            logger.error(f"Error during KuCoin price backfill: {e}")
+
 
 async def main():
     """Main function to run the backfill."""
     try:
         backfill_manager = HistoricalTradeBackfillManager()
 
-        # First run: Only fill missing prices (default behavior)
-        logger.info("=== Phase 1: Filling Missing Prices ===")
+        # Try KuCoin client for standalone runs
+        try:
+            backfill_manager.kucoin_exchange = KucoinExchange(
+                api_key=settings.KUCOIN_API_KEY or "",
+                api_secret=settings.KUCOIN_API_SECRET or "",
+                api_passphrase=settings.KUCOIN_API_PASSPHRASE or "",
+                is_testnet=False,
+            )
+        except Exception:
+            backfill_manager.kucoin_exchange = None
+
+        # Binance phase runs only if a Binance client is provided externally
+        logger.info("=== Phase 1: Filling Missing Prices (Binance, if client available) ===")
         await backfill_manager.backfill_from_historical_data(days=7, update_existing=False)
 
-        # Second run: Update existing prices for better accuracy
-        logger.info("\n=== Phase 2: Updating Existing Prices for Accuracy ===")
+        logger.info("\n=== Phase 2: Updating Existing Prices for Accuracy (Binance, if client available) ===")
         await backfill_manager.backfill_from_historical_data(days=7, update_existing=True)
+
+        # KuCoin price backfill using position history
+        logger.info("\n=== Phase 3: KuCoin Price Backfill (Position History) ===")
+        await backfill_manager.backfill_kucoin_prices(days=7, update_existing=False)
+        logger.info("\n=== Phase 4: KuCoin Price Correction for Accuracy (Position History) ===")
+        await backfill_manager.backfill_kucoin_prices(days=7, update_existing=True)
 
     except Exception as e:
         logger.error(f"Error in main: {e}")

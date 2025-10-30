@@ -769,6 +769,7 @@ async def backfill_missing_prices(bot, supabase):
         # Create backfill manager with existing clients
         backfill_manager = HistoricalTradeBackfillManager()
         backfill_manager.binance_exchange = bot.binance_exchange  # Use existing exchange instance
+        backfill_manager.kucoin_exchange = bot.kucoin_exchange  # Use existing KuCoin exchange instance
         backfill_manager.db_manager = bot.db_manager  # Use existing database manager
 
         # Backfill prices for last 7 days (recent trades that might have missed WebSocket updates)
@@ -780,6 +781,17 @@ async def backfill_missing_prices(bot, supabase):
         current_hour = datetime.now().hour
         if current_hour % 2 == 0:  # Run every 2 hours (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22)
             await backfill_manager.backfill_from_historical_data(days=7, update_existing=True)
+
+        # KuCoin: fill missing/incorrect entry/exit prices using position history (strict matching)
+        try:
+            await backfill_manager.backfill_kucoin_prices(days=7, update_existing=False)
+            # Optionally update existing for accuracy every 2 hours
+            from datetime import datetime
+            current_hour = datetime.now().hour
+            if current_hour % 2 == 0:
+                await backfill_manager.backfill_kucoin_prices(days=7, update_existing=True)
+        except Exception as e:
+            logger.error(f"[Scheduler] Error in KuCoin price backfill: {e}")
 
         logger.info("[Scheduler] Price backfill completed")
 

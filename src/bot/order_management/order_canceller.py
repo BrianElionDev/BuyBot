@@ -8,6 +8,7 @@ including TP/SL orders, individual orders, and bulk cancellations.
 import logging
 import json
 from typing import Dict, Tuple
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,23 @@ class OrderCanceller:
 
             for order in open_orders:
                 if order['symbol'] == trading_pair:
+                    # Guard: do not cancel valid waiting LIMIT entry orders (NEW, non-reduceOnly) within TTL
+                    try:
+                        if (order.get('type') == 'LIMIT' and
+                            order.get('status') in ('NEW', 'PARTIALLY_FILLED') and
+                            not order.get('reduceOnly', False)):
+                            # Use updateTime if present, else fall back to time; default to now-0
+                            ts_ms = order.get('updateTime') or order.get('time') or 0
+                            created = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+                            # TTL: 48 hours conservative window for valid entries
+                            if datetime.now(timezone.utc) - created <= timedelta(hours=48):
+                                logger.info(
+                                    f"Skipping cancel for NEW LIMIT entry {order.get('orderId')} on {trading_pair} within TTL"
+                                )
+                                continue
+                    except Exception:
+                        # If guard evaluation fails, fall back to original behavior
+                        pass
                     try:
                         order_id = order['orderId']
                         order_type = order['type']
@@ -179,6 +197,20 @@ class OrderCanceller:
             for order in open_orders:
                 if (order['symbol'] == trading_pair and
                     order['type'] in order_types):
+                    # Guard: avoid cancelling valid NEW LIMIT entries when type filter includes 'LIMIT'
+                    try:
+                        if (order.get('type') == 'LIMIT' and
+                            order.get('status') in ('NEW', 'PARTIALLY_FILLED') and
+                            not order.get('reduceOnly', False)):
+                            ts_ms = order.get('updateTime') or order.get('time') or 0
+                            created = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+                            if datetime.now(timezone.utc) - created <= timedelta(hours=48):
+                                logger.info(
+                                    f"Skipping cancel for NEW LIMIT entry {order.get('orderId')} on {trading_pair} within TTL"
+                                )
+                                continue
+                    except Exception:
+                        pass
                     try:
                         order_id = order['orderId']
                         order_type = order['type']
