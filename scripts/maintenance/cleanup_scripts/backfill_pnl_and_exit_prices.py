@@ -266,7 +266,10 @@ class BinancePnLBackfiller:
         logger.info(f"  FUNDING_FEE: {total_funding_fee:.6f}")
         logger.info(f"  NET P&L: {net_pnl:.6f}")
 
-        # Derive entry/exit prices from exact fills (userTrades) within lifecycle window
+        # Derive entry/exit prices using strict exchange data precedence
+        # 1) Exact orderId lookups (entry and SL/TP reduce-only) from Binance futures
+        # 2) Filtered userTrades by orderId where available
+        # 3) Fallback to time-bounded side-based weighted averages
         derived_entry = None
         derived_exit = None
         try:
@@ -276,49 +279,105 @@ class BinancePnLBackfiller:
             e_ms = (end_time or start_time or 0) + buffer_ms
 
             # Fetch user trades; filter by time bounds and, if present, by orderId
-            symbol_pair = f"{symbol}USDT" if not symbol.endswith("USDT") else symbol
-            user_trades = await self.binance_exchange.get_user_trades(symbol=symbol_pair, limit=1000)
-            if isinstance(user_trades, list):
-                # Prefer ties to exchange_order_id
+            symbol_pair = f"{symbol}USDT" if not str(symbol).endswith("USDT") else str(symbol)
+
+            # Priority 1: exact order lookups from Binance client
+            try:
+                client = getattr(self.binance_exchange, 'client', None)
                 entry_order_id = trade.get('exchange_order_id')
                 stop_order_id = trade.get('stop_loss_order_id')
-
-                # Helper accumulators
-                buys = []
-                sells = []
-                for t in user_trades:
+                # Entry order exact
+                if client and entry_order_id:
                     try:
-                        t_time = int(t.get('time', 0))
-                        if t_time < s_ms or t_time > e_ms:
-                            continue
-                        if entry_order_id and str(t.get('orderId')) != str(entry_order_id) and not stop_order_id:
-                            # For entry, if we have entry order id, prefer only that for entry side
-                            pass
-                        side = str(t.get('side', '')).upper()
-                        price = float(t.get('price', 0) or 0)
-                        qty = float(t.get('qty', 0) or 0)
-                        if price > 0 and qty > 0:
-                            if side == 'BUY':
-                                buys.append((price, qty))
-                            elif side == 'SELL':
-                                sells.append((price, qty))
+                        order = await client.futures_get_order(symbol=symbol_pair, orderId=str(entry_order_id))
+                        ap = order.get('avgPrice') or order.get('price') or 0
+                        ex_qty = order.get('executedQty') or order.get('cumQty') or 0
+                        apf = float(ap or 0)
+                        if apf > 0:
+                            derived_entry = apf
                     except Exception:
-                        continue
+                        pass
+                # Exit order (SL/TP) exact
+                if client and stop_order_id:
+                    try:
+                        order = await client.futures_get_order(symbol=symbol_pair, orderId=str(stop_order_id))
+                        ap = order.get('avgPrice') or order.get('price') or 0
+                        apf = float(ap or 0)
+                        if apf > 0:
+                            derived_exit = apf
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
-                def wavg(pairs):
-                    if not pairs:
-                        return 0.0
-                    tv = sum(p*q for p, q in pairs)
-                    tq = sum(q for _, q in pairs)
-                    return (tv / tq) if tq > 0 else 0.0
+            # Priority 2/3: userTrades with strict filters, only if still missing
+            if derived_entry is None or (derived_exit is None and str(position_type or '').upper() in ('LONG', 'SHORT')):
+                user_trades = await self.binance_exchange.get_user_trades(symbol=symbol_pair, limit=1000)
+                if isinstance(user_trades, list):
+                    entry_order_id = trade.get('exchange_order_id')
+                    stop_order_id = trade.get('stop_loss_order_id')
 
-                pos_type = str(position_type or 'LONG').upper()
-                if pos_type == 'LONG':
-                    derived_entry = wavg(buys)
-                    derived_exit = wavg(sells)
-                else:
-                    derived_entry = wavg(sells)
-                    derived_exit = wavg(buys)
+                    # Helper accumulators
+                    buys: List[Tuple[float, float]] = []
+                    sells: List[Tuple[float, float]] = []
+                    buy_qty_sum = 0.0
+                    sell_qty_sum = 0.0
+
+                    for t in user_trades:
+                        try:
+                            t_time = int(t.get('time', 0))
+                            if t_time < s_ms or t_time > e_ms:
+                                continue
+                            t_oid = str(t.get('orderId')) if t.get('orderId') is not None else ''
+                            # If we have orderIds, constrain matches to them
+                            if entry_order_id and stop_order_id:
+                                if t_oid not in (str(entry_order_id), str(stop_order_id)):
+                                    continue
+                            elif entry_order_id:
+                                if t_oid != str(entry_order_id):
+                                    continue
+                            # else: allow time-bounded trades
+
+                            side = str(t.get('side', '')).upper()
+                            price = float(t.get('price', 0) or 0)
+                            qty = float(t.get('qty', 0) or 0)
+                            if price > 0 and qty > 0:
+                                if side == 'BUY':
+                                    buys.append((price, qty))
+                                    buy_qty_sum += qty
+                                elif side == 'SELL':
+                                    sells.append((price, qty))
+                                    sell_qty_sum += qty
+                        except Exception:
+                            continue
+
+                    def wavg(pairs: List[Tuple[float, float]]):
+                        if not pairs:
+                            return 0.0
+                        tv = sum(p*q for p, q in pairs)
+                        tq = sum(q for _, q in pairs)
+                        return (tv / tq) if tq > 0 else 0.0
+
+                    pos_type = str(position_type or 'LONG').upper()
+                    # Enforce side-position consistency and require qty coverage >= 90% of position_size
+                    try:
+                        pos_qty = float(position_size or 0)
+                    except Exception:
+                        pos_qty = 0.0
+
+                    coverage_ok_buy = (pos_qty == 0) or (buy_qty_sum >= 0.9 * pos_qty)
+                    coverage_ok_sell = (pos_qty == 0) or (sell_qty_sum >= 0.9 * pos_qty)
+
+                    if pos_type == 'LONG':
+                        if derived_entry is None and coverage_ok_buy:
+                            derived_entry = wavg(buys)
+                        if derived_exit is None and coverage_ok_sell:
+                            derived_exit = wavg(sells)
+                    else:
+                        if derived_entry is None and coverage_ok_sell:
+                            derived_entry = wavg(sells)
+                        if derived_exit is None and coverage_ok_buy:
+                            derived_exit = wavg(buys)
 
         except Exception as e:
             logger.warning(f"Failed to derive entry/exit from fills: {e}")
