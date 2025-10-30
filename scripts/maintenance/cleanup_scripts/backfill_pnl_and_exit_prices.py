@@ -32,12 +32,12 @@ logger = logging.getLogger(__name__)
 
 class BinancePnLBackfiller:
     """Backfill P&L using Binance income history and order lifecycle matching."""
-    
+
     def __init__(self, bot, supabase):
         self.bot = bot
         self.supabase = supabase
         self.binance_exchange = bot.binance_exchange
-    
+
     def parse_timestamp(self, timestamp_str: str) -> Optional[int]:
         """Parse timestamp string to milliseconds."""
         try:
@@ -45,7 +45,7 @@ class BinancePnLBackfiller:
             if 'T' in timestamp_str:
                 dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                 return int(dt.timestamp() * 1000)
-            
+
             # Handle Unix timestamp
             if timestamp_str.isdigit():
                 ts = int(timestamp_str)
@@ -53,11 +53,11 @@ class BinancePnLBackfiller:
                 if ts < 1000000000000:  # Before year 2001
                     ts *= 1000
                 return ts
-            
+
             return None
         except Exception:
             return None
-    
+
     def get_order_lifecycle(self, db_trade: Dict) -> Tuple[Optional[int], Optional[int], Optional[int]]:
         """Get order start, end, and duration in milliseconds using created_at to closed_at/updated_at range."""
         try:
@@ -65,17 +65,17 @@ class BinancePnLBackfiller:
             created_at = db_trade.get('created_at') or db_trade.get('createdAt')
             closed_at = db_trade.get('closed_at')
             updated_at = db_trade.get('updated_at') or db_trade.get('updatedAt') or db_trade.get('modified_at')
-            
+
             if not created_at:
                 logger.warning(f"Trade {db_trade.get('id')} has no created_at timestamp")
                 return None, None, None
-            
+
             # Parse start time (created_at)
             start_time = self.parse_timestamp(str(created_at))
             if not start_time:
                 logger.warning(f"Trade {db_trade.get('id')} has invalid created_at: {created_at}")
                 return None, None, None
-            
+
             # Parse end time (closed_at with updated_at fallback)
             if not closed_at:
                 # If no closed_at, use updated_at as fallback, then created_at
@@ -102,29 +102,29 @@ class BinancePnLBackfiller:
                     logger.warning(f"Trade {db_trade.get('id')} has invalid closed_at: {closed_at}")
                 else:
                     duration = end_time - start_time
-            
+
             return start_time, end_time, duration
-            
+
         except Exception as e:
             logger.error(f"Error getting order lifecycle: {e}")
             return None, None, None
-    
+
     async def get_income_for_trade_period(self, symbol: str, start_time: int, end_time: int) -> List[Dict]:
         """Get income history for a specific trade period."""
         try:
             logger.info(f"Fetching {symbol}USDT income from {start_time} to {end_time}")
-            
+
             # Add buffer time (1 hour before and after) to catch related income
             buffer_time = 60 * 60 * 1000  # 1 hour in milliseconds
             search_start = start_time - buffer_time
             search_end = end_time + buffer_time
-            
+
             all_incomes = []
             chunk_start = search_start
-            
+
             while chunk_start < search_end:
                 chunk_end = min(chunk_start + (7 * 24 * 60 * 60 * 1000), search_end)
-                
+
                 try:
                     chunk_incomes = await self.binance_exchange.get_income_history(
                         symbol=f"{symbol}USDT",
@@ -136,53 +136,53 @@ class BinancePnLBackfiller:
                     await asyncio.sleep(0.5)  # Rate limiting
                 except Exception as e:
                     logger.error(f"Error fetching chunk income: {e}")
-                
+
                 chunk_start = chunk_end
-            
+
             # Filter to exact trade period
             filtered_incomes = []
             for income in all_incomes:
                 income_time = income.get('time')
                 if income_time and start_time <= int(income_time) <= end_time:
                     filtered_incomes.append(income)
-            
+
             logger.info(f"Found {len(filtered_incomes)} income records within trade period")
             return filtered_incomes
-            
+
         except Exception as e:
             logger.error(f"Error getting income for trade period: {e}")
             return []
-    
-    def calculate_expected_pnl_range(self, position_size: float, entry_price: float, 
+
+    def calculate_expected_pnl_range(self, position_size: float, entry_price: float,
                                    exit_price: float, position_type: str) -> Tuple[float, float]:
         """Calculate expected P&L range based on position size and prices."""
         try:
             if not all([position_size, entry_price, exit_price]):
                 return 0.0, 0.0
-            
+
             position_size = float(position_size)
             entry_price = float(entry_price)
             exit_price = float(exit_price)
-            
+
             # Calculate base P&L
             if position_type.upper() == 'LONG':
                 base_pnl = (exit_price - entry_price) * position_size
             else:  # SHORT
                 base_pnl = (entry_price - exit_price) * position_size
-            
+
             # Add 0.1% fee (entry + exit)
             fee = (entry_price + exit_price) * position_size * 0.001
-            
+
             # Expected range: base P&L ± 20% for slippage and market conditions
             min_pnl = base_pnl - fee - (abs(base_pnl) * 0.2)
             max_pnl = base_pnl - fee + (abs(base_pnl) * 0.2)
-            
+
             return min_pnl, max_pnl
-            
+
         except Exception as e:
             logger.error(f"Error calculating expected P&L range: {e}")
             return 0.0, 0.0
-    
+
     async def process_trade_with_income_history(self, trade: Dict) -> Dict:
         """Process a single trade using Binance income history."""
         trade_id = trade.get('id')
@@ -191,24 +191,24 @@ class BinancePnLBackfiller:
         entry_price = trade.get('entry_price')
         exit_price = trade.get('exit_price')
         position_type = trade.get('signal_type', 'LONG')
-        
+
         # Get order lifecycle
         start_time, end_time, duration = self.get_order_lifecycle(trade)
-        
+
         if not start_time:
             logger.warning(f"Trade {trade_id} has no valid timestamps, skipping")
             return {'trade_id': trade_id, 'status': 'SKIPPED', 'reason': 'No valid timestamps'}
-        
+
         # Calculate expected P&L range using binance prices
         binance_entry_price = trade.get('binance_entry_price')
         binance_exit_price = trade.get('binance_exit_price')
         min_expected_pnl, max_expected_pnl = self.calculate_expected_pnl_range(
             position_size, binance_entry_price, binance_exit_price, position_type
         )
-        
+
         # Get income records for this specific trade period
         income_records = await self.get_income_for_trade_period(symbol, start_time, end_time)
-        
+
         if not income_records:
             logger.info(f"Trade {trade_id} ({symbol}): No income records found during order lifecycle")
             return {
@@ -220,53 +220,110 @@ class BinancePnLBackfiller:
                 'total_funding_fee': 0.0,
                 'expected_pnl_range': (min_expected_pnl, max_expected_pnl)
             }
-        
+
         # Group income records by type
         income_by_type = {}
         for income in income_records:
             if not isinstance(income, dict):
                 continue
-            
+
             income_type = income.get('incomeType') or income.get('type')
             if not income_type:
                 continue
-            
+
             if income_type not in income_by_type:
                 income_by_type[income_type] = []
             income_by_type[income_type].append(income)
-        
+
         logger.info(f"Trade {trade_id} ({symbol}): Found income types: {list(income_by_type.keys())}")
-        
+
         # Calculate totals
         total_realized_pnl = 0.0
         total_commission = 0.0
         total_funding_fee = 0.0
-        
+
         for income_type, incomes in income_by_type.items():
             for income in incomes:
                 income_value = float(income.get('income', 0.0))
-                
+
                 if income_type == 'REALIZED_PNL':
                     total_realized_pnl += income_value
                 elif income_type == 'COMMISSION':
                     total_commission += income_value
                 elif income_type == 'FUNDING_FEE':
                     total_funding_fee += income_value
-        
+
         # Calculate NET P&L (including fees)
         net_pnl = total_realized_pnl + total_commission + total_funding_fee
-        
+
         # Check if P&L is within expected range (use REALIZED_PNL for comparison)
         within_range = min_expected_pnl <= total_realized_pnl <= max_expected_pnl
-        
+
         logger.info(f"Trade {trade_id} ({symbol}): Summary")
         logger.info(f"  Position Size: {position_size}, Expected P&L Range: [{min_expected_pnl:.6f}, {max_expected_pnl:.6f}]")
         logger.info(f"  REALIZED_PNL: {total_realized_pnl:.6f}")
         logger.info(f"  COMMISSION: {total_commission:.6f}")
         logger.info(f"  FUNDING_FEE: {total_funding_fee:.6f}")
         logger.info(f"  NET P&L: {net_pnl:.6f}")
+
+        # Derive entry/exit prices from exact fills (userTrades) within lifecycle window
+        derived_entry = None
+        derived_exit = None
+        try:
+            # Build precise search window with 1h buffer
+            buffer_ms = 60 * 60 * 1000
+            s_ms = max(0, (start_time or 0) - buffer_ms)
+            e_ms = (end_time or start_time or 0) + buffer_ms
+
+            # Fetch user trades; filter by time bounds and, if present, by orderId
+            symbol_pair = f"{symbol}USDT" if not symbol.endswith("USDT") else symbol
+            user_trades = await self.binance_exchange.get_user_trades(symbol=symbol_pair, limit=1000)
+            if isinstance(user_trades, list):
+                # Prefer ties to exchange_order_id
+                entry_order_id = trade.get('exchange_order_id')
+                stop_order_id = trade.get('stop_loss_order_id')
+
+                # Helper accumulators
+                buys = []
+                sells = []
+                for t in user_trades:
+                    try:
+                        t_time = int(t.get('time', 0))
+                        if t_time < s_ms or t_time > e_ms:
+                            continue
+                        if entry_order_id and str(t.get('orderId')) != str(entry_order_id) and not stop_order_id:
+                            # For entry, if we have entry order id, prefer only that for entry side
+                            pass
+                        side = str(t.get('side', '')).upper()
+                        price = float(t.get('price', 0) or 0)
+                        qty = float(t.get('qty', 0) or 0)
+                        if price > 0 and qty > 0:
+                            if side == 'BUY':
+                                buys.append((price, qty))
+                            elif side == 'SELL':
+                                sells.append((price, qty))
+                    except Exception:
+                        continue
+
+                def wavg(pairs):
+                    if not pairs:
+                        return 0.0
+                    tv = sum(p*q for p, q in pairs)
+                    tq = sum(q for _, q in pairs)
+                    return (tv / tq) if tq > 0 else 0.0
+
+                pos_type = str(position_type or 'LONG').upper()
+                if pos_type == 'LONG':
+                    derived_entry = wavg(buys)
+                    derived_exit = wavg(sells)
+                else:
+                    derived_entry = wavg(sells)
+                    derived_exit = wavg(buys)
+
+        except Exception as e:
+            logger.warning(f"Failed to derive entry/exit from fills: {e}")
         logger.info(f"  Within Expected Range: {within_range}")
-        
+
         return {
             'trade_id': trade_id,
             'status': 'PROCESSED',
@@ -279,46 +336,48 @@ class BinancePnLBackfiller:
             'within_range': within_range,
             'income_count': len(income_records),
             'income_records': income_records,
-            'income_by_type': income_by_type
+            'income_by_type': income_by_type,
+            'derived_entry_price': float(derived_entry or 0),
+            'derived_exit_price': float(derived_exit or 0)
         }
-    
+
     async def backfill_trades_with_income_history(self, days: int = 30, symbol: str = ""):
         """Backfill P&L for trades using Binance income history."""
         logger.info(f"--- Starting P&L Backfill using Binance Income History (last {days} days) ---")
-        
+
         try:
             # Calculate cutoff date
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)
             cutoff_iso = cutoff.isoformat()
-            
+
             # Query for closed trades
             query = self.supabase.from_("trades").select("*").eq("status", "CLOSED").gte("created_at", cutoff_iso)
-            
+
             if symbol:
                 query = query.eq("coin_symbol", symbol)
-            
+
             response = query.execute()
             closed_trades = response.data or []
-            
+
             logger.info(f"Found {len(closed_trades)} closed trades to process")
-            
+
             total_processed = 0
             total_updated = 0
             total_errors = 0
-            
+
             for trade in closed_trades:
                 trade_id = trade.get('id')
                 current_pnl = trade.get('pnl_usd') or trade.get('pnl')
-                
+
                 # Skip if already has P&L
                 if current_pnl not in [None, 0, 0.0]:
                     logger.info(f"Trade {trade_id} already has P&L: {current_pnl}, skipping")
                     continue
-                
+
                 try:
                     # Process trade with income history
                     result = await self.process_trade_with_income_history(trade)
-                    
+
                     if result['status'] == 'PROCESSED':
                         # Store comprehensive P&L data in database
                         updates = {
@@ -334,7 +393,20 @@ class BinancePnLBackfiller:
                             'last_pnl_sync': datetime.now(timezone.utc).isoformat(),
                             'updated_at': datetime.now(timezone.utc).isoformat()
                         }
-                        
+
+                        # If we derived prices from exact fills, write them into canonical columns
+                        try:
+                            d_entry = float(result.get('derived_entry_price') or 0)
+                            d_exit = float(result.get('derived_exit_price') or 0)
+                            if d_entry > 0:
+                                updates['entry_price'] = d_entry
+                                updates['binance_entry_price'] = d_entry
+                            if d_exit > 0:
+                                updates['exit_price'] = d_exit
+                                updates['binance_exit_price'] = d_exit
+                        except Exception:
+                            pass
+
                         # Add additional P&L breakdown if available
                         if result['total_realized_pnl'] != 0:
                             updates['has_binance_pnl'] = True
@@ -342,37 +414,37 @@ class BinancePnLBackfiller:
                         else:
                             updates['has_binance_pnl'] = False
                             updates['pnl_source'] = 'no_income_found'
-                        
+
                         await update_trade_status(self.supabase, int(trade_id), updates)
-                        
+
                         # Store detailed income records if available
                         if result.get('income_records'):
                             await self.store_income_records(trade_id, result['income_records'], result['income_by_type'])
-                        
+
                         total_updated += 1
-                        
+
                         if result['total_realized_pnl'] != 0:
                             logger.info(f"✅ Trade {trade_id} updated with P&L: {result['total_realized_pnl']:.6f}")
                         else:
                             logger.info(f"⚠️ Trade {trade_id} processed but no P&L found")
-                    
+
                     total_processed += 1
-                    
+
                     # Rate limiting
                     await asyncio.sleep(0.5)
-                    
+
                 except Exception as e:
                     logger.error(f"Error processing trade {trade_id}: {e}")
                     total_errors += 1
-            
+
             logger.info(f"--- P&L Backfill Complete ---")
             logger.info(f"Total processed: {total_processed}")
             logger.info(f"Total updated: {total_updated}")
             logger.info(f"Total errors: {total_errors}")
-            
+
         except Exception as e:
             logger.error(f"Error during backfill: {e}", exc_info=True)
-    
+
     async def store_income_records(self, trade_id: int, income_records: List[Dict], income_by_type: Dict):
         """Store detailed income records for a trade in the database."""
         try:
@@ -383,7 +455,7 @@ class BinancePnLBackfiller:
                 'income_by_type': {},
                 'detailed_records': []
             }
-            
+
             # Process income by type
             for income_type, incomes in income_by_type.items():
                 total_value = sum(float(income.get('income', 0.0)) for income in incomes)
@@ -392,7 +464,7 @@ class BinancePnLBackfiller:
                     'total_value': total_value,
                     'records': incomes
                 }
-            
+
             # Store detailed records (first 10 to avoid database bloat)
             for income in income_records[:10]:
                 income_summary['detailed_records'].append({
@@ -404,17 +476,17 @@ class BinancePnLBackfiller:
                     'tranId': income.get('tranId', ''),
                     'tradeId': income.get('tradeId', '')
                 })
-            
+
             # Update trade with income summary
             updates = {
                 'income_summary': json.dumps(income_summary),
                 'income_records_count': len(income_records),
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
-            
+
             await update_trade_status(self.supabase, trade_id, updates)
             logger.info(f"Stored {len(income_records)} income records for trade {trade_id}")
-            
+
         except Exception as e:
             logger.error(f"Error storing income records for trade {trade_id}: {e}")
 
@@ -431,7 +503,7 @@ async def backfill_pnl_and_exit_prices():
     # Initialize Binance client
     if not bot.binance_exchange.client:
         await bot.binance_exchange._init_client()
-    
+
     if not bot.binance_exchange.client:
         logger.error("Binance client is not initialized.")
         return
@@ -439,10 +511,10 @@ async def backfill_pnl_and_exit_prices():
     try:
         # Create backfiller instance
         backfiller = BinancePnLBackfiller(bot, supabase)
-        
+
         # Backfill trades from last 30 days
         await backfiller.backfill_trades_with_income_history(days=30)
-        
+
     except Exception as e:
         logger.error(f"Error during backfill: {e}", exc_info=True)
     finally:

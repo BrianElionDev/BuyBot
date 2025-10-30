@@ -669,10 +669,11 @@ class HistoricalTradeBackfillManager:
                 if not rec:
                     continue
 
-                # Extract prices
+                # Extract prices and PnL where available (source-of-truth from KuCoin)
                 try:
                     entry_price_val = rec.get('avgEntryPrice') or rec.get('openPrice')
                     exit_price_val = rec.get('closePrice') or rec.get('avgExitPrice')
+                    pnl_val = rec.get('pnl') or rec.get('realizedPnl') or rec.get('realisedPnl')
                     updates: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc).isoformat()}
                     if entry_price_val:
                         updates['entry_price'] = float(entry_price_val)
@@ -680,6 +681,13 @@ class HistoricalTradeBackfillManager:
                     if exit_price_val:
                         updates['exit_price'] = float(exit_price_val)
                         updates['kucoin_exit_price'] = float(exit_price_val)
+                    if pnl_val is not None:
+                        try:
+                            updates['pnl_usd'] = float(pnl_val)
+                            updates['net_pnl'] = float(pnl_val)
+                            updates['last_pnl_sync'] = datetime.now(timezone.utc).isoformat()
+                        except Exception:
+                            pass
                     if len(updates) > 1:
                         self.db_manager.supabase.table("trades").update(updates).eq("id", tid).execute()
                         updated += 1
