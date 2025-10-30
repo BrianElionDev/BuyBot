@@ -21,7 +21,6 @@ from discord_bot.utils.trade_retry_utils import (
 
 from discord_bot.utils.activity_monitor import ActivityMonitor
 from config import settings as _settings
-from scripts.maintenance.cleanup_scripts.autofill_transaction_history import AutoTransactionHistoryFiller
 from scripts.maintenance.cleanup_scripts.backfill_pnl_and_exit_prices import BinancePnLBackfiller
 from scripts.maintenance.cleanup_scripts.backfill_coin_symbols import backfill_coin_symbols
 from scripts.maintenance.cleanup_scripts.cleanup_orphaned_orders import OrphanedOrdersCleanup
@@ -706,13 +705,19 @@ async def _process_kucoin_transactions(bot, db_manager):
 async def backfill_pnl_data(bot, supabase):
     """Backfill PnL and net PnL data for closed trades."""
     try:
-        from discord_bot.database import DatabaseManager
-
         pnl_backfiller = BinancePnLBackfiller(bot, supabase)
         logger.info("[Scheduler] Starting PnL backfill for closed trades...")
 
         # Backfill PnL data for last 7 days
         await pnl_backfiller.backfill_trades_with_income_history(days=7, symbol="")
+
+        # KuCoin: reconcile last 7 days using position history (after Binance)
+        try:
+            from scripts.maintenance.kucoin_pnl_reconcile_7d import main as kucoin_pnl_reconcile_main
+            await kucoin_pnl_reconcile_main()
+            logger.info("[Scheduler] KuCoin PnL reconciliation completed")
+        except Exception as e:
+            logger.error(f"[Scheduler] Error in KuCoin PnL reconciliation: {e}")
 
         logger.info("[Scheduler] PnL backfill completed")
 

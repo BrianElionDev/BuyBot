@@ -1252,6 +1252,15 @@ class KucoinExchange(ExchangeBase):
 
             trades = []
             for trade_data in trade_data_list:
+                # Try to extract orderId from various possible attributes
+                order_id = None
+                if hasattr(trade_data, 'orderId'):
+                    order_id = getattr(trade_data, 'orderId', None)
+                elif hasattr(trade_data, 'order_id'):
+                    order_id = getattr(trade_data, 'order_id', None)
+                elif hasattr(trade_data, 'orderOid'):
+                    order_id = getattr(trade_data, 'orderOid', None)
+
                 # Format trade data to match expected format
                 formatted_trade = {
                     "id": getattr(trade_data, 'id', ''),
@@ -1263,7 +1272,8 @@ class KucoinExchange(ExchangeBase):
                     "value": float(getattr(trade_data, 'value', 0)),
                     "fee": float(getattr(trade_data, 'fee', 0)),
                     "feeCurrency": getattr(trade_data, 'feeCurrency', 'USDT'),
-                    "time": getattr(trade_data, 'createdAt', 0),
+                    "time": getattr(trade_data, 'createdAt', getattr(trade_data, 'time', 0)),
+                    "orderId": order_id,
                     "raw_response": trade_data
                 }
                 trades.append(formatted_trade)
@@ -1579,13 +1589,57 @@ class KucoinExchange(ExchangeBase):
             if params is None:
                 params = {}
 
-            # For now, return empty list as a fallback
-            # The actual implementation would depend on the KuCoin SDK structure
-            logger.warning(f"Direct API call not fully implemented for {endpoint}")
-            logger.info(f"Would make {method} call to {endpoint} with params: {params}")
+            # Build URL and auth headers
+            futures_base_url = self._futures_base_url()
+            url = f"{futures_base_url}{endpoint}"
 
-            # Return empty list as fallback
-            return []
+            if not hasattr(self.client, 'auth') or not self.client.auth:
+                logger.error("KuCoin client auth not initialized")
+                return []
+
+            try:
+                headers = self.client.auth.get_futures_headers(method, endpoint, params)
+            except Exception as e:
+                logger.error(f"Failed to build KuCoin auth headers for {endpoint}: {e}")
+                return []
+
+            timeout = aiohttp.ClientTimeout(total=15)
+            try:
+                async with aiohttp.ClientSession() as session:
+                    if method.upper() == 'GET':
+                        async with session.get(url, headers=headers, params=params, timeout=timeout) as resp:
+                            data = await resp.json()
+                    elif method.upper() == 'POST':
+                        async with session.post(url, headers=headers, json=params, timeout=timeout) as resp:
+                            data = await resp.json()
+                    else:
+                        logger.error(f"Unsupported HTTP method: {method}")
+                        return []
+
+                if not isinstance(data, dict):
+                    logger.error(f"Unexpected KuCoin response type for {endpoint}: {type(data)}")
+                    return []
+
+                # KuCoin responses typically wrap with code/data
+                if data.get('code') == '200000':
+                    payload = data.get('data')
+                    # Some endpoints use list at root of data
+                    if isinstance(payload, list):
+                        return payload
+                    if isinstance(payload, dict):
+                        return payload  # caller will normalize dict vs list
+                    # Some endpoints return paginated objects {items: [...]} or {data: [...]}
+                    if 'items' in data:
+                        items = data.get('items') or []
+                        return items
+                    return []
+                else:
+                    logger.error(f"KuCoin API error for {endpoint}: {data}")
+                    return []
+
+            except Exception as e:
+                logger.error(f"Direct API call failed for {endpoint}: {e}")
+                return []
 
         except Exception as e:
             logger.error(f"Direct API call failed: {e}")
