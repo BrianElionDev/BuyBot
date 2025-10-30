@@ -217,12 +217,40 @@ class InitialSignalProcessor:
             logger.warning(f"No order book depth for {trading_pair}. Skipping order.")
             return False, {"error": f"No order book depth for {trading_pair}, order skipped."}
 
+        # --- Normalize Stop Loss to float (if provided) ---
+        normalized_sl: Optional[float] = None
+        try:
+            if stop_loss is not None:
+                normalized_sl = self._normalize_stop_loss_value(stop_loss)
+                if normalized_sl is None or normalized_sl <= 0:
+                    logger.warning(f"Parsed stop loss is invalid from value: {stop_loss}")
+                else:
+                    stop_loss = normalized_sl
+        except Exception as e:
+            logger.warning(f"Failed to normalize stop loss '{stop_loss}': {e}")
+
         # --- Calculate Trade Amount ---
         trade_amount = await self._calculate_trade_amount(
             coin_symbol, current_price, quantity_multiplier, is_futures
         )
         if trade_amount <= 0:
             return False, "Calculated trade amount is zero or negative."
+
+        # --- Risk-based position cap if SL is far (>3%) ---
+        try:
+            effective_entry = float(signal_price or current_price)
+            sl_val = float(stop_loss) if stop_loss is not None else None
+            if sl_val and effective_entry > 0:
+                pct_risk = abs(effective_entry - sl_val) / effective_entry
+                max_pct = 0.03
+                if pct_risk > max_pct:
+                    scale = max_pct / pct_risk
+                    if scale < 1.0:
+                        old_amount = trade_amount
+                        trade_amount = trade_amount * scale
+                        logger.info(f"Capping position due to risk {pct_risk*100:.2f}% > {max_pct*100:.2f}%, amount {old_amount} -> {trade_amount}")
+        except Exception as e:
+            logger.warning(f"Risk cap calculation failed: {e}")
 
         # --- Validate Trade Amount ---
         validation_result = await self._validate_trade_amount(
@@ -575,7 +603,7 @@ class InitialSignalProcessor:
             stop_loss_order_id = None
             if stop_loss or take_profits:
                 tp_sl_orders, stop_loss_order_id = await self.trading_engine._create_tp_sl_orders(
-                    trading_pair, position_type, trade_amount, take_profits, stop_loss
+                    trading_pair, position_type, trade_amount, take_profits, float(stop_loss) if stop_loss is not None else None
                 )
 
             # Update cooldown
@@ -592,6 +620,21 @@ class InitialSignalProcessor:
         except Exception as e:
             logger.error(f"Error executing trade: {e}", exc_info=True)
             return False, f"Error executing trade: {str(e)}"
+
+    def _normalize_stop_loss_value(self, value: Union[float, str]) -> Optional[float]:
+        """Parse stop loss that may include percentage e.g. '40190 (7.14%)' into float price."""
+        try:
+            if isinstance(value, (int, float)):
+                return float(value)
+            text = str(value).strip()
+            # Extract first floating number encountered
+            import re
+            m = re.search(r"-?\d+(?:\.\d+)?", text)
+            if not m:
+                return None
+            return float(m.group(0))
+        except Exception:
+            return None
 
     async def _update_existing_position(
         self,

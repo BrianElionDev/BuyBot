@@ -1,0 +1,45 @@
+{
+  "timestamp": "2025-10-30T20:09:50.263438",
+  "orphaned_orders_found": 1,
+  "orders_closed": 1,
+  "orphaned_orders": [
+    {
+      "orderId": 2334866696,
+      "symbol": "PUMPUSDT",
+      "status": "NEW",
+      "clientOrderId": "x-Cb7ytekJf24a95f364233aa232abbd",
+      "price": "0",
+      "avgPrice": "0",
+      "origQty": "26941",
+      "executedQty": "0",
+      "cumQuote": "0.0000000",
+      "timeInForce": "GTC",
+      "type": "TAKE_PROFIT_MARKET",
+      "reduceOnly": true,
+      "closePosition": false,
+      "side": "SELL",
+      "positionSide": "BOTH",
+      "stopPrice": "0.0048700",
+      "workingType": "CONTRACT_PRICE",
+      "priceProtect": false,
+      "origType": "TAKE_PROFIT_MARKET",
+      "priceMatch": "NONE",
+      "selfTradePreventionMode": "EXPIRE_MAKER",
+      "goodTillDate": 0,
+      "time": 1761834512471,
+      "updateTime": 1761834512471
+    }
+  ],
+  "closed_orders": [
+    {
+      "symbol": "PUMPUSDT",
+      "orderId": 2334866696,
+      "type": "TAKE_PROFIT_MARKET",
+      "side": "SELL",
+      "quantity": "26941",
+      "price": "0",
+      "stopPrice": "0.0048700",
+      "closed_at": "2025-10-30T20:09:50.162969"
+    }
+  ]
+}

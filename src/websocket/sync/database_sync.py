@@ -228,10 +228,38 @@ class DatabaseSync:
             updates['status'] = position_status
             updates['order_status'] = order_status
 
+            # Determine entry vs exit in an exchange-agnostic way
+            side_raw = execution_data.get('S')  # BUY/SELL for Binance; may be missing on others
+            signal_type = str(trade.get('signal_type') or '').upper()
+            reduce_only = bool(execution_data.get('R')) if 'R' in execution_data else False
+            close_position_flag = bool(execution_data.get('cp')) if 'cp' in execution_data else False
+
+            is_exit_order = False
+            try:
+                if reduce_only or close_position_flag:
+                    is_exit_order = True
+                elif side_raw and signal_type:
+                    side = str(side_raw).upper()
+                    if signal_type == 'LONG' and side == 'SELL':
+                        is_exit_order = True
+                    elif signal_type == 'SHORT' and side == 'BUY':
+                        is_exit_order = True
+            except Exception:
+                is_exit_order = False
+
             # Update quantities and prices using canonical columns
             if executed_qty > 0:
                 updates['position_size'] = executed_qty
-                updates['entry_price'] = avg_price
+                if status == 'FILLED':
+                    if is_exit_order:
+                        updates['status'] = 'CLOSED'
+                        if avg_price and avg_price > 0:
+                            updates['exit_price'] = avg_price
+                        if realized_pnl is not None:
+                            updates['pnl_usd'] = realized_pnl
+                    else:
+                        updates['status'] = 'ACTIVE'
+                        updates['entry_price'] = avg_price
 
             # Ensure terminal-cancel defaults for unfilled orders to avoid nulls
             if status in ['CANCELED', 'CANCELLED', 'REJECTED', 'EXPIRED'] and executed_qty == 0:
@@ -265,8 +293,13 @@ class DatabaseSync:
                 # Notify via Telegram for error states only (success notifications handled by initial signal processor)
                 try:
                     if status in ['CANCELED', 'REJECTED', 'EXPIRED']:
-                        # Get local symbol first
+                        # Get local symbol first, normalize KuCoin XBT->BTC for DB context
                         local_symbol = trade.get('coin_symbol') or str(execution_data.get('s') or '')
+                        try:
+                            if isinstance(local_symbol, str) and local_symbol.upper().startswith('XBT'):
+                                local_symbol = local_symbol.upper().replace('XBT', 'BTC', 1)
+                        except Exception:
+                            pass
                         # Create a unique key for this notification to prevent duplicates
                         order_id = str(trade.get('exchange_order_id') or execution_data.get('i') or '')
                         notification_key = f"{order_id}_{status}_{local_symbol}"

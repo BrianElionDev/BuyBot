@@ -43,8 +43,6 @@ class SignalRouter:
             logger.warning("Supabase URL or Key not set. Cannot connect to the database.")
             self.runtime_config = None
 
-        self.runtime_config = runtime_config
-
     async def is_trader_supported(self, trader: str) -> bool:
         """
         Check if a trader is supported.

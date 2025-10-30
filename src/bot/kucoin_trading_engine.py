@@ -282,6 +282,17 @@ class KucoinTradingEngine:
                 logger.error(f"Symbol {trading_pair} (converted to {kucoin_symbol}) not listed on KuCoin Futures")
                 return False, f"Symbol {trading_pair} not listed on KuCoin Futures"
 
+            # Normalize stop loss to float if provided
+            if stop_loss is not None:
+                try:
+                    stop_loss_val = self._normalize_stop_loss_value(stop_loss)
+                    if stop_loss_val and stop_loss_val > 0:
+                        stop_loss = stop_loss_val
+                    else:
+                        logger.warning(f"Parsed stop loss is invalid from value: {stop_loss}")
+                except Exception as e:
+                    logger.warning(f"Failed to normalize stop loss '{stop_loss}': {e}")
+
             # Calculate trade amount
             trade_amount = await self._calculate_trade_amount(
                 coin_symbol, current_price, quantity_multiplier
@@ -290,6 +301,23 @@ class KucoinTradingEngine:
             if trade_amount <= 0:
                 logger.error(f"Invalid trade amount calculated: {trade_amount}")
                 return False, f"Invalid trade amount calculated: {trade_amount}"
+
+            # Risk-based cap if SL distance implies >3% risk
+            try:
+                if stop_loss is not None:
+                    entry_ref = float(final_price or current_price)
+                    sl_val = float(stop_loss)
+                    if entry_ref > 0 and sl_val > 0:
+                        pct_risk = abs(entry_ref - sl_val) / entry_ref
+                        max_pct = 0.03
+                        if pct_risk > max_pct:
+                            scale = max_pct / pct_risk
+                            if scale < 1.0:
+                                old_amount = trade_amount
+                                trade_amount = trade_amount * scale
+                                logger.info(f"Capping KuCoin position due to risk {pct_risk*100:.2f}% > {max_pct*100:.2f}%, amount {old_amount} -> {trade_amount}")
+            except Exception as e:
+                logger.warning(f"Risk cap calculation failed: {e}")
 
             # Get leverage from database
             leverage_value = 1.0  # Default leverage
@@ -411,6 +439,20 @@ class KucoinTradingEngine:
         except Exception as e:
             logger.error(f"Error processing KuCoin signal: {e}")
             return False, f"KuCoin signal processing error: {str(e)}"
+
+    def _normalize_stop_loss_value(self, value: Union[float, str]) -> Optional[float]:
+        """Parse stop loss that may include percentage e.g. '40190 (7.14%)' into float price."""
+        try:
+            if isinstance(value, (int, float)):
+                return float(value)
+            text = str(value).strip()
+            import re
+            m = re.search(r"-?\d+(?:\.\d+)?", text)
+            if not m:
+                return None
+            return float(m.group(0))
+        except Exception:
+            return None
 
     async def close_position_at_market(
         self,

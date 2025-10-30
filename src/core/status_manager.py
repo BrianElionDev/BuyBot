@@ -19,7 +19,7 @@ class StatusManager:
         'PARTIALLY_FILLED': 'PARTIALLY_FILLED',
         'FILLED': 'FILLED',
         'CANCELED': 'CANCELED',
-        'CANCELED': 'CANCELED',  # Handle both spellings
+        'CANCELLED': 'CANCELED',
         'REJECTED': 'REJECTED',
         'EXPIRED': 'EXPIRED'
     }
@@ -65,7 +65,7 @@ class StatusManager:
                 position_status = 'ACTIVE'
             else:
                 position_status = 'PENDING'  # Partial fill, still waiting
-        elif order_status in ['CANCELED', 'CANCELLED', 'EXPIRED']:
+        elif order_status in ['CANCELED', 'EXPIRED']:
             position_status = 'CANCELLED'
         elif order_status == 'REJECTED':
             position_status = 'FAILED'

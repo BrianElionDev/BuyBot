@@ -23,8 +23,10 @@ class TraderConfig:
     TRADER_EXCHANGE_MAPPING = {
         "@Johnny": ExchangeType.BINANCE,
         "@-Johnny": ExchangeType.BINANCE,
-        "@-Tareeq": ExchangeType.KUCOIN,
-        "@Tareeq": ExchangeType.KUCOIN,
+        "@Woods": ExchangeType.KUCOIN,
+        "Woods": ExchangeType.KUCOIN,
+        "@woods": ExchangeType.KUCOIN,
+        "woods": ExchangeType.KUCOIN,
     }
 
     DEFAULT_EXCHANGE = ExchangeType.BINANCE
