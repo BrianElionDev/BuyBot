@@ -156,7 +156,7 @@ class DiscordBot:
 
             try:
                 await self.notification_manager.notify_entry_signal(signal.model_dump())
-                logger.info("✅ Entry signal notification sent successfully")
+                logger.info("Entry signal notification attempted (may be filtered by trader config)")
             except Exception as notify_error:
                 logger.error(f"❌ Failed to send entry signal notification: {notify_error}")
 

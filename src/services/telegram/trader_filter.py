@@ -65,7 +65,20 @@ class TraderFilter:
             return False
 
         traders = self._load_trader_cache()
-        return str(trader).strip() in traders
+
+        raw = str(trader).strip()
+        base = raw.lstrip('@')
+
+        candidates = (
+            raw,
+            base,
+            f"@{base}",
+            raw.lower(),
+            base.lower(),
+            f"@{base.lower()}",
+        )
+
+        return any(candidate in traders for candidate in candidates)
 
 
 # Global instance
