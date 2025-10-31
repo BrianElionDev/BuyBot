@@ -247,19 +247,26 @@ class DatabaseSync:
             except Exception:
                 is_exit_order = False
 
-            # Update quantities and prices using canonical columns
+            # Update quantities and prices using canonical columns (guarded by verification flags)
+            price_verified = bool(trade.get('price_verified')) if trade is not None else False
+            pnl_verified = bool(trade.get('pnl_verified')) if trade is not None else False
+
             if executed_qty > 0:
                 updates['position_size'] = executed_qty
                 if status == 'FILLED':
                     if is_exit_order:
                         updates['status'] = 'CLOSED'
-                        if avg_price and avg_price > 0:
+                        if avg_price and avg_price > 0 and not price_verified:
                             updates['exit_price'] = avg_price
-                        if realized_pnl is not None:
+                            updates['price_source'] = 'ws_execution'
+                        if realized_pnl is not None and not pnl_verified:
                             updates['pnl_usd'] = realized_pnl
+                            updates['pnl_source'] = 'ws_execution'
                     else:
                         updates['status'] = 'ACTIVE'
-                        updates['entry_price'] = avg_price
+                        if avg_price and avg_price > 0 and not price_verified:
+                            updates['entry_price'] = avg_price
+                            updates['price_source'] = 'ws_execution'
 
             # Ensure terminal-cancel defaults for unfilled orders to avoid nulls
             if status in ['CANCELED', 'CANCELLED', 'REJECTED', 'EXPIRED'] and executed_qty == 0:

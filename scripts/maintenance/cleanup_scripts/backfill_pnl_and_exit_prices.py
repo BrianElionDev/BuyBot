@@ -13,8 +13,8 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List, Tuple
 from pathlib import Path
 
-# Add project root to the Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+# Add project root to the Python path (three levels up from cleanup_scripts)
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -199,15 +199,25 @@ class BinancePnLBackfiller:
             logger.warning(f"Trade {trade_id} has no valid timestamps, skipping")
             return {'trade_id': trade_id, 'status': 'SKIPPED', 'reason': 'No valid timestamps'}
 
-        # Calculate expected P&L range using binance prices
-        binance_entry_price = trade.get('binance_entry_price')
-        binance_exit_price = trade.get('binance_exit_price')
+        # Calculate expected P&L range using binance prices (coerce Nones to 0.0)
+        try:
+            ps_val = float(position_size or 0)
+        except Exception:
+            ps_val = 0.0
+        try:
+            be_val = float(trade.get('binance_entry_price') or 0)
+        except Exception:
+            be_val = 0.0
+        try:
+            bx_val = float(trade.get('binance_exit_price') or 0)
+        except Exception:
+            bx_val = 0.0
         min_expected_pnl, max_expected_pnl = self.calculate_expected_pnl_range(
-            position_size, binance_entry_price, binance_exit_price, position_type
+            ps_val, bx_val, be_val, position_type
         )
 
         # Get income records for this specific trade period
-        income_records = await self.get_income_for_trade_period(symbol, start_time, end_time)
+        income_records = await self.get_income_for_trade_period(symbol, int(start_time), int(end_time or start_time))
 
         if not income_records:
             logger.info(f"Trade {trade_id} ({symbol}): No income records found during order lifecycle")
@@ -426,43 +436,61 @@ class BinancePnLBackfiller:
 
             for trade in closed_trades:
                 trade_id = trade.get('id')
-                current_pnl = trade.get('pnl_usd') or trade.get('pnl')
-
-                # Skip if already has P&L
-                if current_pnl not in [None, 0, 0.0]:
-                    logger.info(f"Trade {trade_id} already has P&L: {current_pnl}, skipping")
-                    continue
+                current_pnl = trade.get('pnl_usd') if trade.get('pnl_usd') is not None else trade.get('pnl')
+                current_pnl_source = str(trade.get('pnl_source') or '')
+                current_pnl_verified = bool(trade.get('pnl_verified'))
 
                 try:
                     # Process trade with income history
                     result = await self.process_trade_with_income_history(trade)
 
                     if result['status'] == 'PROCESSED':
-                        # Store comprehensive P&L data in database
+                        # Decide overwrite policy: prefer exchange-sourced income; overwrite unless already
+                        # verified from the same authoritative source and within a small tolerance
+                        exchange_realized = float(result['total_realized_pnl'])
+                        exchange_net = float(result['total_net_pnl'])
+                        epsilon_abs = 0.01
+                        epsilon_pct = 0.003  # 0.3%
+
+                        should_overwrite_pnl = (
+                            not current_pnl_verified or
+                            current_pnl_source != 'binance_income' or
+                            (isinstance(current_pnl, (int, float)) and (
+                                abs(float(current_pnl) - exchange_realized) > max(epsilon_abs, abs(exchange_realized) * epsilon_pct)
+                            )) or
+                            (not isinstance(current_pnl, (int, float)))
+                        )
+
+                        # Store comprehensive P&L data in database (always include verification and sources when writing)
                         updates = {
-                            'pnl_usd': result['total_realized_pnl'],  # REALIZED_PNL only
-                            'net_pnl': result['total_net_pnl'],  # NET P&L including fees
-                            'realized_pnl': result['total_realized_pnl'],
-                            'commission': result['total_commission'],
-                            'funding_fee': result['total_funding_fee'],
-                            'income_count': result.get('income_count', 0),
-                            'pnl_accuracy': result.get('within_range', False),
-                            'expected_pnl_min': result.get('expected_pnl_range', (0, 0))[0],
-                            'expected_pnl_max': result.get('expected_pnl_range', (0, 0))[1],
+                            'pnl_usd': exchange_realized if should_overwrite_pnl else (current_pnl if isinstance(current_pnl, (int, float)) else exchange_realized),
+                            'net_pnl': exchange_net if should_overwrite_pnl else trade.get('net_pnl', exchange_net),
+                            'commission': result['total_commission'] if should_overwrite_pnl else trade.get('commission', result['total_commission']),
+                            'funding_fee': result['total_funding_fee'] if should_overwrite_pnl else trade.get('funding_fee', result['total_funding_fee']),
                             'last_pnl_sync': datetime.now(timezone.utc).isoformat(),
-                            'updated_at': datetime.now(timezone.utc).isoformat()
+                            'updated_at': datetime.now(timezone.utc).isoformat(),
+                            'pnl_verified': True if should_overwrite_pnl else bool(trade.get('pnl_verified', False)),
+                            'pnl_source': 'binance_income' if should_overwrite_pnl else (trade.get('pnl_source') or 'binance_income')
                         }
 
                         # If we derived prices from exact fills, write them into canonical columns
                         try:
                             d_entry = float(result.get('derived_entry_price') or 0)
                             d_exit = float(result.get('derived_exit_price') or 0)
-                            if d_entry > 0:
-                                updates['entry_price'] = d_entry
-                                updates['binance_entry_price'] = d_entry
-                            if d_exit > 0:
-                                updates['exit_price'] = d_exit
-                                updates['binance_exit_price'] = d_exit
+                            # Respect existing verified prices unless we can provide a more authoritative source
+                            current_price_verified = bool(trade.get('price_verified'))
+                            current_price_source = str(trade.get('price_source') or '')
+                            allow_price_overwrite = (not current_price_verified) or (current_price_source != 'binance_user_trades/order_lookup')
+
+                            if (d_entry > 0 or d_exit > 0) and allow_price_overwrite:
+                                if d_entry > 0:
+                                    updates['entry_price'] = d_entry
+                                    updates['binance_entry_price'] = d_entry
+                                if d_exit > 0:
+                                    updates['exit_price'] = d_exit
+                                    updates['binance_exit_price'] = d_exit
+                                updates['price_verified'] = True
+                                updates['price_source'] = 'binance_user_trades/order_lookup'
                         except Exception:
                             pass
 
@@ -505,7 +533,7 @@ class BinancePnLBackfiller:
             logger.error(f"Error during backfill: {e}", exc_info=True)
 
     async def store_income_records(self, trade_id: int, income_records: List[Dict], income_by_type: Dict):
-        """Store detailed income records for a trade in the database."""
+        """Store detailed income records for a trade in the audit table (analytics-only)."""
         try:
             # Create a summary of income records
             income_summary = {
@@ -536,15 +564,17 @@ class BinancePnLBackfiller:
                     'tradeId': income.get('tradeId', '')
                 })
 
-            # Update trade with income summary
-            updates = {
-                'income_summary': json.dumps(income_summary),
-                'income_records_count': len(income_records),
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }
-
-            await update_trade_status(self.supabase, trade_id, updates)
-            logger.info(f"Stored {len(income_records)} income records for trade {trade_id}")
+            # Insert into audit table to avoid bloating trades
+            try:
+                payload = {
+                    'trade_id': int(trade_id),
+                    'exchange': 'binance',
+                    'income': income_summary
+                }
+                self.supabase.table("trades_income_audit").insert(payload).execute()
+            except Exception as e:
+                logger.error(f"Failed to insert income audit for trade {trade_id}: {e}")
+            logger.info(f"Stored {len(income_records)} income records (audit) for trade {trade_id}")
 
         except Exception as e:
             logger.error(f"Error storing income records for trade {trade_id}: {e}")

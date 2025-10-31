@@ -616,7 +616,7 @@ class HistoricalTradeBackfillManager:
             cutoff_iso = cutoff.isoformat()
 
             resp = self.db_manager.supabase.from_("trades").select(
-                "id, exchange, status, coin_symbol, signal_type, created_at, updated_at, closed_at, entry_price, exit_price, kucoin_entry_price, kucoin_exit_price"
+                "id, exchange, status, coin_symbol, signal_type, created_at, updated_at, closed_at, entry_price, exit_price"
             ).eq("exchange", "kucoin").gte("created_at", cutoff_iso).execute()
 
             trades = resp.data or []
@@ -629,8 +629,8 @@ class HistoricalTradeBackfillManager:
             for tr in trades:
                 tid = tr.get('id')
                 # Skip if complete and not updating existing
-                e = tr.get('entry_price') or tr.get('kucoin_entry_price')
-                x = tr.get('exit_price') or tr.get('kucoin_exit_price')
+                e = tr.get('entry_price')
+                x = tr.get('exit_price')
                 if not update_existing and e and float(e or 0) > 0 and x and float(x or 0) > 0:
                     continue
 
@@ -677,15 +677,19 @@ class HistoricalTradeBackfillManager:
                     updates: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc).isoformat()}
                     if entry_price_val:
                         updates['entry_price'] = float(entry_price_val)
-                        updates['kucoin_entry_price'] = float(entry_price_val)
                     if exit_price_val:
                         updates['exit_price'] = float(exit_price_val)
-                        updates['kucoin_exit_price'] = float(exit_price_val)
+                    # Mark verification and sources when we have authoritative values
+                    if entry_price_val or exit_price_val:
+                        updates['price_verified'] = True
+                        updates['price_source'] = 'kucoin_history_positions'
                     if pnl_val is not None:
                         try:
                             updates['pnl_usd'] = float(pnl_val)
                             updates['net_pnl'] = float(pnl_val)
                             updates['last_pnl_sync'] = datetime.now(timezone.utc).isoformat()
+                            updates['pnl_verified'] = True
+                            updates['pnl_source'] = 'kucoin_history_positions'
                         except Exception:
                             pass
                     if len(updates) > 1:
