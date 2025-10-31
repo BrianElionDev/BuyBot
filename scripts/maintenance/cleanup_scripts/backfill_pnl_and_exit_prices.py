@@ -278,138 +278,83 @@ class BinancePnLBackfiller:
         logger.info(f"  FUNDING_FEE: {total_funding_fee:.6f}")
         logger.info(f"  NET P&L: {net_pnl:.6f}")
 
-        # Derive entry/exit prices using strict exchange data precedence
-        # 1) Exact orderId lookups (entry and SL/TP reduce-only) from Binance futures
-        # 2) Filtered userTrades by orderId where available
-        # 3) Fallback to time-bounded side-based weighted averages
-        derived_entry = None
-        derived_exit = None
+        # Edge-case validations
+        flags: list[str] = []
         try:
-            # Build precise search window with 1h buffer
-            buffer_ms = 60 * 60 * 1000
-            s_ms = max(0, (start_time or 0) - buffer_ms)
-            e_ms = (end_time or start_time or 0) + buffer_ms
+            ep = float(entry_price or 0)
+            xp = float(exit_price or 0)
+            ps = float(position_size or 0)
+            pos_type = str(position_type or 'LONG').upper()
+        except Exception:
+            ep, xp, ps, pos_type = 0.0, 0.0, 0.0, 'LONG'
 
-            # Fetch user trades; filter by time bounds and, if present, by orderId
-            symbol_pair = f"{symbol}USDT" if not str(symbol).endswith("USDT") else str(symbol)
+        # 1) Zero or tiny position size with non-zero PnL
+        if ps <= 0 and abs(total_realized_pnl) > 0:
+            flags.append("ZERO_SIZE_NONZERO_PNL")
 
-            # Priority 1: exact order lookups from Binance client
+        # 2) Inverted price-PnL logic
+        if ep > 0 and xp > 0 and ps > 0:
+            if pos_type == 'LONG' and xp < ep and total_realized_pnl > 0:
+                flags.append("LONG_NEG_PRICE_POS_PNL")
+            if pos_type == 'SHORT' and xp > ep and total_realized_pnl > 0:
+                flags.append("SHORT_NEG_PRICE_POS_PNL")
+
+        # 3) Extreme fee ratio relative to realized pnl magnitude
+        total_fees = abs(total_commission) + abs(total_funding_fee)
+        if abs(total_realized_pnl) > 0 and (total_fees / max(abs(total_realized_pnl), 1e-9)) > 5:
+            flags.append("EXCESSIVE_FEES_RATIO")
+
+        # 4) Out of expected range already computed
+        if not within_range:
+            flags.append("PNL_OUT_OF_RANGE")
+
+        update_data: Dict[str, Any] = {
+            'binance_income_summary': {
+                'total_realized_pnl': total_realized_pnl,
+                'total_commission': total_commission,
+                'total_funding_fee': total_funding_fee,
+                'net_pnl': net_pnl,
+                'expected_pnl_range': (min_expected_pnl, max_expected_pnl)
+            },
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+
+        if flags:
+            update_data['manual_verification_needed'] = True  # type: ignore[assignment]
+            sync_issues = (trade.get('sync_issues') or [])
+            if not isinstance(sync_issues, list):
+                sync_issues = [str(sync_issues)]
+            sync_issues.extend(flags)
+            # Ensure unique list of strings
+            update_data['sync_issues'] = list(sorted({str(x) for x in sync_issues}))  # type: ignore[assignment]
+
+        # Persist updates
+        try:
+            # Validate trade_id before update
+            trade_id_int: Optional[int] = None
             try:
-                client = getattr(self.binance_exchange, 'client', None)
-                entry_order_id = trade.get('exchange_order_id')
-                stop_order_id = trade.get('stop_loss_order_id')
-                # Entry order exact
-                if client and entry_order_id:
-                    try:
-                        order = await client.futures_get_order(symbol=symbol_pair, orderId=str(entry_order_id))
-                        ap = order.get('avgPrice') or order.get('price') or 0
-                        ex_qty = order.get('executedQty') or order.get('cumQty') or 0
-                        apf = float(ap or 0)
-                        if apf > 0:
-                            derived_entry = apf
-                    except Exception:
-                        pass
-                # Exit order (SL/TP) exact
-                if client and stop_order_id:
-                    try:
-                        order = await client.futures_get_order(symbol=symbol_pair, orderId=str(stop_order_id))
-                        ap = order.get('avgPrice') or order.get('price') or 0
-                        apf = float(ap or 0)
-                        if apf > 0:
-                            derived_exit = apf
-                    except Exception:
-                        pass
+                if isinstance(trade_id, int):
+                    trade_id_int = trade_id
+                elif isinstance(trade_id, str) and trade_id.isdigit():
+                    trade_id_int = int(trade_id)
             except Exception:
-                pass
+                trade_id_int = None
 
-            # Priority 2/3: userTrades with strict filters, only if still missing
-            if derived_entry is None or (derived_exit is None and str(position_type or '').upper() in ('LONG', 'SHORT')):
-                user_trades = await self.binance_exchange.get_user_trades(symbol=symbol_pair, limit=1000)
-                if isinstance(user_trades, list):
-                    entry_order_id = trade.get('exchange_order_id')
-                    stop_order_id = trade.get('stop_loss_order_id')
-
-                    # Helper accumulators
-                    buys: List[Tuple[float, float]] = []
-                    sells: List[Tuple[float, float]] = []
-                    buy_qty_sum = 0.0
-                    sell_qty_sum = 0.0
-
-                    for t in user_trades:
-                        try:
-                            t_time = int(t.get('time', 0))
-                            if t_time < s_ms or t_time > e_ms:
-                                continue
-                            t_oid = str(t.get('orderId')) if t.get('orderId') is not None else ''
-                            # If we have orderIds, constrain matches to them
-                            if entry_order_id and stop_order_id:
-                                if t_oid not in (str(entry_order_id), str(stop_order_id)):
-                                    continue
-                            elif entry_order_id:
-                                if t_oid != str(entry_order_id):
-                                    continue
-                            # else: allow time-bounded trades
-
-                            side = str(t.get('side', '')).upper()
-                            price = float(t.get('price', 0) or 0)
-                            qty = float(t.get('qty', 0) or 0)
-                            if price > 0 and qty > 0:
-                                if side == 'BUY':
-                                    buys.append((price, qty))
-                                    buy_qty_sum += qty
-                                elif side == 'SELL':
-                                    sells.append((price, qty))
-                                    sell_qty_sum += qty
-                        except Exception:
-                            continue
-
-                    def wavg(pairs: List[Tuple[float, float]]):
-                        if not pairs:
-                            return 0.0
-                        tv = sum(p*q for p, q in pairs)
-                        tq = sum(q for _, q in pairs)
-                        return (tv / tq) if tq > 0 else 0.0
-
-                    pos_type = str(position_type or 'LONG').upper()
-                    # Enforce side-position consistency and require qty coverage >= 90% of position_size
-                    try:
-                        pos_qty = float(position_size or 0)
-                    except Exception:
-                        pos_qty = 0.0
-
-                    coverage_ok_buy = (pos_qty == 0) or (buy_qty_sum >= 0.9 * pos_qty)
-                    coverage_ok_sell = (pos_qty == 0) or (sell_qty_sum >= 0.9 * pos_qty)
-
-                    if pos_type == 'LONG':
-                        if derived_entry is None and coverage_ok_buy:
-                            derived_entry = wavg(buys)
-                        if derived_exit is None and coverage_ok_sell:
-                            derived_exit = wavg(sells)
-                    else:
-                        if derived_entry is None and coverage_ok_sell:
-                            derived_entry = wavg(sells)
-                        if derived_exit is None and coverage_ok_buy:
-                            derived_exit = wavg(buys)
-
+            if trade_id_int is not None:
+                import asyncio as _asyncio
+                _asyncio.create_task(update_trade_status(self.supabase, trade_id_int, update_data))
+            else:
+                logger.error(f"Cannot persist PnL updates: invalid trade_id={trade_id}")
         except Exception as e:
-            logger.warning(f"Failed to derive entry/exit from fills: {e}")
-        logger.info(f"  Within Expected Range: {within_range}")
+            logger.error(f"Failed to persist PnL updates for trade {trade_id}: {e}")
 
+        status = 'OK' if not flags and within_range else 'FLAGGED'
         return {
             'trade_id': trade_id,
-            'status': 'PROCESSED',
+            'status': status,
             'symbol': symbol,
-            'total_realized_pnl': total_realized_pnl,
-            'total_commission': total_commission,
-            'total_funding_fee': total_funding_fee,
-            'total_net_pnl': net_pnl,
-            'expected_pnl_range': (min_expected_pnl, max_expected_pnl),
-            'within_range': within_range,
-            'income_count': len(income_records),
-            'income_records': income_records,
-            'income_by_type': income_by_type,
-            'derived_entry_price': float(derived_entry or 0),
-            'derived_exit_price': float(derived_exit or 0)
+            'summary': update_data['binance_income_summary'],
+            'flags': flags,
         }
 
     async def backfill_trades_with_income_history(self, days: int = 30, symbol: str = ""):

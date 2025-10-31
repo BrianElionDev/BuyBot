@@ -154,8 +154,16 @@ class DiscordBot:
         try:
             logger.info(f"Processing initial signal from {signal.trader} (discord_id: {signal.discord_id})")
 
+            # Determine target exchange for this trader (e.g., '@-Tareeq' -> 'kucoin')
+            exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader or "")
+
+            # Send entry notification after exchange resolution, include exchange in payload
             try:
-                await self.notification_manager.notify_entry_signal(signal.model_dump())
+                payload = signal.model_dump()
+                payload['exchange'] = exchange_type.value
+                # Hint downstream to force notify for KuCoin if configured
+                payload['force_notify'] = True if exchange_type.value == 'kucoin' else False
+                await self.notification_manager.notify_entry_signal(payload)
                 logger.info("Entry signal notification attempted (may be filtered by trader config)")
             except Exception as notify_error:
                 logger.error(f"❌ Failed to send entry signal notification: {notify_error}")
@@ -167,9 +175,6 @@ class DiscordBot:
                     "message": f"Trader {signal.trader} is not supported. Please check trader configuration in database.",
                     "exchange": "none"
                 }
-
-            # Determine target exchange for this trader (e.g., '@-Tareeq' -> 'kucoin')
-            exchange_type = await self.signal_router.get_exchange_for_trader(signal.trader or "")
 
             # Validate required fields
             if not signal.discord_id or not signal.trader or not signal.content:
@@ -631,9 +636,48 @@ class DiscordBot:
 
             if result.get("status") == "success":
                 logger.info(f"✅ Follow-up signal processed successfully on {exchange_type.value}")
+                # Ensure notification sent even on success (notify_update_signal may have been filtered)
+                try:
+                    result_payload = {
+                        'trader': signal.trader,
+                        'content': signal.content,
+                        'status': 'success',
+                        'exchange': exchange_type.value,
+                        'message': result.get('message', 'Follow-up processed successfully')
+                    }
+                    if result.get('parsed_alert'):
+                        result_payload['action_type'] = result['parsed_alert'].get('action_type')
+                    await self.notification_manager.notify_update_signal(result_payload)
+                except Exception as notify_err:
+                    logger.error(f"Failed to send success notification for follow-up: {notify_err}")
                 return result
             else:
                 logger.error(f"❌ Follow-up signal processing failed on {exchange_type.value}: {result.get('message')}")
+                # Always notify on failure/cancellation to ensure alert visibility
+                try:
+                    error_payload = {
+                        'trader': signal.trader,
+                        'content': signal.content,
+                        'status': 'failed',
+                        'exchange': exchange_type.value,
+                        'error': result.get('message', 'Follow-up processing failed'),
+                        'action_type': result.get('parsed_alert', {}).get('action_type') if result.get('parsed_alert') else None
+                    }
+                    await self.notification_manager.notify_update_signal(error_payload)
+                    # Also send error notification for visibility when action fails
+                    if result.get('parsed_alert', {}).get('action_type'):
+                        action = result['parsed_alert']['action_type']
+                        await self.notification_manager.send_error_notification(
+                            error_type=f"FOLLOWUP_{action.upper()}_FAILED",
+                            error_message=f"Follow-up action '{action}' failed: {result.get('message', 'Unknown error')}",
+                            context={
+                                'trader': signal.trader,
+                                'discord_id': signal.discord_id,
+                                'exchange': exchange_type.value
+                            }
+                        )
+                except Exception as notify_err:
+                    logger.error(f"Failed to send failure notification for follow-up: {notify_err}")
                 return result
 
         except Exception as e:

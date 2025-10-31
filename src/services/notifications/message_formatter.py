@@ -180,8 +180,17 @@ class MessageFormatter:
         if expire_reason == "EXPIRE_MAKER":
             reason_text = " (post-only would take liquidity)"
 
+        # Check if this is a TP/SL order cancellation
+        is_tp_sl = ctx.get("is_tp_sl_order", False)
+        order_type = ctx.get("order_type", "")
+        reduce_only = ctx.get("reduce_only", False)
+
+        tp_sl_indicator = ""
+        if is_tp_sl or reduce_only or ("TAKE_PROFIT" in str(order_type).upper() or "STOP" in str(order_type).upper()):
+            tp_sl_indicator = " 🎯 [TP/SL Order]"
+
         message = f"""
-⚠️ <b>Error Alert</b>
+⚠️ <b>Error Alert</b>{tp_sl_indicator}
 
 🚨 <b>Error Type:</b> {notification.error_type}
 ❌ <b>Error Message:</b> {notification.error_message}

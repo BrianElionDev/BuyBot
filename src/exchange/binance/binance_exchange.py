@@ -214,7 +214,51 @@ class BinanceExchange(ExchangeBase):
                 order_params['timeInForce'] = 'GTC'  # Good Till Cancelled
 
             if price:
-                order_params['price'] = price
+                # Prevent immediate taker execution for LIMIT orders by nudging to maker side when needed
+                safe_price = price
+                try:
+                    if order_type.upper() == 'LIMIT' and not reduce_only:
+                        depth = await self.client.futures_order_book(symbol=pair, limit=5)
+                        if isinstance(depth, dict):
+                            bids = depth.get('bids') or []
+                            asks = depth.get('asks') or []
+                            best_bid = float(bids[0][0]) if bids else 0.0
+                            best_ask = float(asks[0][0]) if asks else 0.0
+                            # Compute a tiny nudge based on symbol tick size if available
+                            tick = None
+                            try:
+                                filters = await self.get_futures_symbol_filters(pair)
+                                tick = float(filters.get('PRICE_FILTER', {}).get('tickSize', '0')) if filters else None
+                            except Exception:
+                                tick = None
+                            tiny = tick if tick and tick > 0 else max(1e-8, (best_bid or best_ask) * 1e-8)
+
+                            # Preflight: would this price take liquidity?
+                            would_take = False
+                            if side.upper() == 'BUY' and best_ask > 0 and price >= best_ask:
+                                would_take = True
+                                candidate = best_bid - tiny
+                                safe_price = candidate if candidate > 0 else price
+                            elif side.upper() == 'SELL' and best_bid > 0 and price <= best_bid:
+                                would_take = True
+                                safe_price = best_ask + tiny
+
+                            # Respect tick size formatting when known
+                            if safe_price and filters and filters.get('PRICE_FILTER', {}).get('tickSize'):
+                                safe_price = float(format_value(safe_price, filters['PRICE_FILTER']['tickSize']))
+
+                            # Validation log
+                            try:
+                                logger.info(
+                                    f"Maker-preflight for {pair}: side={side} orig_price={price} safe_price={safe_price} "
+                                    f"best_bid={best_bid} best_ask={best_ask} tick={tick} would_take={would_take}"
+                                )
+                            except Exception:
+                                pass
+                except Exception:
+                    safe_price = price
+
+                order_params['price'] = safe_price
             if stop_price:
                 order_params['stopPrice'] = stop_price
             if client_order_id:

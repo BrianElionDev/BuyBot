@@ -271,7 +271,15 @@ class NotificationManager:
         try:
             from src.services.telegram.trader_filter import should_notify_trader
             trader = payload.get('trader', '') if payload else ''
-            if not should_notify_trader(trader):
+            exchange = (payload or {}).get('exchange', '')
+            force_flag = bool((payload or {}).get('force_notify'))
+
+            # Env override to force notify KuCoin entries regardless of trader filter
+            import os
+            kucoin_force_env = os.getenv('KUCOIN_NOTIFY_FORCE', 'false').strip().lower() in ('1', 'true', 'yes')
+            bypass_filter = force_flag or (exchange.lower() == 'kucoin' and kucoin_force_env)
+
+            if not bypass_filter and not should_notify_trader(trader):
                 logger.debug(f"Skipping entry signal notification for trader '{trader}' (not in Supabase config)")
                 return
 

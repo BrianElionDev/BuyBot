@@ -638,6 +638,14 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                     'sync_order_response': json.dumps(order)
                 }
 
+                # If we have clear execution evidence, reconcile misleading NEW -> FILLED
+                try:
+                    if (mapped_position_status in ['CLOSED', 'OPEN', 'ACTIVE']) and (filled_size > 0 or (avg_price and avg_price > 0)):
+                        # Treat as FILLED order lifecycle
+                        update_data['order_status'] = 'FILLED'
+                except Exception:
+                    pass
+
                 # Only update position_size and entry_price if we have valid values
                 if position_size and position_size > 0:
                     update_data['position_size'] = f"{position_size:.8f}"

@@ -356,7 +356,11 @@ class FollowupSignalProcessor:
                 return True, tp_order
             else:
                 logger.error(f"Failed to place TP{tp_idx} order: {tp_order}")
-                return False, {"error": f"Failed to place TP{tp_idx} order", "response": tp_order}
+                error_msg = tp_order.get('error', str(tp_order)) if isinstance(tp_order, dict) else str(tp_order)
+                # Include cancellation reason if available (e.g., EXPIRE_MAKER)
+                if isinstance(tp_order, dict) and 'code' in tp_order:
+                    error_msg += f" (code: {tp_order.get('code')})"
+                return False, {"error": f"Failed to place TP{tp_idx} order: {error_msg}", "response": tp_order}
 
         except Exception as e:
             logger.error(f"Error processing take profit action: {e}")

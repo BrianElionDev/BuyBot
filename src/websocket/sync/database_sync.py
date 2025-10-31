@@ -251,6 +251,27 @@ class DatabaseSync:
             price_verified = bool(trade.get('price_verified')) if trade is not None else False
             pnl_verified = bool(trade.get('pnl_verified')) if trade is not None else False
 
+            # Reconcile KuCoin-style NEW with fills present (real-time)
+            try:
+                exchange_name_rt = str(trade.get('exchange') or '').lower()
+                if exchange_name_rt == 'kucoin':
+                    filled_size_ws = float(execution_data.get('z') or 0)
+                    avg_price_ws = float(execution_data.get('ap') or 0)
+                    if updates.get('order_status') == 'NEW' and (filled_size_ws > 0 or avg_price_ws > 0):
+                        updates['order_status'] = 'FILLED'
+                        updates['status'] = 'CLOSED' if is_exit_order else 'ACTIVE'
+                        if avg_price_ws > 0 and not price_verified:
+                            if is_exit_order:
+                                updates['exit_price'] = avg_price_ws
+                            else:
+                                updates['entry_price'] = avg_price_ws
+                            updates['price_source'] = 'ws_execution'
+                        if filled_size_ws > 0:
+                            updates['position_size'] = filled_size_ws
+                        logger.info(f"Reconciled KuCoin NEW->FILLED in real-time for trade {trade_id}")
+            except Exception:
+                pass
+
             if executed_qty > 0:
                 updates['position_size'] = executed_qty
                 if status == 'FILLED':
@@ -320,13 +341,50 @@ class DatabaseSync:
                         requested_price = execution_data.get('p') or execution_data.get('sp') or normalized.get('price') or normalized.get('stopPrice') or 0
                         requested_qty = execution_data.get('q') or normalized.get('origQty') or 0
 
+                        # Fallbacks from DB trade when websocket fields are missing/zero
+                        try:
+                            if (not requested_price or float(requested_price) == 0) and trade:
+                                # Use entry_price for entries; stop_price for SL if available in parsed_signal
+                                requested_price = float(trade.get('entry_price') or 0) or float(trade.get('stop_price') or 0)
+                        except Exception:
+                            pass
+                        try:
+                            if (not requested_qty or float(requested_qty) == 0) and trade:
+                                requested_qty = float(trade.get('position_size') or 0)
+                        except Exception:
+                            pass
+
+                        # Attempt to extract more hints from parsed_signal JSON (when present)
+                        try:
+                            from src.bot.utils.signal_parser import SignalParser
+                            parsed = SignalParser.parse_parsed_signal(trade.get('parsed_signal')) if trade else None
+                            if parsed:
+                                if (not requested_price or float(requested_price) == 0):
+                                    entry_prices = parsed.get('entry_prices') or []
+                                    if isinstance(entry_prices, list) and entry_prices:
+                                        requested_price = float(entry_prices[0])
+                                if (not requested_qty or float(requested_qty) == 0):
+                                    # Position size is not in parsed signal; leave as-is
+                                    pass
+                        except Exception:
+                            # Best-effort enrichment; ignore parsing errors
+                            pass
+
+                        # Determine if this is a TP/SL order based on reduce_only or order type
+                        is_reduce_only = bool(execution_data.get('R')) if 'R' in execution_data else False
+                        order_type_raw = execution_data.get('o') or normalized.get('type') or ''
+                        is_tp_sl_order = (is_reduce_only or
+                                         order_type_raw.upper() in ('TAKE_PROFIT_MARKET', 'STOP_MARKET', 'TAKE_PROFIT', 'STOP') or
+                                         'TAKE_PROFIT' in str(order_type_raw).upper() or
+                                         'STOP' in str(order_type_raw).upper())
+
                         # Extract helpful raw WS fields if present
                         context: Dict[str, Any] = {
                             "exchange": exchange_name,
                             "symbol": local_symbol or normalized.get('symbol') or '',
                             "order_id": order_id,
                             "client_order_id": execution_data.get('c') or normalized.get('clientOrderId') or '',
-                            "order_type": execution_data.get('o') or normalized.get('type') or '',
+                            "order_type": order_type_raw,
                             "time_in_force": execution_data.get('f') or '',
                             "requested_price": float(requested_price) if requested_price else 0,
                             "requested_qty": float(requested_qty) if requested_qty else 0,
@@ -334,11 +392,23 @@ class DatabaseSync:
                             "filled_qty": float(execution_data.get('z') or normalized.get('executedQty') or 0),
                             "stop_price": float(execution_data.get('sp') or normalized.get('stopPrice') or 0),
                             "expire_reason": execution_data.get('V') or '',
-                            "reduce_only": bool(execution_data.get('R')) if 'R' in execution_data else False,
+                            "reduce_only": is_reduce_only,
+                            "is_tp_sl_order": is_tp_sl_order,
                             "working_type": execution_data.get('wt') or '',
                             "price_protection": execution_data.get('pm') or '',
                             "error_code": execution_data.get('er') or '',
                         }
+
+                        # Add original signal content for diagnostic context when available
+                        try:
+                            if trade and trade.get('discord_id'):
+                                context['discord_id'] = str(trade.get('discord_id'))
+                            if trade and trade.get('parsed_signal'):
+                                context['parsed_signal'] = str(trade.get('parsed_signal'))
+                            if trade and trade.get('binance_response'):
+                                context['initial_exchange_response'] = str(trade.get('binance_response'))
+                        except Exception:
+                            pass
 
                         # Enrich with DB trade context when available
                         if trade:
@@ -366,9 +436,20 @@ class DatabaseSync:
                                 exchange=exchange_name
                             ):
                                 notifier = NotificationManager()
+                                # Enhance error message to indicate TP/SL orders
+                                error_msg = f"Order {status} for {local_symbol}"
+                                if is_tp_sl_order:
+                                    order_type_label = order_type_raw.upper() if order_type_raw else "TP/SL"
+                                    if 'TAKE_PROFIT' in order_type_label:
+                                        error_msg = f"Take Profit order {status} for {local_symbol}"
+                                    elif 'STOP' in order_type_label:
+                                        error_msg = f"Stop Loss order {status} for {local_symbol}"
+                                    else:
+                                        error_msg = f"TP/SL order {status} for {local_symbol}"
+
                                 await notifier.send_error_notification(
                                     error_type=f"ORDER_{status}",
-                                    error_message=f"Order {status} for {local_symbol}",
+                                    error_message=error_msg,
                                     context=context
                                 )
                                 logger.info(f"Sent error notification for {notification_key}")
