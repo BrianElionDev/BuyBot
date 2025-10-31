@@ -605,7 +605,14 @@ class HistoricalTradeBackfillManager:
             logger.error(f"Error during backfill: {e}")
 
     async def backfill_kucoin_prices(self, days: int = 7, update_existing: bool = False):
-        """Backfill KuCoin entry/exit prices using strict position history matching (no PnL here)."""
+        """
+        DEPRECATED: Use backfill_pnl_and_exit_prices.py KucoinPnLBackfiller instead.
+
+        This method is kept for backwards compatibility but the consolidated
+        implementation in backfill_pnl_and_exit_prices.py should be used instead.
+
+        Backfill KuCoin entry/exit prices using strict position history matching.
+        """
         try:
             if not self.kucoin_exchange:
                 logger.warning("KuCoin exchange client not set; skipping KuCoin backfill")
