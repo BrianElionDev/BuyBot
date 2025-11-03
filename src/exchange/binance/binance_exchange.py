@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from binance.async_client import AsyncClient
 from binance.exceptions import BinanceAPIException
 from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET, ORDER_TYPE_LIMIT
+from config import settings as cfg
 
 from ..core.exchange_base import ExchangeBase
 from ..core.exchange_config import ExchangeConfig, format_value
@@ -209,52 +210,62 @@ class BinanceExchange(ExchangeBase):
                 'closePosition': close_position
             }
 
-            # Add timeInForce for LIMIT orders (required parameter)
+            # Add timeInForce for LIMIT orders (GTC by default; allow GTX post-only via config)
             if order_type.upper() == 'LIMIT':
-                order_params['timeInForce'] = 'GTC'  # Good Till Cancelled
+                post_only = bool(getattr(cfg, 'BINANCE_POST_ONLY', False))
+                order_params['timeInForce'] = 'GTX' if post_only else 'GTC'
 
             if price:
-                # Prevent immediate taker execution for LIMIT orders by nudging to maker side when needed
+                # Robust maker-side pricing using N tick offset and optional post-only
                 safe_price = price
                 try:
                     if order_type.upper() == 'LIMIT' and not reduce_only:
                         depth = await self.client.futures_order_book(symbol=pair, limit=5)
-                        if isinstance(depth, dict):
-                            bids = depth.get('bids') or []
-                            asks = depth.get('asks') or []
-                            best_bid = float(bids[0][0]) if bids else 0.0
-                            best_ask = float(asks[0][0]) if asks else 0.0
-                            # Compute a tiny nudge based on symbol tick size if available
-                            tick = None
-                            try:
-                                filters = await self.get_futures_symbol_filters(pair)
-                                tick = float(filters.get('PRICE_FILTER', {}).get('tickSize', '0')) if filters else None
-                            except Exception:
-                                tick = None
-                            tiny = tick if tick and tick > 0 else max(1e-8, (best_bid or best_ask) * 1e-8)
+                        bids = depth.get('bids') or [] if isinstance(depth, dict) else []
+                        asks = depth.get('asks') or [] if isinstance(depth, dict) else []
+                        best_bid = float(bids[0][0]) if bids else 0.0
+                        best_ask = float(asks[0][0]) if asks else 0.0
 
-                            # Preflight: would this price take liquidity?
-                            would_take = False
-                            if side.upper() == 'BUY' and best_ask > 0 and price >= best_ask:
-                                would_take = True
-                                candidate = best_bid - tiny
+                        # Fetch tick size; fall back to very small fraction if unavailable
+                        filters = None
+                        tick_size = 0.0
+                        try:
+                            filters = await self.get_futures_symbol_filters(pair)
+                            if filters and filters.get('PRICE_FILTER', {}).get('tickSize'):
+                                tick_size = float(filters['PRICE_FILTER']['tickSize'])
+                        except Exception:
+                            tick_size = 0.0
+
+                        if tick_size <= 0:
+                            baseline = best_bid or best_ask or price
+                            tick_size = max(1e-8, baseline * 1e-8)
+
+                        # Configurable maker offset (in ticks)
+                        tick_offset = int(getattr(cfg, 'BINANCE_MAKER_TICK_OFFSET', 3))
+                        offset = tick_size * max(1, tick_offset)
+
+                        if side.upper() == 'BUY':
+                            # Ensure strictly below best bid by offset when crossing or through the book
+                            if (best_ask > 0 and price >= best_ask) or (best_bid > 0 and price > best_bid):
+                                candidate = best_bid - offset if best_bid > 0 else price - offset
                                 safe_price = candidate if candidate > 0 else price
-                            elif side.upper() == 'SELL' and best_bid > 0 and price <= best_bid:
-                                would_take = True
-                                safe_price = best_ask + tiny
+                        elif side.upper() == 'SELL':
+                            # Ensure strictly above best ask by offset when crossing or through the book
+                            if (best_bid > 0 and price <= best_bid) or (best_ask > 0 and price < best_ask):
+                                candidate = best_ask + offset if best_ask > 0 else price + offset
+                                safe_price = candidate if candidate > 0 else price
 
-                            # Respect tick size formatting when known
-                            if safe_price and filters and filters.get('PRICE_FILTER', {}).get('tickSize'):
-                                safe_price = float(format_value(safe_price, filters['PRICE_FILTER']['tickSize']))
+                        # Respect tick formatting when known
+                        if filters and filters.get('PRICE_FILTER', {}).get('tickSize'):
+                            safe_price = float(format_value(safe_price, filters['PRICE_FILTER']['tickSize']))
 
-                            # Validation log
-                            try:
-                                logger.info(
-                                    f"Maker-preflight for {pair}: side={side} orig_price={price} safe_price={safe_price} "
-                                    f"best_bid={best_bid} best_ask={best_ask} tick={tick} would_take={would_take}"
-                                )
-                            except Exception:
-                                pass
+                        try:
+                            logger.info(
+                                f"Maker-preflight {pair}: side={side} orig={price} safe={safe_price} "
+                                f"bid={best_bid} ask={best_ask} tick={tick_size} ticks={tick_offset}"
+                            )
+                        except Exception:
+                            pass
                 except Exception:
                     safe_price = price
 

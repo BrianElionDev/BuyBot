@@ -653,13 +653,15 @@ class KucoinTradingEngine:
                     "exchange_response": "Limit order cancel acknowledged"
                 }
 
-            elif action in ['limit_order_filled', 'limit_order_not_filled']:
-                logger.info(f"Processing limit order status: {action}")
+            elif action in ['order_filled', 'limit_order_filled', 'limit_order_not_filled']:
+                # Normalize messaging regardless of exact variant
+                readable = action.replace('_', ' ')
+                logger.info(f"Processing informational order status: {readable}")
                 return {
                     "success": True,
-                    "message": f"Limit order {action.replace('_', ' ')} (KuCoin)",
+                    "message": f"{readable} (KuCoin)",
                     "parsed_alert": parsed_alert,
-                    "exchange_response": f"Limit order {action.replace('_', ' ')}"
+                    "exchange_response": f"{readable}"
                 }
 
             else:

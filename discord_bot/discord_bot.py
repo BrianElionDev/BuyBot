@@ -640,6 +640,8 @@ class DiscordBot:
                 try:
                     result_payload = {
                         'trader': signal.trader,
+                        'trade': signal.trade,
+                        'timestamp': signal.timestamp,
                         'content': signal.content,
                         'status': 'success',
                         'exchange': exchange_type.value,
@@ -657,6 +659,8 @@ class DiscordBot:
                 try:
                     error_payload = {
                         'trader': signal.trader,
+                        'trade': signal.trade,
+                        'timestamp': signal.timestamp,
                         'content': signal.content,
                         'status': 'failed',
                         'exchange': exchange_type.value,

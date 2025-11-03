@@ -32,6 +32,9 @@ def reload_env():
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
     TELEGRAM_NOTIFICATION_CHAT_ID = os.getenv("TELEGRAM_NOTIFICATION_CHAT_ID", "")
 
+    BINANCE_POST_ONLY=os.getenv("BINANCE_POST_ONLY", "True").lower() == "true"
+    BINANCE_MAKER_TICK_OFFSET=os.getenv("BINANCE_MAKER_TICK_OFFSET", "3")
+
     logging.info("Environment variables reloaded successfully")
     if BINANCE_API_KEY:
         logging.info(f"Using Binance API Key: {BINANCE_API_KEY[:10]}...{BINANCE_API_KEY[-5:]}")
@@ -80,6 +83,8 @@ LIMIT_ORDER_PRICE_THRESHOLD = float(os.getenv("LIMIT_ORDER_PRICE_THRESHOLD", "10
 DEFAULT_TP_PERCENTAGE = float(os.getenv("DEFAULT_TP_PERCENTAGE", "5.0").replace('%', ''))
 SIGNAL_TP_POSITION_PERCENTAGE = float(os.getenv("SIGNAL_TP_POSITION_PERCENTAGE", "50.0").replace('%', ''))
 TP_AUDIT_INTERVAL = int(os.getenv("TP_AUDIT_INTERVAL", "30"))
+BINANCE_POST_ONLY=os.getenv("BINANCE_POST_ONLY", "True").lower() == "true"
+BINANCE_MAKER_TICK_OFFSET=os.getenv("BINANCE_MAKER_TICK_OFFSET", "3")
 
 # Telegram Bot Configuration (for notifications)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")

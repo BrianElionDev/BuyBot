@@ -311,6 +311,10 @@ class FollowupSignalProcessor:
             )
         elif action == 'order_filled':
             return True, {"message": "Order fill acknowledged"}
+        elif action == 'limit_order_not_filled':
+            # Acknowledge informational alerts without trading side-effects
+            logger.info("Limit order not filled / still valid acknowledged")
+            return True, {"message": "Limit order not filled acknowledged"}
         else:
             logger.error(f"Unknown action: {action}")
             return False, {"error": f"Unknown action: {action}"}
@@ -510,7 +514,7 @@ class FollowupSignalProcessor:
             # Validate action type
             valid_actions = [
                 'take_profit', 'stop_loss_hit', 'position_closed', 'stop_loss_update',
-                'limit_order_cancelled', 'break_even', 'stops_to_be'
+                'limit_order_cancelled', 'break_even', 'stops_to_be', 'order_filled', 'limit_order_not_filled'
             ]
             valid_actions.extend([f'take_profit_{i}' for i in range(1, 11)])  # TP1, TP2, etc.
 
