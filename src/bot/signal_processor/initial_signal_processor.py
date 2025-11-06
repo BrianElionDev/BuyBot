@@ -51,7 +51,8 @@ class InitialSignalProcessor:
         price_threshold_override: Optional[float] = None,
         quantity_multiplier: Optional[int] = None,
         entry_prices: Optional[List[float]] = None,
-        discord_id: Optional[str] = None
+        discord_id: Optional[str] = None,
+        position_size_override: Optional[float] = None
     ) -> Tuple[bool, Union[Dict, str]]:
         """
         Processes a CEX (Binance) signal with position conflict detection.
@@ -69,7 +70,6 @@ class InitialSignalProcessor:
             lock = asyncio.Lock()
 
         async with lock:
-
             # Check cooldown
             cooldown_key = f"cex_{coin_symbol}"
             if time.time() - self.trade_cooldowns.get(cooldown_key, 0) < self.trading_engine.config.TRADE_COOLDOWN:
@@ -100,7 +100,7 @@ class InitialSignalProcessor:
 
                     # Calculate new position size
                     trade_amount = await self._calculate_trade_amount(
-                        coin_symbol, signal_price, quantity_multiplier, True
+                        coin_symbol, signal_price, quantity_multiplier, True, position_size_override
                     )
 
                     # Get existing position info
@@ -242,15 +242,27 @@ class InitialSignalProcessor:
                 # Check if estimated amount would be below minimums
                 min_required_usdt = max(min_qty * current_price, min_notional)
 
-                if estimated_trade_amount < min_qty:
-                    error_msg = f"Position size ${usdt_amount:.2f} too small. Calculated quantity {estimated_trade_amount:.8f} below minimum {min_qty} for {trading_pair}. Minimum required: ${min_required_usdt:.2f}"
-                    logger.warning(error_msg)
-                    return False, {"error": error_msg}
+                # AUTO-ADJUSTMENT: If below minimum, automatically adjust to minimum (with risk limits)
+                if estimated_trade_amount < min_qty or estimated_trade_amount * current_price < min_notional:
+                    # Calculate required minimum
+                    required_qty = max(min_qty, min_notional / current_price)
+                    required_usdt = required_qty * current_price
 
-                if estimated_trade_amount * current_price < min_notional:
-                    error_msg = f"Position size ${usdt_amount:.2f} too small. Notional value ${estimated_trade_amount * current_price:.2f} below minimum ${min_notional} for {trading_pair}. Minimum required: ${min_required_usdt:.2f}"
-                    logger.warning(error_msg)
-                    return False, {"error": error_msg}
+                    # Risk limit: Don't auto-adjust if it would exceed 2x the original position size
+                    max_allowed_usdt = usdt_amount * 2.0
+
+                    if required_usdt <= max_allowed_usdt:
+                        logger.info(f"Auto-adjusting position size from ${usdt_amount:.2f} to ${required_usdt:.2f} to meet minimum requirements")
+                        # Update the estimated trade amount
+                        estimated_trade_amount = required_qty
+                        # Update usdt_amount for subsequent calculations
+                        usdt_amount = required_usdt
+                        logger.info(f"Adjusted trade_amount to {estimated_trade_amount:.8f} (${required_usdt:.2f} notional)")
+                    else:
+                        # Exceeds risk limit, reject with clear message
+                        error_msg = f"Position size ${usdt_amount:.2f} too small. Minimum required: ${min_required_usdt:.2f}, but auto-adjustment would exceed 2x limit (${max_allowed_usdt:.2f}). Please increase position size manually."
+                        logger.warning(error_msg)
+                        return False, {"error": error_msg, "retry_suggested": True, "suggested_size": min_required_usdt}
 
                 logger.info(f"Pre-validation passed: estimated trade_amount {estimated_trade_amount:.8f} meets minimums (min_qty: {min_qty}, min_notional: ${min_notional:.2f})")
             except Exception as e:
@@ -293,7 +305,7 @@ class InitialSignalProcessor:
 
         # --- Calculate Trade Amount ---
         trade_amount = await self._calculate_trade_amount(
-            coin_symbol, current_price, quantity_multiplier, is_futures
+            coin_symbol, current_price, quantity_multiplier, is_futures, position_size_override
         )
         if trade_amount <= 0:
             return False, "Calculated trade amount is zero or negative."
@@ -343,30 +355,39 @@ class InitialSignalProcessor:
         coin_symbol: str,
         current_price: float,
         quantity_multiplier: Optional[int],
-        is_futures: bool
+        is_futures: bool,
+        position_size_override: Optional[float] = None
     ) -> float:
         """
         Calculate the trade amount based on live database position_size and current price.
+
+        Args:
+            position_size_override: Optional override for position size (for retries with adjusted size)
         """
         try:
-            # Get position_size from database instead of hardcoded config
-            usdt_amount = self.trading_engine.config.TRADE_AMOUNT  # Fallback to config
-            try:
-                from src.services.trader_config_service import trader_config_service
-                trader_id = getattr(self.trading_engine, 'trader_id', None) or ''
-                exch_name = self.exchange.__class__.__name__.lower()
-                exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
+            # Use override if provided (for retries), otherwise get from database
+            if position_size_override is not None:
+                usdt_amount = float(position_size_override)
+                logger.info(f"Using position_size override (final notional): ${usdt_amount}")
+            else:
+                # Get position_size from database instead of hardcoded config
+                usdt_amount = self.trading_engine.config.TRADE_AMOUNT  # Fallback to config
+                try:
+                    from src.services.trader_config_service import trader_config_service
+                    trader_id = getattr(self.trading_engine, 'trader_id', None) or ''
+                    exch_name = self.exchange.__class__.__name__.lower()
+                    exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
 
-                config = await trader_config_service.get_trader_config(trader_id)
-                if not config or config.exchange.value != exchange_key:
-                    msg = f"Missing or mismatched trader config for trader={trader_id}, exchange={exchange_key}; refusing to fallback for position_size"
-                    logger.error(msg)
+                    config = await trader_config_service.get_trader_config(trader_id)
+                    if not config or config.exchange.value != exchange_key:
+                        msg = f"Missing or mismatched trader config for trader={trader_id}, exchange={exchange_key}; refusing to fallback for position_size"
+                        logger.error(msg)
+                        return 0.0
+                    usdt_amount = float(config.position_size)
+                    logger.info(f"Using database position_size (final notional): ${usdt_amount} for trader {trader_id}")
+                except Exception as e:
+                    logger.error(f"Failed to get position_size from TraderConfigService: {e}")
                     return 0.0
-                usdt_amount = float(config.position_size)
-                logger.info(f"Using database position_size (final notional): ${usdt_amount} for trader {trader_id}")
-            except Exception as e:
-                logger.error(f"Failed to get position_size from TraderConfigService: {e}")
-                return 0.0
 
             # Calculate trade amount based on USDT value and current price
             # IMPORTANT: position_size is FINAL NOTIONAL (no leverage amplification here)
@@ -672,12 +693,17 @@ class InitialSignalProcessor:
             self.trade_cooldowns[f"cex_{coin_symbol}"] = time.time()
 
             logger.info(f"Trade execution completed successfully for {coin_symbol}")
-            return True, {
+
+            # Return complete order response with all exchange data
+            response_data = {
+                **order,  # Include ALL fields from exchange order response
                 'order_id': order['orderId'],
                 'tp_sl_orders': tp_sl_orders,
                 'stop_loss_order_id': stop_loss_order_id,
                 'status': 'OPEN'
             }
+
+            return True, response_data
 
         except Exception as e:
             logger.error(f"Error executing trade: {e}", exc_info=True)

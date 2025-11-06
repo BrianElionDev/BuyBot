@@ -83,7 +83,8 @@ class SignalRouter:
         price_threshold_override: Optional[float] = None,
         quantity_multiplier: Optional[int] = None,
         entry_prices: Optional[list] = None,
-        discord_id: Optional[str] = None
+        discord_id: Optional[str] = None,
+        position_size_override: Optional[float] = None
     ) -> Tuple[bool, Any]:
         """
         Route an initial trading signal to the appropriate exchange.
@@ -124,13 +125,13 @@ class SignalRouter:
                 return await self._route_to_binance(
                     coin_symbol, signal_price, position_type, order_type,
                     stop_loss, take_profits, dca_range, client_order_id,
-                    price_threshold_override, quantity_multiplier, entry_prices, discord_id
+                    price_threshold_override, quantity_multiplier, entry_prices, discord_id, position_size_override
                 )
             elif exchange_type == ExchangeType.KUCOIN:
                 return await self._route_to_kucoin(
                     coin_symbol, signal_price, position_type, order_type,
                     stop_loss, take_profits, dca_range, client_order_id,
-                    price_threshold_override, quantity_multiplier, entry_prices, discord_id
+                    price_threshold_override, quantity_multiplier, entry_prices, discord_id, position_size_override
                 )
             else:
                 logger.error(f"Unsupported exchange type: {exchange_type}")
@@ -254,7 +255,8 @@ class SignalRouter:
         price_threshold_override: Optional[float],
         quantity_multiplier: Optional[int],
         entry_prices: Optional[list],
-        discord_id: Optional[str] = None
+        discord_id: Optional[str] = None,
+        position_size_override: Optional[float] = None
     ) -> Tuple[bool, Any]:
         """Route signal to Binance trading engine."""
         try:
@@ -272,7 +274,8 @@ class SignalRouter:
                 price_threshold_override=price_threshold_override,
                 quantity_multiplier=quantity_multiplier,
                 entry_prices=entry_prices,
-                discord_id=discord_id
+                discord_id=discord_id,
+                position_size_override=position_size_override
             )
 
             if success:
@@ -299,7 +302,8 @@ class SignalRouter:
         price_threshold_override: Optional[float],
         quantity_multiplier: Optional[int],
         entry_prices: Optional[list],
-        discord_id: Optional[str] = None
+        discord_id: Optional[str] = None,
+        position_size_override: Optional[float] = None
     ) -> Tuple[bool, Any]:
         """Route signal to KuCoin trading engine."""
         if not self.kucoin_trading_engine:
@@ -321,7 +325,8 @@ class SignalRouter:
                 price_threshold_override=price_threshold_override,
                 quantity_multiplier=quantity_multiplier,
                 entry_prices=entry_prices,
-                discord_id=discord_id
+                discord_id=discord_id,
+                position_size_override=position_size_override
             )
 
             if success:

@@ -271,12 +271,57 @@ class DiscordBot:
                     if success:
                         logger.info(f"✅ Trade executed successfully on {exchange_type.value} for {coin_symbol}")
 
-                        # Update trade with exchange response
+                        # Update trade with exchange response (stores raw response as-is)
                         if isinstance(exchange_response, dict):
                             await self.db_manager.update_trade_with_original_response(
                                 trade_id=trade_row['id'],
                                 original_response=exchange_response
                             )
+
+                            # Enrich trade with additional data from exchange APIs
+                            # This fetches commission, funding fees, PnL, and position data
+                            try:
+                                await self.db_manager.trade_ops.enrich_trade_with_exchange_data(trade_row['id'])
+                                logger.info(f"✅ Enriched trade {trade_row['id']} with exchange data")
+                            except Exception as e:
+                                logger.warning(f"Could not enrich trade {trade_row['id']} with exchange data: {e}")
+
+                            # Start order monitoring in background for this trade
+                            try:
+                                from src.bot.order_management.order_monitor import OrderMonitor
+                                order_id = exchange_response.get('orderId') or exchange_response.get('order_id')
+                                if order_id:
+                                    # Get the appropriate exchange instance
+                                    exchange_instance = None
+                                    if exchange_type.value.lower() == 'binance':
+                                        exchange_instance = self.binance_exchange
+                                    elif exchange_type.value.lower() == 'kucoin' and hasattr(self, 'kucoin_exchange'):
+                                        exchange_instance = self.kucoin_exchange
+
+                                    if exchange_instance:
+                                        order_monitor = OrderMonitor(self.db_manager, exchange_instance)
+                                        # Get trading pair based on exchange
+                                        if exchange_type.value.lower() == 'binance':
+                                            trading_pair = f"{coin_symbol.upper()}USDT"
+                                        elif exchange_type.value.lower() == 'kucoin':
+                                            from src.exchange.kucoin.kucoin_symbol_converter import symbol_converter
+                                            trading_pair = symbol_converter.convert_bot_to_kucoin_futures(f"{coin_symbol.upper()}-USDT")
+                                        else:
+                                            trading_pair = None
+
+                                        if trading_pair:
+                                            # Monitor order asynchronously (non-blocking)
+                                            asyncio.create_task(
+                                                order_monitor.monitor_order(
+                                                    trade_id=trade_row['id'],
+                                                    order_id=str(order_id),
+                                                    trading_pair=trading_pair,
+                                                    max_duration=3600  # 1 hour
+                                                )
+                                            )
+                                            logger.info(f"Started order monitoring for order {order_id} (trade {trade_row['id']})")
+                            except Exception as e:
+                                logger.warning(f"Could not start order monitoring: {e}")
 
                             # Note: Success notifications are handled by the Initial Signal Processor
                             # to avoid duplication. This section only updates the database.
@@ -294,6 +339,57 @@ class DiscordBot:
                         }
                     else:
                         logger.error(f"❌ Trade execution failed for {coin_symbol}: {exchange_response}")
+
+                        # AUTOMATIC RETRY: Check if retry is suggested with adjusted parameters
+                        retry_suggested = False
+                        suggested_size = None
+
+                        if isinstance(exchange_response, dict) and exchange_response.get('retry_suggested'):
+                            retry_suggested = True
+                            suggested_size = exchange_response.get('suggested_size')
+                            logger.info(f"Retry suggested for {coin_symbol} with suggested size: ${suggested_size:.2f}")
+
+                        # If retry suggested and we have a suggested size, try once more
+                        if retry_suggested and suggested_size:
+                            try:
+                                logger.info(f"🔄 Retrying trade for {coin_symbol} with adjusted position size: ${suggested_size:.2f} (override, not updating database)")
+
+                                # Retry the trade with position_size_override (does NOT modify database)
+                                retry_success, retry_response = await self.signal_router.route_initial_signal(
+                                    coin_symbol=coin_symbol,
+                                    signal_price=signal_price,
+                                    position_type=position_type,
+                                    trader=signal.trader,
+                                    order_type=order_type,
+                                    stop_loss=stop_loss,
+                                    take_profits=take_profits,
+                                    entry_prices=entry_prices,
+                                    client_order_id=signal.discord_id,
+                                    discord_id=signal.discord_id,
+                                    position_size_override=suggested_size
+                                )
+
+                                if retry_success:
+                                    logger.info(f"✅ Retry successful for {coin_symbol}")
+                                    # Update trade with retry success
+                                    if isinstance(retry_response, dict):
+                                        await self.db_manager.update_trade_with_original_response(
+                                            trade_id=trade_row['id'],
+                                            original_response=retry_response
+                                        )
+                                        await self.db_manager.trade_ops.enrich_trade_with_exchange_data(trade_row['id'])
+
+                                    return {
+                                        "status": "success",
+                                        "message": "Trade processed and executed successfully (after retry)",
+                                        "trade_id": trade_row['id'],
+                                        "exchange_response": retry_response
+                                    }
+                                else:
+                                    logger.warning(f"Retry also failed for {coin_symbol}: {retry_response}")
+
+                            except Exception as retry_error:
+                                logger.error(f"Error during retry for {coin_symbol}: {retry_error}")
 
                         # Update trade with error using existing columns
                         db_update_success = False

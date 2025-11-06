@@ -77,21 +77,36 @@ class TradeOperations:
             return False
 
     async def update_trade_with_original_response(self, trade_id: int, original_response: Dict[str, Any]) -> bool:
-        """Update trade with original exchange response and extract key fields."""
+        """
+        Update trade with original exchange response and extract ALL available fields.
+
+        This method extracts and stores ALL data from exchange responses as-is, including:
+        - Order details (orderId, status, prices, quantities)
+        - Position size and entry price
+        - Commission and fees (if available in response)
+        - PnL data (if available)
+        - All other fields returned by the exchange
+        """
         try:
             # Get current trade data for validation
             current_trade = await self.get_trade_by_id(trade_id)
+            exchange_name = str(current_trade.get('exchange') or '').lower()
 
-            # Normalize response first
+            # Store RAW response as-is (no normalization for storage)
+            raw_response = original_response if isinstance(original_response, dict) else {}
+
+            # Normalize response for field extraction
             try:
                 from src.core.response_normalizer import normalize_exchange_response
-                normalized = normalize_exchange_response(str(current_trade.get('exchange') or ''), original_response)
+                normalized = normalize_exchange_response(exchange_name, original_response)
             except Exception:
-                normalized = original_response if isinstance(original_response, dict) else {}
+                normalized = raw_response
 
+            # Store complete raw response as-is (JSON string for database)
+            import json
             updates = {
-                # Store unified exchange_response for UI/notifications
-                'exchange_response': normalized or original_response,
+                # Store COMPLETE raw exchange response as-is (no editing)
+                'exchange_response': json.dumps(raw_response) if raw_response else None,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
@@ -206,6 +221,75 @@ class TradeOperations:
                             logger.info(f"Stored position_size {position_size} for trade {trade_id}")
                         except (ValueError, TypeError):
                             logger.warning(f"Could not parse position_size from tp_sl_orders for trade {trade_id}")
+
+            # COMPREHENSIVE FIELD EXTRACTION: Extract ALL available fields from exchange responses
+            # This ensures we capture commission, fees, PnL, and all other data as-is from the exchange
+
+            # Extract commission/fees from Binance response
+            if exchange_name == 'binance' and isinstance(raw_response, dict):
+                # Binance may include commission in order response or need separate API call
+                # Check for commission in raw response
+                if 'commission' in raw_response:
+                    try:
+                        commission = float(raw_response['commission'])
+                        if commission != 0:
+                            updates['commission'] = commission
+                            logger.info(f"Extracted commission {commission} from Binance response for trade {trade_id}")
+                    except (ValueError, TypeError):
+                        pass
+
+                # Binance order response may include: cumQuote (cumulative quote), cumQty (cumulative quantity)
+                # These can be used to calculate fees if commission not directly available
+                if 'cumQuote' in raw_response and 'cumQty' in raw_response:
+                    try:
+                        cum_quote = float(raw_response['cumQuote'])
+                        # Store for potential fee calculation
+                        if 'commission' not in updates:
+                            logger.debug(f"Binance cumQuote available: {cum_quote} for trade {trade_id}")
+                    except (ValueError, TypeError):
+                        pass
+
+            # Extract commission/fees from KuCoin response
+            if exchange_name == 'kucoin' and isinstance(raw_response, dict):
+                # KuCoin may include fee information in order response
+                if 'fee' in raw_response:
+                    try:
+                        fee = float(raw_response['fee'])
+                        if fee != 0:
+                            updates['commission'] = fee
+                            logger.info(f"Extracted commission {fee} from KuCoin response for trade {trade_id}")
+                    except (ValueError, TypeError):
+                        pass
+
+                # KuCoin execution details may include fee information
+                if 'executionDetails' in normalized and isinstance(normalized['executionDetails'], dict):
+                    exec_details = normalized['executionDetails']
+                    if 'fee' in exec_details:
+                        try:
+                            fee = float(exec_details['fee'])
+                            if fee != 0:
+                                updates['commission'] = fee
+                                logger.info(f"Extracted commission {fee} from KuCoin execution details for trade {trade_id}")
+                        except (ValueError, TypeError):
+                            pass
+
+            # Extract exit price if position is closed
+            if isinstance(normalized, dict):
+                # Check if this is a closing order (reduce_only or closePosition)
+                is_close = raw_response.get('reduceOnly', False) or raw_response.get('closePosition', False)
+                if is_close and 'avgPrice' in normalized:
+                    try:
+                        exit_price = float(normalized['avgPrice'])
+                        if exit_price > 0:
+                            updates['exit_price'] = exit_price
+                            logger.info(f"Extracted exit_price {exit_price} from closing order for trade {trade_id}")
+                    except (ValueError, TypeError):
+                        pass
+
+            # Store sync_order_response with complete normalized data for future sync operations
+            if normalized:
+                updates['sync_order_response'] = json.dumps(normalized)
+                logger.debug(f"Stored normalized response in sync_order_response for trade {trade_id}")
 
             return await self.update_existing_trade(trade_id, updates)
         except Exception as e:
@@ -325,3 +409,267 @@ class TradeOperations:
         except Exception as e:
             logger.error(f"Error updating trade {trade_id} PnL: {e}")
             return False
+
+    async def enrich_trade_with_exchange_data(self, trade_id: int) -> bool:
+        """
+        Enrich trade with additional data from exchange APIs.
+
+        Fetches and stores:
+        - Commission from trade history/income
+        - Funding fees from income history
+        - PnL from position data
+        - Exit price from closing orders
+
+        This method should be called after order execution to ensure all data is captured.
+        """
+        try:
+            trade = await self.get_trade_by_id(trade_id)
+            if not trade:
+                logger.error(f"Trade {trade_id} not found")
+                return False
+
+            exchange_name = str(trade.get('exchange') or '').lower()
+            coin_symbol = trade.get('coin_symbol')
+            exchange_order_id = trade.get('exchange_order_id')
+
+            if not exchange_order_id or not coin_symbol:
+                logger.warning(f"Cannot enrich trade {trade_id}: missing exchange_order_id or coin_symbol")
+                return False
+
+            updates = {}
+
+            # Fetch commission and funding fees from exchange APIs
+            try:
+                if exchange_name == 'binance':
+                    await self._enrich_binance_data(trade, updates)
+                elif exchange_name == 'kucoin':
+                    await self._enrich_kucoin_data(trade, updates)
+            except Exception as e:
+                logger.warning(f"Error enriching exchange data for trade {trade_id}: {e}")
+
+            # Fetch position data for PnL calculation
+            try:
+                await self._enrich_position_data(trade, updates)
+            except Exception as e:
+                logger.warning(f"Error enriching position data for trade {trade_id}: {e}")
+
+            if updates:
+                updates['updated_at'] = datetime.now(timezone.utc).isoformat()
+                return await self.update_existing_trade(trade_id, updates)
+
+            return True
+        except Exception as e:
+            logger.error(f"Error enriching trade {trade_id} with exchange data: {e}")
+            return False
+
+    async def _enrich_binance_data(self, trade: Dict[str, Any], updates: Dict[str, Any]) -> None:
+        """Enrich trade with Binance-specific data (commission, funding fees)."""
+        try:
+            from src.exchange.binance.binance_exchange import BinanceExchange
+            from config import settings
+
+            exchange = BinanceExchange(
+                api_key=settings.BINANCE_API_KEY or "",
+                api_secret=settings.BINANCE_API_SECRET or "",
+                is_testnet=False
+            )
+            await exchange.initialize()
+
+            coin_symbol = trade.get('coin_symbol')
+            trading_pair = exchange.get_futures_trading_pair(coin_symbol) if hasattr(exchange, 'get_futures_trading_pair') else f"{coin_symbol.upper()}USDT"
+            exchange_order_id = trade.get('exchange_order_id')
+
+            # Fetch order details which may include commission
+            if exchange_order_id and hasattr(exchange, 'get_order_status'):
+                order_status = await exchange.get_order_status(trading_pair, exchange_order_id)
+                if order_status and isinstance(order_status, dict):
+                    # Binance order status may include commission
+                    if 'commission' in order_status:
+                        try:
+                            commission = float(order_status['commission'])
+                            if commission != 0:
+                                updates['commission'] = commission
+                                logger.info(f"Fetched Binance commission {commission} for trade {trade.get('id')}")
+                        except (ValueError, TypeError):
+                            pass
+
+            # Fetch income history for funding fees (last 24 hours)
+            try:
+                if hasattr(exchange.client, 'futures_income'):
+                    from datetime import timedelta
+                    end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
+                    start_time = int((datetime.now(timezone.utc) - timedelta(days=1)).timestamp() * 1000)
+
+                    income_history = await exchange.client.futures_income(
+                        symbol=trading_pair,
+                        incomeType='FUNDING_FEE',
+                        startTime=start_time,
+                        endTime=end_time
+                    )
+
+                    if income_history and isinstance(income_history, list):
+                        # Sum funding fees for this symbol
+                        total_funding = sum(float(item.get('income', 0)) for item in income_history if item.get('symbol') == trading_pair)
+                        if total_funding != 0:
+                            updates['funding_fee'] = total_funding
+                            logger.info(f"Fetched Binance funding fee {total_funding} for trade {trade.get('id')}")
+            except Exception as e:
+                logger.debug(f"Could not fetch Binance funding fees: {e}")
+
+            await exchange.close()
+        except Exception as e:
+            logger.warning(f"Error enriching Binance data: {e}")
+
+    async def _enrich_kucoin_data(self, trade: Dict[str, Any], updates: Dict[str, Any]) -> None:
+        """Enrich trade with KuCoin-specific data (commission, funding fees)."""
+        try:
+            from src.exchange.kucoin.kucoin_exchange import KucoinExchange
+            from config import settings
+
+            exchange = KucoinExchange(
+                api_key=settings.KUCOIN_API_KEY or "",
+                api_secret=settings.KUCOIN_API_SECRET or "",
+                api_passphrase=settings.KUCOIN_API_PASSPHRASE or "",
+                is_testnet=False
+            )
+            await exchange.initialize()
+
+            coin_symbol = trade.get('coin_symbol')
+            from src.exchange.kucoin.kucoin_symbol_converter import symbol_converter
+            trading_pair = f"{coin_symbol.upper()}-USDT"
+            kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(trading_pair)
+            exchange_order_id = trade.get('exchange_order_id')
+
+            # Fetch order details which may include commission
+            if exchange_order_id and hasattr(exchange, 'get_order_status'):
+                order_status = await exchange.get_order_status(kucoin_symbol, exchange_order_id)
+                if order_status and isinstance(order_status, dict):
+                    # KuCoin order status may include fee
+                    if 'fee' in order_status:
+                        try:
+                            fee = float(order_status['fee'])
+                            if fee != 0:
+                                updates['commission'] = fee
+                                logger.info(f"Fetched KuCoin commission {fee} for trade {trade.get('id')}")
+                        except (ValueError, TypeError):
+                            pass
+
+            # Fetch income history for funding fees
+            try:
+                if hasattr(exchange, 'get_income_history'):
+                    from datetime import timedelta
+                    end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
+                    start_time = int((datetime.now(timezone.utc) - timedelta(days=1)).timestamp() * 1000)
+
+                    income_history = await exchange.get_income_history(
+                        symbol=kucoin_symbol,
+                        income_type='FUNDING_FEE',
+                        start_time=start_time,
+                        end_time=end_time
+                    )
+
+                    if income_history and isinstance(income_history, list):
+                        # Sum funding fees for this symbol
+                        total_funding = sum(float(item.get('amount', 0)) for item in income_history if item.get('symbol') == kucoin_symbol)
+                        if total_funding != 0:
+                            updates['funding_fee'] = total_funding
+                            logger.info(f"Fetched KuCoin funding fee {total_funding} for trade {trade.get('id')}")
+            except Exception as e:
+                logger.debug(f"Could not fetch KuCoin funding fees: {e}")
+
+            await exchange.close()
+        except Exception as e:
+            logger.warning(f"Error enriching KuCoin data: {e}")
+
+    async def _enrich_position_data(self, trade: Dict[str, Any], updates: Dict[str, Any]) -> None:
+        """Enrich trade with position data (PnL, position size)."""
+        try:
+            exchange_name = str(trade.get('exchange') or '').lower()
+            coin_symbol = trade.get('coin_symbol')
+
+            if not coin_symbol:
+                return
+
+            if exchange_name == 'binance':
+                from src.exchange.binance.binance_exchange import BinanceExchange
+                from config import settings
+
+                exchange = BinanceExchange(
+                    api_key=settings.BINANCE_API_KEY or "",
+                    api_secret=settings.BINANCE_API_SECRET or "",
+                    is_testnet=False
+                )
+                await exchange.initialize()
+
+                trading_pair = exchange.get_futures_trading_pair(coin_symbol) if hasattr(exchange, 'get_futures_trading_pair') else f"{coin_symbol.upper()}USDT"
+                positions = await exchange.get_futures_position_information()
+
+                for position in positions:
+                    if position.get('symbol') == trading_pair:
+                        position_amt = float(position.get('positionAmt', 0))
+                        if abs(position_amt) > 0:
+                            # Position is still open
+                            unrealized_pnl = float(position.get('unRealizedProfit', 0))
+                            entry_price = float(position.get('entryPrice', 0))
+
+                            if not updates.get('position_size') and abs(position_amt) > 0:
+                                updates['position_size'] = abs(position_amt)
+
+                            if not updates.get('entry_price') and entry_price > 0:
+                                updates['entry_price'] = entry_price
+
+                            # Store unrealized PnL (will be realized when position closes)
+                            if unrealized_pnl != 0:
+                                updates['pnl_usd'] = unrealized_pnl
+                                logger.info(f"Fetched Binance unrealized PnL {unrealized_pnl} for trade {trade.get('id')}")
+                        else:
+                            # Position is closed - calculate realized PnL
+                            # This would need to be fetched from trade history
+                            logger.debug(f"Position {trading_pair} is closed, PnL should be calculated from trade history")
+                        break
+
+                await exchange.close()
+
+            elif exchange_name == 'kucoin':
+                from src.exchange.kucoin.kucoin_exchange import KucoinExchange
+                from config import settings
+
+                exchange = KucoinExchange(
+                    api_key=settings.KUCOIN_API_KEY or "",
+                    api_secret=settings.KUCOIN_API_SECRET or "",
+                    api_passphrase=settings.KUCOIN_API_PASSPHRASE or "",
+                    is_testnet=False
+                )
+                await exchange.initialize()
+
+                from src.exchange.kucoin.kucoin_symbol_converter import symbol_converter
+                trading_pair = f"{coin_symbol.upper()}-USDT"
+                kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(trading_pair)
+                positions = await exchange.get_futures_position_information()
+
+                for position in positions:
+                    if position.get('symbol') == kucoin_symbol:
+                        position_size = float(position.get('size', 0))
+                        if position_size > 0:
+                            # Position is still open
+                            unrealized_pnl = float(position.get('unrealizedPnl', 0))
+                            entry_price = float(position.get('entryPrice', 0))
+
+                            if not updates.get('position_size') and position_size > 0:
+                                updates['position_size'] = position_size
+
+                            if not updates.get('entry_price') and entry_price > 0:
+                                updates['entry_price'] = entry_price
+
+                            # Store unrealized PnL
+                            if unrealized_pnl != 0:
+                                updates['pnl_usd'] = unrealized_pnl
+                                logger.info(f"Fetched KuCoin unrealized PnL {unrealized_pnl} for trade {trade.get('id')}")
+                        else:
+                            # Position is closed
+                            logger.debug(f"Position {kucoin_symbol} is closed, PnL should be calculated from trade history")
+                        break
+
+                await exchange.close()
+        except Exception as e:
+            logger.warning(f"Error enriching position data: {e}")

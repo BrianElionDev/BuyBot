@@ -227,7 +227,8 @@ def create_app() -> FastAPI:
                 "take_profit_audit": "0.5 hours (30 minutes)",
                 "orphaned_orders_cleanup": "2.0 hours",
                 "balance_sync": "0.08 hours (5 minutes)",
-                "coin_symbol_backfill": f"{coin_symbol_interval/3600:.1f} hours"
+                "coin_symbol_backfill": f"{coin_symbol_interval/3600:.1f} hours",
+                "order_monitoring": "0.08 hours (5 minutes)"
             },
             "current_time": datetime.fromtimestamp(current_time).isoformat(),
             "endpoints": {
@@ -330,11 +331,13 @@ async def trade_retry_scheduler():
     last_balance_sync = 0
     last_coin_symbol_backfill = 0
     last_active_futures_sync = 0
+    last_order_monitor = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
     KUCOIN_SYNC_INTERVAL = 10 * 60  # 10 minutes (enhanced frequency for KuCoin)
     TRANSACTION_SYNC_INTERVAL = 1 * 60 * 60  # 1 hour
+    ORDER_MONITOR_INTERVAL = 35 * 60  # 5 minutes (comprehensive order status monitoring)
     PNL_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
     PRICE_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
     WEEKLY_BACKFILL_INTERVAL = 7 * 24 * 60 * 60  # 7 days
@@ -523,6 +526,30 @@ async def trade_retry_scheduler():
                     tasks_run += 1
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in active futures sync: {e}")
+
+            # Comprehensive order status monitoring (every 5 minutes)
+            if current_time - last_order_monitor >= ORDER_MONITOR_INTERVAL:
+                logger.info("[Scheduler] Running comprehensive order status monitoring...")
+                try:
+                    from src.bot.order_management.order_monitor import OrderMonitor
+
+                    # Monitor Binance orders
+                    if bot.binance_exchange:
+                        binance_monitor = OrderMonitor(bot.db_manager, bot.binance_exchange)
+                        binance_stats = await binance_monitor.monitor_pending_orders(max_age_minutes=30)
+                        logger.info(f"[Scheduler] Binance order monitoring: {binance_stats}")
+
+                    # Monitor KuCoin orders (if available)
+                    if hasattr(bot, 'kucoin_exchange') and bot.kucoin_exchange:
+                        kucoin_monitor = OrderMonitor(bot.db_manager, bot.kucoin_exchange)
+                        kucoin_stats = await kucoin_monitor.monitor_pending_orders(max_age_minutes=30)
+                        logger.info(f"[Scheduler] KuCoin order monitoring: {kucoin_stats}")
+
+                    last_order_monitor = current_time
+                    logger.info("[Scheduler] Order monitoring completed successfully")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in order monitoring: {e}")
 
             await asyncio.sleep(1)
 
