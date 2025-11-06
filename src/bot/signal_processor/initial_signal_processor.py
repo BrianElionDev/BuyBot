@@ -201,6 +201,53 @@ class InitialSignalProcessor:
             logger.error(reason)
             return False, reason
 
+        # --- CRITICAL FIX: Pre-validate minimum quantity BEFORE calculating trade amount ---
+        # This prevents wasting time calculating and then failing validation
+        if is_futures and min_qty > 0 and min_notional > 0:
+            try:
+                # Get position_size from config (same logic as _calculate_trade_amount)
+                usdt_amount = self.trading_engine.config.TRADE_AMOUNT
+                try:
+                    from src.services.trader_config_service import trader_config_service
+                    trader_id = getattr(self.trading_engine, 'trader_id', None) or ''
+                    exch_name = self.exchange.__class__.__name__.lower()
+                    exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
+
+                    config = await trader_config_service.get_trader_config(trader_id)
+                    if config and config.exchange.value == exchange_key:
+                        usdt_amount = float(config.position_size)
+                        logger.info(f"Using database position_size (final notional): ${usdt_amount} for trader {trader_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to get position_size from TraderConfigService, using config default: {e}")
+
+                # Calculate what the trade_amount would be
+                estimated_trade_amount = usdt_amount / current_price
+
+                # Apply quantity multiplier if enabled
+                try:
+                    enable_multiplier = bool(getattr(self.trading_engine.config, 'ENABLE_QUANTITY_MULTIPLIER', False))
+                except Exception:
+                    enable_multiplier = False
+                if enable_multiplier and quantity_multiplier and quantity_multiplier > 1:
+                    estimated_trade_amount *= quantity_multiplier
+
+                # Check if estimated amount would be below minimums
+                min_required_usdt = max(min_qty * current_price, min_notional)
+
+                if estimated_trade_amount < min_qty:
+                    error_msg = f"Position size ${usdt_amount:.2f} too small. Calculated quantity {estimated_trade_amount:.8f} below minimum {min_qty} for {trading_pair}. Minimum required: ${min_required_usdt:.2f}"
+                    logger.warning(error_msg)
+                    return False, {"error": error_msg}
+
+                if estimated_trade_amount * current_price < min_notional:
+                    error_msg = f"Position size ${usdt_amount:.2f} too small. Notional value ${estimated_trade_amount * current_price:.2f} below minimum ${min_notional} for {trading_pair}. Minimum required: ${min_required_usdt:.2f}"
+                    logger.warning(error_msg)
+                    return False, {"error": error_msg}
+
+                logger.info(f"Pre-validation passed: estimated trade_amount {estimated_trade_amount:.8f} meets minimums (min_qty: {min_qty}, min_notional: ${min_notional:.2f})")
+            except Exception as e:
+                logger.warning(f"Pre-validation check failed, proceeding with normal flow: {e}")
+
         # --- Proximity Check for LIMIT Orders ---
         if order_type.upper() == "LIMIT":
             threshold = 0.1  # 10%

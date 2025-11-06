@@ -302,6 +302,10 @@ class DatabaseSync:
                 if is_stop_loss_order:
                     # For stop loss cancellations, only update sync_order_response, don't change main trade status/P&L
                     logger.info(f"Stop loss order {order_id} cancelled, preserving main trade {trade_id} status and P&L")
+
+                    # CRITICAL FIX: Recreate stop loss if position is still open and order expired with EXPIRE_MAKER
+                    if expire_reason == 'EXPIRE_MAKER':
+                        await self._recreate_stop_loss_on_expire(trade_id, trade, order_id)
                 else:
                     # Only backfill defaults if currently missing in DB for main order cancellations
                     try:
@@ -483,6 +487,142 @@ class DatabaseSync:
 
         except Exception as e:
             logger.error(f"Error updating trade status for {trade_id}: {e}")
+
+    async def _recreate_stop_loss_on_expire(self, trade_id: int, trade: Dict[str, Any], cancelled_order_id: str):
+        """
+        Recreate stop loss order when it's cancelled with EXPIRE_MAKER and position is still open.
+
+        This is a CRITICAL fix to prevent unprotected positions when Binance cancels stop loss orders
+        due to maker order expiration (EXPIRE_MAKER).
+
+        Args:
+            trade_id: Trade ID
+            trade: Trade data dictionary
+            cancelled_order_id: The cancelled stop loss order ID
+        """
+        try:
+            exchange_name = str(trade.get('exchange') or 'binance').lower()
+            coin_symbol = trade.get('coin_symbol')
+            signal_type = str(trade.get('signal_type') or 'LONG').upper()
+
+            if not coin_symbol:
+                logger.warning(f"Cannot recreate stop loss for trade {trade_id}: missing coin_symbol")
+                return
+
+            # Get exchange instance
+            exchange = None
+            if exchange_name == 'binance':
+                from src.exchange.binance.binance_exchange import BinanceExchange
+                from config import settings
+                exchange = BinanceExchange(
+                    api_key=settings.BINANCE_API_KEY or "",
+                    api_secret=settings.BINANCE_API_SECRET or "",
+                    is_testnet=False
+                )
+                await exchange.initialize()
+            elif exchange_name == 'kucoin':
+                from src.exchange.kucoin.kucoin_exchange import KucoinExchange
+                from config import settings
+                exchange = KucoinExchange(
+                    api_key=settings.KUCOIN_API_KEY or "",
+                    api_secret=settings.KUCOIN_API_SECRET or "",
+                    api_passphrase=settings.KUCOIN_API_PASSPHRASE or "",
+                    is_testnet=False
+                )
+                await exchange.initialize()
+            else:
+                logger.warning(f"Cannot recreate stop loss for trade {trade_id}: unsupported exchange {exchange_name}")
+                return
+
+            # Get trading pair
+            trading_pair = exchange.get_futures_trading_pair(coin_symbol) if hasattr(exchange, 'get_futures_trading_pair') else f"{coin_symbol.upper()}USDT"
+
+            # Check if position is still open
+            positions = await exchange.get_futures_position_information()
+            position = None
+            for pos in positions:
+                pos_symbol = pos.get('symbol', '')
+                # Handle both Binance and KuCoin symbol formats
+                if pos_symbol == trading_pair or pos_symbol == f"{coin_symbol.upper()}USDTM":
+                    # Binance uses 'positionAmt', KuCoin uses 'currentQty' or 'size'
+                    position_amt = float(pos.get('positionAmt', pos.get('currentQty', pos.get('size', 0))))
+                    if abs(position_amt) > 0:
+                        position = pos
+                        break
+
+            if not position:
+                logger.info(f"Position for {trading_pair} is closed, not recreating stop loss for trade {trade_id}")
+                return
+
+            # Get position details (handle both Binance and KuCoin formats)
+            position_amt = float(position.get('positionAmt', position.get('currentQty', position.get('size', 0))))
+            position_size = abs(position_amt)
+            # Binance uses 'entryPrice', KuCoin uses 'avgEntryPrice'
+            entry_price = float(position.get('entryPrice', position.get('avgEntryPrice', 0))) or float(trade.get('entry_price', 0))
+
+            if entry_price <= 0:
+                logger.warning(f"Cannot recreate stop loss for trade {trade_id}: invalid entry price {entry_price}")
+                return
+
+            # Get stop loss price from trade (from parsed_signal or calculate default 5%)
+            stop_loss_price = None
+            try:
+                from src.bot.utils.signal_parser import SignalParser
+                parsed_signal = SignalParser.parse_parsed_signal(trade.get('parsed_signal'))
+                if parsed_signal:
+                    sl_value = parsed_signal.get('stop_loss')
+                    if sl_value:
+                        # Try to extract numeric value
+                        import re
+                        if isinstance(sl_value, (int, float)):
+                            stop_loss_price = float(sl_value)
+                        else:
+                            match = re.search(r"-?\d+(?:\.\d+)?", str(sl_value))
+                            if match:
+                                stop_loss_price = float(match.group(0))
+            except Exception as e:
+                logger.warning(f"Could not extract stop loss from parsed_signal: {e}")
+
+            # If no stop loss from signal, calculate default 5%
+            if not stop_loss_price or stop_loss_price <= 0:
+                from src.bot.utils.price_calculator import PriceCalculator
+                stop_loss_price = PriceCalculator.calculate_5_percent_stop_loss(entry_price, signal_type)
+                logger.info(f"Using default 5% stop loss: {stop_loss_price} for trade {trade_id}")
+
+            if not stop_loss_price or stop_loss_price <= 0:
+                logger.warning(f"Cannot recreate stop loss for trade {trade_id}: invalid stop loss price {stop_loss_price}")
+                return
+
+            # Recreate stop loss using StopLossManager
+            from src.bot.risk_management.stop_loss_manager import StopLossManager
+            stop_loss_manager = StopLossManager(exchange)
+
+            success, new_sl_order_id = await stop_loss_manager.ensure_stop_loss_for_position(
+                coin_symbol=coin_symbol,
+                position_type=signal_type,
+                position_size=position_size,
+                entry_price=entry_price,
+                external_sl=stop_loss_price
+            )
+
+            if success and new_sl_order_id:
+                logger.info(f"✅ Successfully recreated stop loss order {new_sl_order_id} for trade {trade_id} after EXPIRE_MAKER cancellation")
+
+                # Update trade with new stop loss order ID
+                try:
+                    update_data = {
+                        'stop_loss_order_id': str(new_sl_order_id),
+                        'updated_at': datetime.now(timezone.utc).isoformat()
+                    }
+                    self.db_manager.supabase.from_("trades").update(update_data).eq("id", trade_id).execute()
+                    logger.info(f"Updated trade {trade_id} with new stop loss order ID {new_sl_order_id}")
+                except Exception as e:
+                    logger.error(f"Failed to update trade {trade_id} with new stop loss order ID: {e}")
+            else:
+                logger.error(f"❌ Failed to recreate stop loss for trade {trade_id} after EXPIRE_MAKER cancellation")
+
+        except Exception as e:
+            logger.error(f"Error recreating stop loss for trade {trade_id} after EXPIRE_MAKER: {e}", exc_info=True)
 
     async def _update_trade_order_id(self, trade_id: int, order_id: str):
         """
