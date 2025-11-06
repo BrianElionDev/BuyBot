@@ -46,7 +46,7 @@ class UserDataHandler:
             status = order_data.get('X')    # Order status
             executed_qty = float(order_data.get('z', 0))  # Cumulative filled quantity
             avg_price = float(order_data.get('ap', 0))    # Average fill price
-            realized_pnl = float(order_data.get('Y', 0))  # Realized PnL
+            realized_pnl = float(order_data.get('rp', order_data.get('Y', 0)))  # Realized PnL (rp for Binance, Y as fallback)
             side = order_data.get('S')      # Side (BUY/SELL)
             order_type = order_data.get('o')  # Order type
             time = datetime.fromtimestamp(order_data.get('T', 0) / 1000)

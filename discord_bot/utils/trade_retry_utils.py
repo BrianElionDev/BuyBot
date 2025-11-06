@@ -446,7 +446,8 @@ def extract_order_details_from_response(exchange_response: str) -> dict:
             'timeInForce': response_data.get('timeInForce'),
             'type': response_data.get('type'),
             'side': response_data.get('side'),
-            'updateTime': int(response_data.get('updateTime', 0)) if response_data.get('updateTime') else 0
+            'updateTime': int(response_data.get('updateTime', 0)) if response_data.get('updateTime') else 0,
+            'rp': float(response_data.get('rp', 0)) if response_data.get('rp') else 0.0
         }
     except Exception as e:
         logging.warning(f"Error extracting order details: {e}")
@@ -876,11 +877,30 @@ async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, b
                 'updated_at': current_time
             }
 
+            # Extract P&L from exchange_response or sync_order_response if available before defaulting
+            try:
+                for resp_field in ['exchange_response', 'sync_order_response']:
+                    resp_data = trade.get(resp_field)
+                    if resp_data:
+                        parsed_resp = safe_parse_exchange_response(resp_data) if isinstance(resp_data, str) else resp_data
+                        if isinstance(parsed_resp, dict):
+                            rp = parsed_resp.get('rp')
+                            if rp is not None:
+                                rp_value = float(rp)
+                                current_pnl = trade.get('pnl_usd')
+                                if current_pnl is None or float(current_pnl) == 0:
+                                    update_data['pnl_usd'] = str(rp_value)
+                                    update_data['pnl_source'] = resp_field
+                                    logging.info(f"Extracted P&L {rp_value} from {resp_field} for trade {trade['id']} during cleanup")
+                                    break
+            except Exception as e:
+                logging.warning(f"Could not extract P&L from stored responses for trade {trade['id']} during cleanup: {e}")
+
             # Ensure completeness for exit_price and pnl fields if missing
             if not trade.get('exit_price') and not trade.get('binance_exit_price'):
                 update_data['exit_price'] = '0'
                 update_data['binance_exit_price'] = '0'
-            if trade.get('pnl_usd') in [None, 0, '0', '0.0']:
+            if trade.get('pnl_usd') in [None, 0, '0', '0.0'] and 'pnl_usd' not in update_data:
                 update_data['pnl_usd'] = '0'
             if not trade.get('net_pnl'):
                 update_data['net_pnl'] = '0'
@@ -963,6 +983,26 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
                         'status': mapped_position_status,
                         'updated_at': current_time
                     }
+
+                    # Extract P&L from exchange_response or sync_order_response if available
+                    try:
+                        for resp_field in ['exchange_response', 'sync_order_response']:
+                            resp_data = trade.get(resp_field)
+                            if resp_data:
+                                parsed_resp = safe_parse_exchange_response(resp_data) if isinstance(resp_data, str) else resp_data
+                                if isinstance(parsed_resp, dict):
+                                    rp = parsed_resp.get('rp')
+                                    if rp is not None:
+                                        rp_value = float(rp)
+                                        # Only update if pnl_usd is missing or zero
+                                        current_pnl = trade.get('pnl_usd')
+                                        if current_pnl is None or float(current_pnl) == 0:
+                                            update_data['pnl_usd'] = rp_value
+                                            update_data['pnl_source'] = resp_field
+                                            logging.info(f"Extracted P&L {rp_value} from {resp_field} for trade {trade['id']}")
+                                        break
+                    except Exception as e:
+                        logging.warning(f"Could not extract P&L from stored responses for trade {trade['id']}: {e}")
 
                     # For filled orders, check if position is still open and update accordingly
                     if order_status == 'FILLED':

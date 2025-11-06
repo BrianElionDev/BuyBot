@@ -97,7 +97,7 @@ class DiscordBotWebSocketManager:
                 status = order_data.get('X', 'Unknown')
                 executed_qty = float(order_data.get('z', 0))
                 avg_price = float(order_data.get('ap', 0))
-                realized_pnl = float(order_data.get('Y', 0))
+                realized_pnl = float(order_data.get('rp', order_data.get('Y', 0)))
 
                 # Only log important events
                 if status in ['FILLED', 'CANCELED', 'REJECTED']:

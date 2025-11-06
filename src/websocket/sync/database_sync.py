@@ -63,7 +63,7 @@ class DatabaseSync:
             status = order_data.get('X')    # Order status
             executed_qty = float(order_data.get('z', 0))  # Cumulative filled quantity
             avg_price = float(order_data.get('ap', 0))    # Average fill price
-            realized_pnl = float(order_data.get('Y', 0))  # Realized PnL
+            realized_pnl = float(order_data.get('rp', order_data.get('Y', 0)))  # Realized PnL (rp for Binance, Y as fallback)
 
             logger.info(f"Execution Report: {symbol} {order_id} - {status} - Qty: {executed_qty} - Price: {avg_price}")
 
@@ -289,19 +289,31 @@ class DatabaseSync:
                             updates['entry_price'] = avg_price
                             updates['price_source'] = 'ws_execution'
 
+            # Check if this is a stop loss order cancellation
+            is_stop_loss_order = False
+            expire_reason = execution_data.get('V', '')
+            if expire_reason == 'EXPIRE_MAKER' or str(order_id) == str(trade.get('stop_loss_order_id', '')):
+                is_stop_loss_order = True
+                logger.info(f"Stop loss order {order_id} cancelled (EXPIRE_MAKER: {expire_reason == 'EXPIRE_MAKER'}), main trade {trade_id} unaffected")
+
             # Ensure terminal-cancel defaults for unfilled orders to avoid nulls
+            # Skip updating main trade status/P&L if this is a stop loss cancellation
             if status in ['CANCELED', 'CANCELLED', 'REJECTED', 'EXPIRED'] and executed_qty == 0:
-                # Only backfill defaults if currently missing in DB
-                try:
-                    if not trade.get('position_size'):
+                if is_stop_loss_order:
+                    # For stop loss cancellations, only update sync_order_response, don't change main trade status/P&L
+                    logger.info(f"Stop loss order {order_id} cancelled, preserving main trade {trade_id} status and P&L")
+                else:
+                    # Only backfill defaults if currently missing in DB for main order cancellations
+                    try:
+                        if not trade.get('position_size'):
+                            updates['position_size'] = 0.0
+                    except Exception:
                         updates['position_size'] = 0.0
-                except Exception:
-                    updates['position_size'] = 0.0
-                if trade.get('pnl_usd') is None:
-                    updates['pnl_usd'] = 0.0
-                # Exit price for never-opened orders should be explicit zero for UI consistency
-                if trade.get('exit_price') is None:
-                    updates['exit_price'] = 0.0
+                    if trade.get('pnl_usd') is None:
+                        updates['pnl_usd'] = 0.0
+                    # Exit price for never-opened orders should be explicit zero for UI consistency
+                    if trade.get('exit_price') is None:
+                        updates['exit_price'] = 0.0
 
             # Update PnL if available
             if realized_pnl != 0:
