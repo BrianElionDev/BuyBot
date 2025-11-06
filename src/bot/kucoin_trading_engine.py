@@ -494,20 +494,31 @@ class KucoinTradingEngine:
             # If no position size in trade data, try to get it from the response
             if position_size <= 0:
                 response_data = trade_row.get('kucoin_response', {})
+                if isinstance(response_data, str):
+                    import json
+                    try:
+                        response_data = json.loads(response_data)
+                    except:
+                        response_data = {}
                 if isinstance(response_data, dict):
-                    orig_qty = response_data.get('origQty')
+                    orig_qty = response_data.get('origQty') or response_data.get('size')
                     position_size = float(orig_qty) if orig_qty is not None else 0.0
 
-            # If still no position size, fetch live positions and infer
-            current_leverage = 1.0  # Default leverage
+            # If still no position size, fetch live positions from exchange
             if position_size <= 0:
-                positions = await self.kucoin_exchange.get_futures_position_information()
-                target_symbol = f"{coin_symbol.upper()}USDTM"
-                for pos in positions:
-                    if pos.get('symbol') == target_symbol and float(pos.get('size', 0)) > 0:
-                        position_size = float(pos.get('size', 0))
-                        current_leverage = float(pos.get('leverage', 1.0))
-                        break
+                try:
+                    positions = await self.kucoin_exchange.get_futures_position_information()
+                    target_symbol = f"{coin_symbol.upper()}USDTM"
+                    for pos in positions:
+                        if pos.get('symbol') == target_symbol:
+                            pos_size = float(pos.get('size', 0))
+                            if pos_size != 0:
+                                position_size = abs(pos_size)
+                                logger.info(f"Fetched live position size from exchange: {position_size} for {coin_symbol}")
+                                break
+                except Exception as e:
+                    logger.warning(f"Could not fetch live position size: {e}")
+
             if position_size <= 0:
                 logger.error(f"No valid position size found for {coin_symbol}")
                 return False, f"No valid position size found for {coin_symbol}"
@@ -596,16 +607,76 @@ class KucoinTradingEngine:
             # Process based on action type
             if action in ['stop_loss_update', 'break_even']:
                 logger.info(f"Processing stop loss update for KuCoin: {action}")
+
+                stop_price = details.get('stop_price')
+                entry_price = trade_row.get('entry_price')
+
+                # Handle break-even: use entry_price when stop_price is None, 'BE', or 'break_even'
+                if stop_price in (None, 'BE', 'break_even') or str(stop_price).lower() == 'be':
+                    if entry_price and entry_price > 0:
+                        stop_price = entry_price
+                    else:
+                        # Try to fetch from exchange
+                        try:
+                            coin_symbol = trade_row.get('coin_symbol')
+                            if coin_symbol:
+                                positions = await self.kucoin_exchange.get_futures_position_information()
+                                target_symbol = f"{coin_symbol.upper()}USDTM"
+                                for pos in positions:
+                                    if pos.get('symbol') == target_symbol:
+                                        pos_size = float(pos.get('size', 0))
+                                        if pos_size != 0:
+                                            fetched_entry = float(pos.get('avgEntryPrice', 0) or pos.get('entryPrice', 0))
+                                            if fetched_entry > 0:
+                                                stop_price = fetched_entry
+                                                logger.info(f"Fetched entry price {fetched_entry} from exchange for break-even")
+                                                break
+                        except Exception as e:
+                            logger.warning(f"Could not fetch entry price from exchange: {e}")
+
+                    if not isinstance(stop_price, (float, int)) or stop_price <= 0:
+                        return {
+                            "success": False,
+                            "message": f"Could not determine break-even price: entry_price not available",
+                            "parsed_alert": parsed_alert
+                        }
+
                 return {
                     "success": True,
-                    "message": f"Stop loss updated for KuCoin: {details.get('stop_price', 'BE')}",
+                    "message": f"Stop loss updated for KuCoin: {stop_price}",
                     "parsed_alert": parsed_alert,
-                    "exchange_response": f"Stop loss updated to {details.get('stop_price', 'BE')}"
+                    "exchange_response": f"Stop loss updated to {stop_price}"
                 }
 
             elif action in ['stop_loss_hit', 'position_closed']:
                 logger.info("Processing stop loss hit or position close")
-                success, response = await self.close_position_at_market(trade_row, "stop_loss_hit")
+
+                # Check if position is already closed
+                try:
+                    coin_symbol = trade_row.get('coin_symbol')
+                    if coin_symbol:
+                        positions = await self.kucoin_exchange.get_futures_position_information()
+                        target_symbol = f"{coin_symbol.upper()}USDTM"
+                        has_open = False
+                        for pos in positions:
+                            if pos.get('symbol') == target_symbol:
+                                pos_size = float(pos.get('size', 0))
+                                if pos_size != 0:
+                                    has_open = True
+                                    break
+
+                        if not has_open:
+                            logger.info(f"Position for {coin_symbol} is already closed. Treating as acknowledged.")
+                            return {
+                                "success": True,
+                                "message": "Position already closed, no action needed",
+                                "parsed_alert": parsed_alert,
+                                "exchange_response": "Position already closed"
+                            }
+                except Exception as e:
+                    logger.warning(f"Could not check position status: {e}")
+
+                success, response = await self.close_position_at_market(trade_row, action.replace('_', ' '))
                 return {
                     "success": success,
                     "message": response,
@@ -615,9 +686,14 @@ class KucoinTradingEngine:
 
             elif action in ['take_profit_1', 'take_profit_2']:
                 logger.info(f"Processing take profit: {action}")
-                close_percentage = details.get('close_percentage', 50)
+
+                # Set default close percentage if not provided
+                tp_idx = int(action.split('_')[-1])
+                close_percentage = details.get('close_percentage')
                 if close_percentage is None:
-                    close_percentage = 50.0
+                    close_percentage = 50.0 if tp_idx == 1 else 25.0
+                    logger.info(f"Using default close percentage {close_percentage}% for TP{tp_idx}")
+
                 success, response = await self.close_position_at_market(trade_row, "take_profit", float(close_percentage))
                 return {
                     "success": success,

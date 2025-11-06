@@ -271,7 +271,6 @@ class FollowupSignalProcessor:
             logger.info("Continuing with normal trade update processing")
 
         # Parse position size and order info
-        position_size = float(active_trade.get('position_size') or 0.0)
         from src.bot.utils.response_parser import ResponseParser
         binance_response = ResponseParser.parse_binance_response(active_trade.get('binance_response'))
         exchange_order_id = (active_trade.get('exchange_order_id') or (binance_response.get('orderId') if binance_response else None))
@@ -286,11 +285,26 @@ class FollowupSignalProcessor:
             return False, {"error": f"Missing coin_symbol or position_type for trade {trade_id}"}
         trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
 
+        position_size = float(active_trade.get('position_size') or 0.0)
+        if position_size <= 0:
+            try:
+                positions = await self.exchange.get_futures_position_information()
+                for pos in positions:
+                    pos_symbol = pos.get('symbol', '')
+                    if pos_symbol == trading_pair or pos_symbol.replace('USDT', '') == coin_symbol:
+                        pos_amt = float(pos.get('positionAmt', 0))
+                        if pos_amt != 0:
+                            position_size = abs(pos_amt)
+                            logger.info(f"Fetched live position size from exchange: {position_size} for {coin_symbol}")
+                            break
+            except Exception as e:
+                logger.warning(f"Could not fetch live position size: {e}")
+
         # Check if position is open before acting
         is_open = await self.trading_engine.is_position_open(coin_symbol)
         if not is_open:
-            logger.warning(f"Position for {coin_symbol} is already closed. No action taken.")
-            return False, {"error": f"Position for {coin_symbol} is already closed."}
+            logger.info(f"Position for {coin_symbol} is already closed. Treating as acknowledged.")
+            return True, {"message": "Position already closed, no action needed"}
 
         # Process different action types
         if action.startswith('take_profit_'):
@@ -334,13 +348,48 @@ class FollowupSignalProcessor:
         """
         try:
             tp_idx = int(action.split('_')[-1])
+
+            # Set default close percentage if not provided
+            close_pct = details.get('close_percentage')
+            if close_pct is None:
+                close_pct = 50.0 if tp_idx == 1 else (25.0 if tp_idx == 2 else 100.0)
+                logger.info(f"Using default close percentage {close_pct}% for TP{tp_idx}")
+
             tp_price = details.get('tp_price')
+
             if not tp_price:
-                logger.error(f"No TP price provided for TP{tp_idx}")
-                return False, {"error": f"No TP price provided for TP{tp_idx}"}
+                # Get entry price from trade data
+                active_trade = await self.db_manager.get_trade_by_id(trade_id)
+                entry_price = active_trade.get('entry_price') if active_trade else None
+
+                if not entry_price or entry_price <= 0:
+                    # Try to fetch from exchange
+                    try:
+                        positions = await self.exchange.get_futures_position_information()
+                        for pos in positions:
+                            pos_symbol = pos.get('symbol', '')
+                            if pos_symbol == trading_pair or pos_symbol.replace('USDT', '') == coin_symbol:
+                                pos_amt = float(pos.get('positionAmt', 0))
+                                if pos_amt != 0:
+                                    entry_price = float(pos.get('entryPrice', 0))
+                                    if entry_price > 0:
+                                        break
+                    except Exception as e:
+                        logger.warning(f"Could not fetch entry price from exchange: {e}")
+
+                if entry_price and entry_price > 0:
+                    # Compute TP price: 5% for TP1, 2.5% for TP2, etc.
+                    tp_multiplier = 1.05 if tp_idx == 1 else (1.025 if tp_idx == 2 else 1.10)
+                    if position_type.upper() == 'LONG':
+                        tp_price = entry_price * tp_multiplier
+                    else:
+                        tp_price = entry_price * (2 - tp_multiplier)
+                    logger.info(f"Computed TP{tp_idx} price {tp_price} from entry price {entry_price}")
+                else:
+                    logger.error(f"No TP price provided and could not determine entry price for TP{tp_idx}")
+                    return False, {"error": f"No TP price provided and entry price not available for TP{tp_idx}"}
 
             # Calculate amount to close
-            close_pct = details.get('close_percentage', 100.0)
             amount_to_close = position_size * (close_pct / 100.0)
             logger.info(f"Placing TP{tp_idx} for {coin_symbol} at {tp_price} for {amount_to_close}")
 
@@ -385,13 +434,32 @@ class FollowupSignalProcessor:
         try:
             logger.info(f"Closing position for {coin_symbol} at market. Reason: {action}")
 
+            # Fetch live position size if not available
+            if position_size <= 0:
+                try:
+                    positions = await self.exchange.get_futures_position_information()
+                    for pos in positions:
+                        pos_symbol = pos.get('symbol', '')
+                        if pos_symbol == trading_pair or pos_symbol.replace('USDT', '') == coin_symbol:
+                            pos_amt = float(pos.get('positionAmt', 0))
+                            if pos_amt != 0:
+                                position_size = abs(pos_amt)
+                                logger.info(f"Fetched live position size for close: {position_size}")
+                                break
+                except Exception as e:
+                    logger.warning(f"Could not fetch live position size: {e}")
+
+            if position_size <= 0:
+                logger.error(f"No valid position size found for {coin_symbol}")
+                return False, {"error": f"No valid position size found for {coin_symbol}"}
+
             # Calculate amount to close
             close_pct = details.get('close_percentage', 100.0)
             amount_to_close = position_size * (close_pct / 100.0)
 
             # Cancel all TP/SL orders before closing position
             logger.info(f"Canceling all TP/SL orders for {trading_pair} before closing position")
-            cancel_result = await self.trading_engine.cancel_tp_sl_orders(trading_pair, active_trade)
+            cancel_result = await self.trading_engine.cancel_tp_sl_orders(trading_pair, {})
             if not cancel_result:
                 logger.warning(f"Failed to cancel TP/SL orders for {trading_pair} - proceeding with position close")
 
@@ -431,9 +499,34 @@ class FollowupSignalProcessor:
         """
         try:
             new_stop_price = details.get('stop_price')
-            if new_stop_price == 'BE':
-                new_stop_price = entry_price
-            if not isinstance(new_stop_price, (float, int)) or new_stop_price is None or new_stop_price <= 0:
+
+            # Handle break-even: use entry_price when stop_price is None, 'BE', or 'break_even'
+            if new_stop_price in (None, 'BE', 'break_even') or str(new_stop_price).lower() == 'be':
+                if entry_price and entry_price > 0:
+                    new_stop_price = entry_price
+                    logger.info(f"Using entry price {entry_price} as break-even stop price")
+                else:
+                    # Try to fetch entry price from exchange
+                    try:
+                        positions = await self.exchange.get_futures_position_information()
+                        for pos in positions:
+                            pos_symbol = pos.get('symbol', '')
+                            if pos_symbol == trading_pair or pos_symbol.replace('USDT', '') == coin_symbol:
+                                pos_amt = float(pos.get('positionAmt', 0))
+                                if pos_amt != 0:
+                                    fetched_entry = float(pos.get('entryPrice', 0))
+                                    if fetched_entry > 0:
+                                        new_stop_price = fetched_entry
+                                        logger.info(f"Fetched entry price {fetched_entry} from exchange for break-even")
+                                        break
+                    except Exception as e:
+                        logger.warning(f"Could not fetch entry price from exchange: {e}")
+
+                    if not isinstance(new_stop_price, (float, int)) or new_stop_price <= 0:
+                        logger.error(f"Could not determine break-even price: entry_price={entry_price}")
+                        return False, {"error": f"Could not determine break-even price: entry_price not available"}
+
+            if not isinstance(new_stop_price, (float, int)) or new_stop_price <= 0:
                 logger.error(f"Invalid new stop price for update: {new_stop_price}")
                 return False, {"error": f"Invalid new stop price for update: {new_stop_price}"}
 

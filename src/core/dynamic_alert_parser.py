@@ -183,6 +183,11 @@ Return ONLY the JSON object, no additional text."""
         if result['action_type'] not in valid_actions:
             result['action_type'] = 'unknown'
 
+        if result['action_type'] == 'take_profit_1' and result.get('close_percentage') is None:
+            result['close_percentage'] = 50.0
+        elif result['action_type'] == 'take_profit_2' and result.get('close_percentage') is None:
+            result['close_percentage'] = 25.0
+
         # Enhance with additional data
         result['original_content'] = original_content
         result['parsed_at'] = datetime.now(timezone.utc).isoformat()
