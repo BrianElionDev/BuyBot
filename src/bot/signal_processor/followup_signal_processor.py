@@ -471,7 +471,11 @@ class FollowupSignalProcessor:
 
             # Calculate amount to close
             close_pct = details.get('close_percentage', 100.0)
-            amount_to_close = position_size * (close_pct / 100.0)
+            if not isinstance(close_pct, (float, int)) or close_pct <= 0 or close_pct > 100:
+                logger.error(f"Invalid close_percentage: {close_pct}. Must be between 0 and 100")
+                return False, {"error": f"Invalid close_percentage: {close_pct}. Must be between 0 and 100"}
+            
+            amount_to_close = float(position_size) * (float(close_pct) / 100.0)
 
             # Cancel all TP/SL orders before closing position
             logger.info(f"Canceling all TP/SL orders for {trading_pair} before closing position")

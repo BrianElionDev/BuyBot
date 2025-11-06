@@ -520,15 +520,23 @@ class KucoinTradingEngine:
                     logger.warning(f"Could not fetch live position size: {e}")
 
             if position_size <= 0:
-                logger.error(f"No valid position size found for {coin_symbol}")
-                return False, f"No valid position size found for {coin_symbol}"
+                logger.info(f"Position for {coin_symbol} is already closed or has zero size. Treating as acknowledged.")
+                return True, {"message": "Position already closed, no action needed"}
+
+            # Validate close_percentage
+            if close_percentage is None or not isinstance(close_percentage, (float, int)) or close_percentage <= 0 or close_percentage > 100:
+                logger.error(f"Invalid close_percentage: {close_percentage}. Must be between 0 and 100")
+                return False, f"Invalid close_percentage: {close_percentage}. Must be between 0 and 100"
 
             # Calculate quantity to close based on percentage
             try:
                 quantity = float(position_size) * (float(close_percentage) / 100.0)
-            except Exception:
-                logger.error(f"Invalid position size for close: {position_size}")
-                return False, f"Invalid position size for close: {position_size}"
+                if quantity <= 0:
+                    logger.error(f"Calculated quantity to close is invalid: {quantity}")
+                    return False, f"Calculated quantity to close is invalid: {quantity}"
+            except (TypeError, ValueError) as e:
+                logger.error(f"Invalid position size or close_percentage for close: position_size={position_size}, close_percentage={close_percentage}, error={e}")
+                return False, f"Invalid position size or close_percentage for close: {str(e)}"
 
             logger.info(f"Closing {close_percentage}% of position: {quantity} {coin_symbol} (total: {position_size})")
 
@@ -675,10 +683,9 @@ class KucoinTradingEngine:
                     logger.warning(f"Could not cancel existing stop loss orders: {e}")
 
                 # Create new stop loss order
-                sl_side = 'SELL' if position_type == 'LONG' else 'BUY'
                 new_sl_order = await self.kucoin_exchange.create_futures_order(
                     pair=trading_pair,
-                    side=sl_side,
+                    side=SIDE_SELL,
                     order_type='STOP',
                     stop_price=stop_price,
                     amount=position_size,
