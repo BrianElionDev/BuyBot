@@ -309,6 +309,21 @@ class FollowupSignalProcessor:
 
         # Process different action types
         if action.startswith('take_profit_'):
+            # For KuCoin, use market close by percentage instead of LIMIT orders
+            # to avoid unit mismatch issues (qty vs size vs valueQty)
+            if hasattr(self.trading_engine, 'kucoin_exchange') or \
+               (hasattr(self.exchange, '__class__') and 'kucoin' in self.exchange.__class__.__name__.lower()):
+                tp_idx = int(action.split('_')[-1])
+                close_pct = details.get('close_percentage')
+                if close_pct is None:
+                    close_pct = 50.0 if tp_idx == 1 else (25.0 if tp_idx == 2 else 100.0)
+                
+                logger.info(f"Routing KuCoin TP{tp_idx} to market close by percentage ({close_pct}%)")
+                success, response = await self.trading_engine.close_position_at_market(
+                    active_trade, f"take_profit_{tp_idx}", float(close_pct)
+                )
+                return success, response
+            
             return await self._process_take_profit_action(
                 trade_id, action, details, coin_symbol, position_type, position_size, trading_pair
             )
