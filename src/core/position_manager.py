@@ -99,7 +99,7 @@ class PositionManager:
                     for pos in positions:
                         pos_symbol = pos.get('symbol', '')
                         pos_amt = pos.get('positionAmt') or pos.get('size') or 0
-                        if (pos_symbol == trading_pair or 
+                        if (pos_symbol == trading_pair or
                             pos_symbol.replace('USDT', '').replace('USDTM', '') == coin_symbol.upper() or
                             pos_symbol == f"{coin_symbol.upper()}USDT" or
                             pos_symbol == f"{coin_symbol.upper()}USDTM"):

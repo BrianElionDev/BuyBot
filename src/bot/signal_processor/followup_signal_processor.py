@@ -317,13 +317,13 @@ class FollowupSignalProcessor:
                 close_pct = details.get('close_percentage')
                 if close_pct is None:
                     close_pct = 50.0 if tp_idx == 1 else (25.0 if tp_idx == 2 else 100.0)
-                
+
                 logger.info(f"Routing KuCoin TP{tp_idx} to market close by percentage ({close_pct}%)")
                 success, response = await self.trading_engine.close_position_at_market(
                     active_trade, f"take_profit_{tp_idx}", float(close_pct)
                 )
                 return success, response
-            
+
             return await self._process_take_profit_action(
                 trade_id, action, details, coin_symbol, position_type, position_size, trading_pair
             )
@@ -474,7 +474,7 @@ class FollowupSignalProcessor:
             if not isinstance(close_pct, (float, int)) or close_pct <= 0 or close_pct > 100:
                 logger.error(f"Invalid close_percentage: {close_pct}. Must be between 0 and 100")
                 return False, {"error": f"Invalid close_percentage: {close_pct}. Must be between 0 and 100"}
-            
+
             amount_to_close = float(position_size) * (float(close_pct) / 100.0)
 
             # Cancel all TP/SL orders before closing position
