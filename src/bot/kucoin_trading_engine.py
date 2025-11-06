@@ -111,29 +111,38 @@ class KucoinTradingEngine:
         self,
         coin_symbol: str,
         current_price: float,
-        quantity_multiplier: Optional[int] = None
+        quantity_multiplier: Optional[int] = None,
+        position_size_override: Optional[float] = None
     ) -> float:
         """
         Calculate the trade amount based on live database position_size and current price.
+
+        Args:
+            position_size_override: Optional override for position size (for retries with adjusted size)
         """
         try:
-            # Get position_size from database instead of hardcoded config
-            usdt_amount = self.config.TRADE_AMOUNT  # Fallback to config
-            try:
-                from src.services.trader_config_service import trader_config_service
-                trader_id = (getattr(self, 'trader_id', None) or '').strip().lower()
-                exchange_key = 'kucoin'
+            # Use override if provided (for retries), otherwise get from database
+            if position_size_override is not None:
+                usdt_amount = float(position_size_override)
+                logger.info(f"Using position_size override (final notional): ${usdt_amount}")
+            else:
+                # Get position_size from database instead of hardcoded config
+                usdt_amount = self.config.TRADE_AMOUNT  # Fallback to config
+                try:
+                    from src.services.trader_config_service import trader_config_service
+                    trader_id = (getattr(self, 'trader_id', None) or '').strip().lower()
+                    exchange_key = 'kucoin'
 
-                config = await trader_config_service.get_trader_config(trader_id)
-                if not config or config.exchange.value != exchange_key:
-                    msg = f"Missing or mismatched trader config for trader={trader_id}, exchange={exchange_key}; refusing to fallback for position_size"
-                    logger.error(msg)
+                    config = await trader_config_service.get_trader_config(trader_id)
+                    if not config or config.exchange.value != exchange_key:
+                        msg = f"Missing or mismatched trader config for trader={trader_id}, exchange={exchange_key}; refusing to fallback for position_size"
+                        logger.error(msg)
+                        return 0.0
+                    usdt_amount = float(config.position_size)
+                    logger.info(f"Using database position_size (final notional): ${usdt_amount} for trader {trader_id}")
+                except Exception as e:
+                    logger.error(f"Failed to get position_size from TraderConfigService: {e}")
                     return 0.0
-                usdt_amount = float(config.position_size)
-                logger.info(f"Using database position_size (final notional): ${usdt_amount} for trader {trader_id}")
-            except Exception as e:
-                logger.error(f"Failed to get position_size from TraderConfigService: {e}")
-                return 0.0
 
             # Calculate trade amount based on USDT value and current price
             # IMPORTANT: position_size is FINAL NOTIONAL (no leverage amplification here)
@@ -220,7 +229,8 @@ class KucoinTradingEngine:
         price_threshold_override: Optional[float] = None,
         quantity_multiplier: Optional[int] = None,
         entry_prices: Optional[List[float]] = None,
-        discord_id: Optional[str] = None
+        discord_id: Optional[str] = None,
+        position_size_override: Optional[float] = None
     ) -> Tuple[bool, Union[Dict, str]]:
         """
         Process a KuCoin trading signal.
@@ -295,7 +305,7 @@ class KucoinTradingEngine:
 
             # Calculate trade amount
             trade_amount = await self._calculate_trade_amount(
-                coin_symbol, current_price, quantity_multiplier
+                coin_symbol, current_price, quantity_multiplier, position_size_override
             )
 
             if trade_amount <= 0:
