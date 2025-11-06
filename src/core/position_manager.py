@@ -92,10 +92,36 @@ class PositionManager:
                 if isinstance(initial_response, dict):
                     position_size = float(initial_response.get('origQty') or 0.0)
 
-            if not coin_symbol or position_size <= 0:
-                return False, {"error": f"Invalid trade data for closing position. Symbol: {coin_symbol}, Size: {position_size}"}
+            if position_size <= 0 and coin_symbol:
+                try:
+                    trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
+                    positions = await self.exchange.get_futures_position_information()
+                    for pos in positions:
+                        pos_symbol = pos.get('symbol', '')
+                        pos_amt = pos.get('positionAmt') or pos.get('size') or 0
+                        if (pos_symbol == trading_pair or 
+                            pos_symbol.replace('USDT', '').replace('USDTM', '') == coin_symbol.upper() or
+                            pos_symbol == f"{coin_symbol.upper()}USDT" or
+                            pos_symbol == f"{coin_symbol.upper()}USDTM"):
+                            pos_amt_float = float(pos_amt)
+                            if pos_amt_float != 0:
+                                position_size = abs(pos_amt_float)
+                                logger.info(f"Fetched live position size from exchange: {position_size} for {coin_symbol}")
+                                break
+                except Exception as e:
+                    logger.warning(f"Could not fetch live position size from exchange: {e}")
 
-            amount_to_close = position_size * (close_percentage / 100.0)
+            if not coin_symbol:
+                return False, {"error": f"Missing coin_symbol for closing position"}
+
+            if position_size <= 0:
+                logger.info(f"Position for {coin_symbol} is already closed or has zero size. Treating as acknowledged.")
+                return True, {"message": "Position already closed, no action needed"}
+
+            if close_percentage is None or not isinstance(close_percentage, (float, int)) or close_percentage <= 0 or close_percentage > 100:
+                return False, {"error": f"Invalid close_percentage: {close_percentage}. Must be between 0 and 100"}
+
+            amount_to_close = float(position_size) * (float(close_percentage) / 100.0)
             trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
             is_futures = position_type in ['LONG', 'SHORT']
 
