@@ -236,7 +236,14 @@ class HistoricalTradeBackfillManager:
         """Get position type from trade data with proper fallback logic."""
         try:
             # First try to get from signal_type field (most reliable)
-            signal_type = trade.get('signal_type', '').upper()
+            signal_type = trade.get('signal_type', '').upper().strip()
+
+            # Normalize variations: "shorted", "shorting" -> "SHORT", "longed", "longing" -> "LONG"
+            if signal_type in ['SHORTED', 'SHORTING', 'SHORT']:
+                signal_type = 'SHORT'
+            elif signal_type in ['LONGED', 'LONGING', 'LONG']:
+                signal_type = 'LONG'
+
             if signal_type in ['LONG', 'SHORT']:
                 logger.info(f"Using signal_type '{signal_type}' for trade {trade.get('id')}")
                 return signal_type
@@ -250,7 +257,14 @@ class HistoricalTradeBackfillManager:
                     else:
                         signal_data = parsed_signal
 
-                    position_type = signal_data.get('position_type', '').upper()
+                    position_type = signal_data.get('position_type', '').upper().strip()
+
+                    # Normalize variations: "shorted", "shorting" -> "SHORT", "longed", "longing" -> "LONG"
+                    if position_type in ['SHORTED', 'SHORTING', 'SHORT']:
+                        position_type = 'SHORT'
+                    elif position_type in ['LONGED', 'LONGING', 'LONG']:
+                        position_type = 'LONG'
+
                     if position_type in ['LONG', 'SHORT']:
                         logger.info(f"Using position_type '{position_type}' from parsed_signal for trade {trade.get('id')}")
                         return position_type

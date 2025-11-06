@@ -159,7 +159,23 @@ class InitialSignalProcessor:
         is_futures = position_type.upper() in ['LONG', 'SHORT']
         trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
 
-        # Enhanced symbol validation
+        exchange_info = await self.exchange.get_exchange_info()
+        if not exchange_info:
+            logger.error(f"Could not retrieve exchange info for {trading_pair}")
+            return False, f"Could not retrieve exchange info for {trading_pair}"
+
+        # Check if symbol actually exists in exchange info
+        symbol_info = next((s for s in exchange_info.get('symbols', []) if s['symbol'] == trading_pair), None)
+        if not symbol_info:
+            logger.error(f"Symbol {trading_pair} does not exist on exchange")
+            return False, f"Symbol {trading_pair} does not exist on exchange"
+
+        # Check if symbol is in TRADING status
+        if symbol_info.get('status') != 'TRADING':
+            logger.error(f"Symbol {trading_pair} is not in TRADING status: {symbol_info.get('status')}")
+            return False, f"Symbol {trading_pair} is not in TRADING status"
+
+        # Additional validation: Check if symbol is supported
         is_supported = await self.exchange.is_futures_symbol_supported(trading_pair)
         if not is_supported:
             logger.error(f"Symbol {trading_pair} not supported or not trading on Binance Futures.")
@@ -170,14 +186,6 @@ class InitialSignalProcessor:
         if not filters:
             logger.error(f"Could not retrieve symbol filters for {trading_pair}. Cannot proceed with trade.")
             return False, f"Could not retrieve symbol filters for {trading_pair}"
-
-        # Check if symbol is in TRADING status
-        exchange_info = await self.exchange.get_exchange_info()
-        if exchange_info:
-            symbol_info = next((s for s in exchange_info.get('symbols', []) if s['symbol'] == trading_pair), None)
-            if symbol_info and symbol_info.get('status') != 'TRADING':
-                logger.error(f"Symbol {trading_pair} is not in TRADING status: {symbol_info.get('status')}")
-                return False, f"Symbol {trading_pair} is not in TRADING status"
 
         # Extract validation parameters
         lot_size_filter = filters.get('LOT_SIZE', {})
@@ -270,6 +278,11 @@ class InitialSignalProcessor:
         normalized_sl: Optional[float] = None
         try:
             if stop_loss is not None:
+                stop_loss_str = str(stop_loss).strip().upper()
+                if stop_loss_str in ['BE', 'BREAK_EVEN', 'BREAK-EVEN', 'BREAKEVEN']:
+                    logger.warning(f"Break-even stop loss not valid for initial signals: {stop_loss}")
+                    return False, {"error": "Break-even stop loss only valid for follow-up signals, not initial entry"}
+
                 normalized_sl = self._normalize_stop_loss_value(stop_loss)
                 if normalized_sl is None or normalized_sl <= 0:
                     logger.warning(f"Parsed stop loss is invalid from value: {stop_loss}")

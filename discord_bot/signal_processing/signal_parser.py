@@ -228,10 +228,32 @@ async def _parse_with_openai(signal_content: str, active_trade: Optional[Dict] =
                     parsed_data['position_type'] = position_type
                     logger.warning(f"Using default LONG position type as fallback")
 
-            position_type = str(position_type).upper()
-            if position_type not in ['LONG', 'SHORT']:
-                logger.error(f"Invalid position type: {position_type}")
-                return None
+            position_type_str = str(position_type).upper().strip()
+
+            # Handle variations: "shorted", "shorting" -> "SHORT", "longed", "longing" -> "LONG"
+            if position_type_str in ['SHORTED', 'SHORTING', 'SHORT']:
+                position_type = 'SHORT'
+                parsed_data['position_type'] = position_type
+                logger.info(f"Normalized position type '{position_type_str}' to SHORT")
+            elif position_type_str in ['LONGED', 'LONGING', 'LONG']:
+                position_type = 'LONG'
+                parsed_data['position_type'] = position_type
+                logger.info(f"Normalized position type '{position_type_str}' to LONG")
+            elif position_type_str not in ['LONG', 'SHORT']:
+                # If still not valid, try fallback detection from content
+                logger.warning(f"Invalid position type '{position_type_str}', attempting fallback from content")
+                content_lower = signal_content.lower()
+                if any(keyword in content_lower for keyword in ['short', 'shorted', 'shorting']):
+                    position_type = 'SHORT'
+                    parsed_data['position_type'] = position_type
+                    logger.info(f"Fallback detected SHORT position from signal content")
+                elif any(keyword in content_lower for keyword in ['long', 'longed', 'longing', 'buy', 'bought']):
+                    position_type = 'LONG'
+                    parsed_data['position_type'] = position_type
+                    logger.info(f"Fallback detected LONG position from signal content")
+                else:
+                    logger.error(f"Could not determine valid position type from '{position_type_str}' or content")
+                    return None
 
         logger.info(f"OpenAI parsed data: {parsed_data}")
         return parsed_data
