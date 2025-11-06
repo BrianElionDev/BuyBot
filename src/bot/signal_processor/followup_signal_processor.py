@@ -158,7 +158,8 @@ class FollowupSignalProcessor:
             return False, active_trade, f"Trade {trade_id} has no exchange order ID - original trade likely failed"
 
         if str(active_trade.get('status', '')).upper() == 'CLOSED':
-            return False, active_trade, f"Trade {trade_id} already closed"
+            logger.info(f"Trade {trade_id} already closed. Treating as acknowledged.")
+            return True, active_trade, "Trade already closed, no action needed"
 
         try:
             binance_status = await self.check_trade_status_on_binance(coin_symbol, exchange_order_id)
