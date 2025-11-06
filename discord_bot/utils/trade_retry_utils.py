@@ -572,23 +572,38 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
 
     # Create lookup for database trades by orderId
     db_trades_by_order_id = {}
+    db_trades_by_symbol_time = {}
+
     for trade in db_trades:
         # Try sync_order_response first, then fallback to exchange_response
         sync_order_response = trade.get('sync_order_response', '')
         ex_resp = trade.get('exchange_response') or trade.get('kucoin_response', '')
 
+        order_id = None
         if sync_order_response:
             order_details = extract_order_details_from_response(sync_order_response)
             order_id = order_details.get('orderId')
-            if order_id:
-                db_trades_by_order_id[str(order_id)] = trade
         elif ex_resp:
             order_details = extract_order_details_from_response(ex_resp)
             order_id = order_details.get('orderId')
-            if order_id:
-                db_trades_by_order_id[str(order_id)] = trade
+
+        if order_id:
+            db_trades_by_order_id[str(order_id)] = trade
+        else:
+            # For trades missing order_id, index by symbol and creation time (within 5 minutes)
+            coin_symbol = trade.get('coin_symbol', '')
+            created_at = trade.get('created_at', '')
+            if coin_symbol and created_at:
+                try:
+                    # datetime and timezone are imported at top of file
+                    created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    key = f"{coin_symbol}_{created_dt.timestamp()}"
+                    db_trades_by_symbol_time[key] = trade
+                except Exception:
+                    pass
 
     updates_made = 0
+    # datetime and timezone are imported at top of file
     current_time = datetime.now(timezone.utc).isoformat()
 
     for order in kucoin_orders:
@@ -681,6 +696,10 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                     except Exception as e:
                         logging.warning(f"Could not get trade history for KuCoin trade {db_trade['id']}: {e}")
 
+                # Ensure exchange_response is stored for future syncs
+                if not update_data.get('exchange_response'):
+                    update_data['exchange_response'] = json.dumps(order)
+
                 supabase.table("trades").update(update_data).eq("id", db_trade['id']).execute()
                 updates_made += 1
                 logging.info(f"Updated KuCoin order for trade {db_trade['id']} ({order.get('symbol')}) - Status: {kucoin_status} -> {mapped_order_status}/{mapped_position_status}, Size: {filled_size}, Price: {avg_price}")
@@ -688,7 +707,75 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
             except Exception as e:
                 logging.error(f"Error updating KuCoin order for trade {db_trade['id']}: {e}")
         else:
-            logging.warning(f"KuCoin order {order_id} ({order.get('symbol')}) not found in database")
+            # Try to match by symbol and timestamp if order_id not found
+            order_symbol = order.get('symbol', '')
+            order_time = order.get('time', 0) or order.get('createdAt', 0)
+
+            if order_symbol and order_time:
+                # Try to find matching trade by symbol and approximate time
+                matching_trade = None
+                for trade in db_trades:
+                    coin_symbol = trade.get('coin_symbol', '')
+                    if not coin_symbol:
+                        continue
+
+                    # Convert to KuCoin symbol format
+                    kucoin_symbol = _convert_to_kucoin_futures_symbol(coin_symbol)
+                    if kucoin_symbol != order_symbol:
+                        continue
+
+                    # Check if time is within 10 minutes
+                    try:
+                        created_at = trade.get('created_at', '')
+                        if created_at:
+                            # datetime and timezone are imported at top of file
+                            created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            order_dt = datetime.fromtimestamp(order_time / 1000 if order_time > 1e10 else order_time, tz=timezone.utc)
+                            time_diff = abs((created_dt - order_dt).total_seconds())
+
+                            if time_diff < 600:  # Within 10 minutes
+                                matching_trade = trade
+                                break
+                    except Exception:
+                        pass
+
+                if matching_trade:
+                    try:
+                        # Update trade with order information
+                        # datetime and timezone are imported at top of file
+                        update_data = {
+                            'exchange_order_id': str(order_id),
+                            'exchange_response': json.dumps(order),
+                            'sync_order_response': json.dumps(order),
+                            'last_order_sync': datetime.now(timezone.utc).isoformat(),
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        }
+
+                        # Extract order details
+                        filled_size = float(order.get('filledSize', 0))
+                        filled_value = float(order.get('filledValue', 0))
+                        kucoin_status = order.get('status', 'NEW')
+
+                        mapped_order_status, mapped_position_status = StatusManager.map_exchange_to_internal(
+                            kucoin_status, filled_size
+                        )
+                        update_data['order_status'] = mapped_order_status
+                        update_data['status'] = mapped_position_status
+
+                        if filled_size > 0:
+                            update_data['position_size'] = f"{filled_size:.8f}"
+                        if filled_value > 0 and filled_size > 0:
+                            avg_price = filled_value / filled_size
+                            update_data['entry_price'] = f"{avg_price:.8f}"
+                            update_data['kucoin_entry_price'] = f"{avg_price:.8f}"
+
+                        supabase.table("trades").update(update_data).eq("id", matching_trade['id']).execute()
+                        updates_made += 1
+                        logging.info(f"✅ Matched and updated KuCoin trade {matching_trade['id']} by symbol+time for order {order_id}")
+                    except Exception as e:
+                        logging.error(f"Error updating matched KuCoin trade {matching_trade['id']}: {e}")
+                else:
+                    logging.warning(f"KuCoin order {order_id} ({order_symbol}) not found in database (tried order_id and symbol+time matching)")
 
     logging.info(f"KuCoin order sync completed: {updates_made} updates made")
 

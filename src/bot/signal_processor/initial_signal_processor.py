@@ -250,10 +250,13 @@ class InitialSignalProcessor:
 
         # --- Proximity Check for LIMIT Orders ---
         if order_type.upper() == "LIMIT":
-            threshold = 0.1  # 10%
-            if current_price and abs(signal_price - current_price) / current_price > threshold:
-                logger.warning(f"LIMIT order price {signal_price} is too far from market price {current_price} (>{threshold*100}%). Skipping order.")
-                return False, {"error": f"Limit price {signal_price} too far from market price {current_price}, order skipped."}
+            threshold = 0.2
+            price_diff_pct = abs(signal_price - current_price) / current_price if current_price > 0 else 0
+
+            if current_price and price_diff_pct > threshold:
+                logger.warning(f"LIMIT order price {signal_price} is too far from market price {current_price} ({price_diff_pct*100:.2f}% > {threshold*100}%). Converting to MARKET order.")
+                order_type = "MARKET"
+                logger.info(f"Converted LIMIT order to MARKET order for {coin_symbol} due to price distance")
 
         # --- Order Book Liquidity Check ---
         order_book = None

@@ -319,6 +319,7 @@ async def trade_retry_scheduler():
 
     # Initialize task timers
     last_daily_sync = 0
+    last_kucoin_sync = 0
     last_transaction_sync = 0
     last_pnl_backfill = 0
     last_price_backfill = 0
@@ -332,6 +333,7 @@ async def trade_retry_scheduler():
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
+    KUCOIN_SYNC_INTERVAL = 10 * 60  # 10 minutes (enhanced frequency for KuCoin)
     TRANSACTION_SYNC_INTERVAL = 1 * 60 * 60  # 1 hour
     PNL_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
     PRICE_BACKFILL_INTERVAL = 1 * 60 * 60  # 1 hour
@@ -353,14 +355,14 @@ async def trade_retry_scheduler():
             current_time = time.time()
             tasks_run = 0
 
-            # Daily sync tasks (every 24 hours)
+            # Daily sync tasks (every 24 hours) - comprehensive sync
             if current_time - last_daily_sync >= DAILY_SYNC_INTERVAL:
                 logger.info("[Scheduler] Running daily sync tasks...")
                 try:
                     # Sync Binance trades
                     await sync_trade_statuses_with_binance(bot, supabase)
 
-                    # Sync KuCoin trades
+                    # Sync KuCoin trades (comprehensive daily sync)
                     await sync_trade_statuses_with_kucoin(bot, supabase)
 
                     last_daily_sync = current_time
@@ -368,6 +370,27 @@ async def trade_retry_scheduler():
                     tasks_run += 1
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in daily sync: {e}")
+
+            # Enhanced KuCoin sync (every 10 minutes) - for active trades
+            if current_time - last_kucoin_sync >= KUCOIN_SYNC_INTERVAL:
+                logger.info("[Scheduler] Running enhanced KuCoin sync (10min interval)...")
+                try:
+                    # Only sync active/pending KuCoin trades for faster processing
+                    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+                    cutoff_iso = cutoff.isoformat()
+                    response = supabase.from_("trades").select("*").gte("created_at", cutoff_iso).eq("exchange", "kucoin").in_("status", ["PENDING", "ACTIVE", "OPEN"]).execute()
+                    active_kucoin_trades = response.data or []
+
+                    if active_kucoin_trades:
+                        logger.info(f"[Scheduler] Found {len(active_kucoin_trades)} active KuCoin trades to sync")
+                        await sync_trade_statuses_with_kucoin(bot, supabase)
+                    else:
+                        logger.debug("[Scheduler] No active KuCoin trades to sync")
+
+                    last_kucoin_sync = current_time
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in enhanced KuCoin sync: {e}")
 
             # Transaction history autofill (every 1 hour)
             if current_time - last_transaction_sync >= TRANSACTION_SYNC_INTERVAL:
