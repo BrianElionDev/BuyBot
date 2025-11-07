@@ -67,7 +67,7 @@ class SignalRouter:
         """
         return await get_exchange_for_trader(trader)
 
-        logger.info("SignalRouter initialized")
+    logger.info("SignalRouter initialized")
 
     async def route_initial_signal(
         self,

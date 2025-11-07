@@ -323,8 +323,44 @@ class DiscordBot:
                             except Exception as e:
                                 logger.warning(f"Could not start order monitoring: {e}")
 
-                            # Note: Success notifications are handled by the Initial Signal Processor
-                            # to avoid duplication. This section only updates the database.
+                            if exchange_type.value.lower() == 'kucoin':
+                                try:
+                                    from src.services.notifications.trade_notification_service import trade_notification_service, TradeExecutionData
+
+                                    order_id = exchange_response.get('orderId') or exchange_response.get('order_id', 'Unknown')
+
+                                    entry_price = exchange_response.get('actualEntryPrice')
+                                    if not entry_price:
+                                        filled_size = float(exchange_response.get('filledSize', 0))
+                                        filled_value = float(exchange_response.get('filledValue', 0))
+                                        if filled_size > 0 and filled_value > 0:
+                                            entry_price = filled_value / filled_size
+                                        else:
+                                            entry_price = exchange_response.get('price') or signal_price
+
+                                    quantity = exchange_response.get('filledSize') or exchange_response.get('origQty') or exchange_response.get('size')
+                                    if quantity:
+                                        quantity = float(quantity)
+                                    else:
+                                        quantity = 0.0
+
+                                    from src.exchange.kucoin.kucoin_symbol_converter import symbol_converter
+                                    trading_pair = symbol_converter.convert_bot_to_kucoin_futures(f"{coin_symbol.upper()}-USDT")
+
+                                    notification_data = TradeExecutionData(
+                                        symbol=trading_pair,
+                                        position_type=position_type,
+                                        entry_price=float(entry_price) if entry_price else float(signal_price),
+                                        quantity=float(quantity) if quantity else 0.0,
+                                        order_id=str(order_id),
+                                        exchange="Kucoin",
+                                        timestamp=datetime.now(timezone.utc)
+                                    )
+
+                                    asyncio.create_task(trade_notification_service.notify_trade_execution_success(notification_data))
+                                    logger.info(f"Sent trade execution notification for Kucoin trade {trade_row['id']}")
+                                except Exception as e:
+                                    logger.error(f"Failed to send trade execution notification for Kucoin: {e}")
                         else:
                             # If exchange_response is a string (error message), store it generically
                             await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={

@@ -187,7 +187,6 @@ class TradeOperations:
 
                 # Store KuCoin-specific execution details
                 if 'filledSize' in normalized or 'filledValue' in normalized:
-                    updates['kucoin_entry_price'] = entry_price if entry_price else None
                     if 'orderStatus' in normalized:
                         updates['order_status'] = normalized['orderStatus']
 
