@@ -670,14 +670,14 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
 
                 # Update exchange-specific fields for KuCoin
                 if avg_price and avg_price > 0:
-                    update_data['kucoin_entry_price'] = f"{avg_price:.8f}"
+                    update_data['entry_price'] = f"{avg_price:.8f}"
                 if kucoin_status in ['FILLED', 'DONE']:
-                    update_data['kucoin_exit_price'] = f"{avg_price:.8f}"
+                    update_data['exit_price'] = f"{avg_price:.8f}"
 
                 # For closed trades missing exit_price, try to get from trade history
                 if (db_trade.get('status') == 'CLOSED' and
                     not db_trade.get('exit_price') and
-                    not db_trade.get('kucoin_exit_price')):
+                    not db_trade.get('exit_price')):
                     try:
                         symbol = extract_symbol_from_trade(db_trade)
                         if symbol and bot.kucoin_exchange:
@@ -689,7 +689,7 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                                 exit_price = float(last_trade.get('price', 0))
                                 if exit_price > 0:
                                     update_data['exit_price'] = f"{exit_price:.8f}"
-                                    update_data['kucoin_exit_price'] = f"{exit_price:.8f}"
+                                    update_data['exit_price'] = f"{exit_price:.8f}"
 
                                     # Do NOT compute KuCoin PnL here to avoid duplication/overlap; use dedicated reconciliation
                                     pass
@@ -767,7 +767,7 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                         if filled_value > 0 and filled_size > 0:
                             avg_price = filled_value / filled_size
                             update_data['entry_price'] = f"{avg_price:.8f}"
-                            update_data['kucoin_entry_price'] = f"{avg_price:.8f}"
+                            update_data['entry_price'] = f"{avg_price:.8f}"
 
                         supabase.table("trades").update(update_data).eq("id", matching_trade['id']).execute()
                         updates_made += 1
@@ -819,7 +819,7 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
 
                     # Update exchange-specific fields for KuCoin
                     kucoin_entry = float(position.get('entryPrice', 0))
-                    update_data['kucoin_entry_price'] = kucoin_entry
+                    update_data['entry_price'] = kucoin_entry
                     if not trade.get('entry_price') and kucoin_entry:
                         update_data['entry_price'] = kucoin_entry
 
@@ -841,6 +841,9 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
 
     # Detect and mark CLOSED for previously ACTIVE symbols no longer present
     try:
+        from src.core.unified_status_updater import update_trade_status_safely
+        from src.core.data_enrichment import enrich_trade_data_before_close
+
         for symbol, matching_trades in db_trades_by_symbol.items():
             if symbol in active_symbols:
                 continue
@@ -848,19 +851,39 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
                 try:
                     status = str(trade.get('status', '')).upper()
                     if status in ['ACTIVE', 'OPEN']:
-                        close_update = {
-                            'status': 'CLOSED',
-                            'updated_at': current_time
-                        }
+                        # Step 1: Enrich trade data before closing
+                        enriched_data = await enrich_trade_data_before_close(trade, bot, supabase)
 
-                        # Ensure completeness for exit_price and pnl fields if missing
-                        if not trade.get('exit_price') and not trade.get('kucoin_exit_price'):
-                            close_update['exit_price'] = '0'
-                            close_update['kucoin_exit_price'] = '0'
-                        if trade.get('pnl_usd') in [None, 0, '0', '0.0']:
-                            close_update['pnl_usd'] = '0'
-                        if not trade.get('net_pnl'):
-                            close_update['net_pnl'] = '0'
+                        # Step 2: Use unified status update system
+                        success, status_update_data = await update_trade_status_safely(
+                            supabase=supabase,
+                            trade_id=trade['id'],
+                            trade=trade,
+                            force_closed=True,
+                            bot=bot
+                        )
+
+                        if not success:
+                            logging.warning(f"Failed to update status safely for KuCoin trade {trade['id']}, using fallback")
+                            status_update_data = {
+                                'status': 'CLOSED',
+                                'order_status': 'FILLED'
+                            }
+
+                        # Merge enriched data and status update
+                        close_update = {**enriched_data, **status_update_data}
+
+                        # Set defaults only if data is truly missing
+                        if not close_update.get('exit_price'):
+                            if not trade.get('exit_price') and not trade.get('exit_price'):
+                                close_update['exit_price'] = '0'
+                                close_update['exit_price'] = '0'
+                        if not close_update.get('pnl_usd'):
+                            if trade.get('pnl_usd') in [None, 0, '0', '0.0']:
+                                close_update['pnl_usd'] = '0'
+                        if not close_update.get('net_pnl'):
+                            if not trade.get('net_pnl'):
+                                close_update['net_pnl'] = '0'
 
                         # Set closed_at timestamp
                         try:
@@ -872,7 +895,7 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
 
                         supabase.table("trades").update(close_update).eq("id", trade['id']).execute()
                         updates_made += 1
-                        logging.info(f"Marked KuCoin trade {trade['id']} ({symbol}) as CLOSED (no active position)")
+                        logging.info(f"Marked KuCoin trade {trade['id']} ({symbol}) as CLOSED with enriched data")
                 except Exception as e:
                     logging.error(f"Error marking trade {trade['id']} as CLOSED: {e}")
     except Exception as e:
@@ -934,11 +957,13 @@ async def sync_positions_to_database_enhanced(bot: DiscordBot, supabase: Client,
 async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, binance_positions: list, db_trades: list):
     """Mark trades as closed if position is no longer active on Binance.
 
-    Also close trades that exist in DB but have no active position and no corresponding
-    open order on Binance. When closing, if exit_price/pnl are missing, default to 0 to
-    make the record complete (won't overwrite existing values).
+    Uses unified status update system and data enrichment pipeline to ensure
+    complete and consistent data before closing trades.
     """
     logging.info("Starting cleanup of closed positions...")
+
+    from src.core.unified_status_updater import update_trade_status_safely
+    from src.core.data_enrichment import enrich_trade_data_before_close
 
     # Get all symbols with active positions on Binance
     active_symbols = {pos.get('symbol') for pos in binance_positions if float(pos.get('positionAmt', 0)) != 0}
@@ -955,42 +980,45 @@ async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, b
             trades_to_close.append(trade)
 
     updates_made = 0
-    current_time = datetime.now(timezone.utc).isoformat()
 
     for trade in trades_to_close:
         try:
-            update_data = {
-                'status': 'CLOSED',
-                'updated_at': current_time
-            }
+            # Step 1: Enrich trade data before closing (query exchange for missing data)
+            enriched_data = await enrich_trade_data_before_close(trade, bot, supabase)
 
-            # Extract P&L from exchange_response or sync_order_response if available before defaulting
-            try:
-                for resp_field in ['exchange_response', 'sync_order_response']:
-                    resp_data = trade.get(resp_field)
-                    if resp_data:
-                        parsed_resp = safe_parse_exchange_response(resp_data) if isinstance(resp_data, str) else resp_data
-                        if isinstance(parsed_resp, dict):
-                            rp = parsed_resp.get('rp')
-                            if rp is not None:
-                                rp_value = float(rp)
-                                current_pnl = trade.get('pnl_usd')
-                                if current_pnl is None or float(current_pnl) == 0:
-                                    update_data['pnl_usd'] = str(rp_value)
-                                    update_data['pnl_source'] = resp_field
-                                    logging.info(f"Extracted P&L {rp_value} from {resp_field} for trade {trade['id']} during cleanup")
-                                    break
-            except Exception as e:
-                logging.warning(f"Could not extract P&L from stored responses for trade {trade['id']} during cleanup: {e}")
+            # Step 2: Use unified status update system
+            success, status_update_data = await update_trade_status_safely(
+                supabase=supabase,
+                trade_id=trade['id'],
+                trade=trade,
+                force_closed=True,
+                bot=bot
+            )
 
-            # Ensure completeness for exit_price and pnl fields if missing
-            if not trade.get('exit_price') and not trade.get('binance_exit_price'):
-                update_data['exit_price'] = '0'
-                update_data['binance_exit_price'] = '0'
-            if trade.get('pnl_usd') in [None, 0, '0', '0.0'] and 'pnl_usd' not in update_data:
-                update_data['pnl_usd'] = '0'
-            if not trade.get('net_pnl'):
-                update_data['net_pnl'] = '0'
+            if not success:
+                logging.warning(f"Failed to update status safely for trade {trade['id']}, using fallback")
+                status_update_data = {
+                    'status': 'CLOSED',
+                    'order_status': 'FILLED'
+                }
+
+            # Merge enriched data and status update
+            update_data = {**enriched_data, **status_update_data}
+
+            # Set defaults only if data is truly missing (not 0 from enrichment)
+            if not update_data.get('exit_price'):
+                if not trade.get('exit_price') and not trade.get('binance_exit_price'):
+                    update_data['exit_price'] = '0'
+                    update_data['binance_exit_price'] = '0'
+
+            if not update_data.get('pnl_usd'):
+                current_pnl = trade.get('pnl_usd')
+                if current_pnl is None or float(current_pnl) == 0:
+                    update_data['pnl_usd'] = '0'
+
+            if not update_data.get('net_pnl'):
+                if not trade.get('net_pnl'):
+                    update_data['net_pnl'] = '0'
 
             # Set closed_at timestamp when trade is marked as closed
             try:
@@ -1002,7 +1030,7 @@ async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, b
 
             supabase.table("trades").update(update_data).eq("id", trade['id']).execute()
             updates_made += 1
-            logging.info(f"Marked trade {trade['id']} ({extract_symbol_from_trade(trade)}) as CLOSED")
+            logging.info(f"Marked trade {trade['id']} ({extract_symbol_from_trade(trade)}) as CLOSED with enriched data")
 
         except Exception as e:
             logging.error(f"Error marking trade {trade['id']} as closed: {e}")
@@ -1803,8 +1831,15 @@ def get_trades_needing_pnl_sync(supabase) -> list:
 # ============================================================================
 
 async def cleanup_closed_kucoin_positions_enhanced(bot, supabase: Client, kucoin_positions: list, db_trades: list):
-    """Mark KuCoin trades as closed if position is no longer active"""
+    """Mark KuCoin trades as closed if position is no longer active.
+
+    Uses unified status update system and data enrichment pipeline to ensure
+    complete and consistent data before closing trades.
+    """
     logging.info("Starting cleanup of closed KuCoin positions...")
+
+    from src.core.unified_status_updater import update_trade_status_safely
+    from src.core.data_enrichment import enrich_trade_data_before_close
 
     # Get all symbols with active positions on KuCoin
     active_symbols = set()
@@ -1825,23 +1860,45 @@ async def cleanup_closed_kucoin_positions_enhanced(bot, supabase: Client, kucoin
             trades_to_close.append(trade)
 
     updates_made = 0
-    current_time = datetime.now(timezone.utc).isoformat()
 
     for trade in trades_to_close:
         try:
-            update_data = {
-                'status': 'CLOSED',
-                'updated_at': current_time
-            }
+            # Step 1: Enrich trade data before closing (query exchange for missing data)
+            enriched_data = await enrich_trade_data_before_close(trade, bot, supabase)
 
-            # Ensure completeness for exit_price and pnl fields if missing
-            if not trade.get('exit_price') and not trade.get('kucoin_exit_price'):
-                update_data['exit_price'] = '0'
-                update_data['kucoin_exit_price'] = '0'
-            if trade.get('pnl_usd') in [None, 0, '0', '0.0']:
-                update_data['pnl_usd'] = '0'
-            if not trade.get('net_pnl'):
-                update_data['net_pnl'] = '0'
+            # Step 2: Use unified status update system
+            success, status_update_data = await update_trade_status_safely(
+                supabase=supabase,
+                trade_id=trade['id'],
+                trade=trade,
+                force_closed=True,
+                bot=bot
+            )
+
+            if not success:
+                logging.warning(f"Failed to update status safely for KuCoin trade {trade['id']}, using fallback")
+                status_update_data = {
+                    'status': 'CLOSED',
+                    'order_status': 'FILLED'
+                }
+
+            # Merge enriched data and status update
+            update_data = {**enriched_data, **status_update_data}
+
+            # Set defaults only if data is truly missing (not 0 from enrichment)
+            if not update_data.get('exit_price'):
+                if not trade.get('exit_price') and not trade.get('exit_price'):
+                    update_data['exit_price'] = '0'
+                    update_data['exit_price'] = '0'
+
+            if not update_data.get('pnl_usd'):
+                current_pnl = trade.get('pnl_usd')
+                if current_pnl is None or float(current_pnl) == 0:
+                    update_data['pnl_usd'] = '0'
+
+            if not update_data.get('net_pnl'):
+                if not trade.get('net_pnl'):
+                    update_data['net_pnl'] = '0'
 
             # Set closed_at timestamp when trade is marked as closed
             try:
@@ -1853,7 +1910,7 @@ async def cleanup_closed_kucoin_positions_enhanced(bot, supabase: Client, kucoin
 
             supabase.table("trades").update(update_data).eq("id", trade['id']).execute()
             updates_made += 1
-            logging.info(f"Marked KuCoin trade {trade['id']} ({extract_symbol_from_trade(trade)}) as CLOSED")
+            logging.info(f"Marked KuCoin trade {trade['id']} ({extract_symbol_from_trade(trade)}) as CLOSED with enriched data")
 
         except Exception as e:
             logging.error(f"Error marking KuCoin trade {trade['id']} as closed: {e}")
@@ -2310,12 +2367,12 @@ async def backfill_kucoin_trades_from_history_enhanced(bot, supabase: Client, db
                         # Set entry price if missing
                         if not trade.get('entry_price') and actual_entry_price > 0:
                             update_data['entry_price'] = str(actual_entry_price)
-                            update_data['kucoin_entry_price'] = str(actual_entry_price)
+                            update_data['entry_price'] = str(actual_entry_price)
 
                         # Try to get exit price from trade history with proper matching
-                        # Also update if kucoin_exit_price is missing even if exit_price exists
+                        # Also update if exit_price is missing even if exit_price exists
                         is_missing_exit = (not trade.get('exit_price') or float(trade.get('exit_price', 0) or 0) == 0)
-                        is_missing_kucoin_exit = (not trade.get('kucoin_exit_price') or float(trade.get('kucoin_exit_price', 0) or 0) == 0)
+                        is_missing_kucoin_exit = (not trade.get('exit_price') or float(trade.get('exit_price', 0) or 0) == 0)
 
                         if trade.get('status') == 'CLOSED' and (is_missing_exit or is_missing_kucoin_exit):
                             try:
@@ -2327,7 +2384,7 @@ async def backfill_kucoin_trades_from_history_enhanced(bot, supabase: Client, db
                                 if exit_info and exit_info.get('exit_price'):
                                     exit_price = exit_info['exit_price']
                                     update_data['exit_price'] = str(exit_price)
-                                    update_data['kucoin_exit_price'] = str(exit_price)
+                                    update_data['exit_price'] = str(exit_price)
 
                                     # Calculate PnL if we have all required data
                                     entry_price = float(trade.get('entry_price') or actual_entry_price or exit_info.get('entry_price') or 0)
@@ -2343,7 +2400,7 @@ async def backfill_kucoin_trades_from_history_enhanced(bot, supabase: Client, db
                                         if exit_info.get('entry_price') and exit_info['entry_price'] > 0:
                                             if not trade.get('entry_price') or trade.get('entry_price') == 0:
                                                 update_data['entry_price'] = str(exit_info['entry_price'])
-                                                update_data['kucoin_entry_price'] = str(exit_info['entry_price'])
+                                                update_data['entry_price'] = str(exit_info['entry_price'])
 
                                         # Update position size if we found it from trades
                                         if exit_info.get('position_size') and exit_info['position_size'] > 0:
@@ -2381,12 +2438,12 @@ async def backfill_kucoin_trades_from_history_enhanced(bot, supabase: Client, db
                 # Update entry price if missing
                 if not trade.get('entry_price') and actual_entry_price > 0:
                     update_data['entry_price'] = str(actual_entry_price)
-                    update_data['kucoin_entry_price'] = str(actual_entry_price)
+                    update_data['entry_price'] = str(actual_entry_price)
 
                 # For closed trades, try to get exit price from trade history
-                # Also update if kucoin_exit_price is missing even if exit_price exists
+                # Also update if exit_price is missing even if exit_price exists
                 is_missing_exit = (not trade.get('exit_price') or float(trade.get('exit_price', 0) or 0) == 0)
-                is_missing_kucoin_exit = (not trade.get('kucoin_exit_price') or float(trade.get('kucoin_exit_price', 0) or 0) == 0)
+                is_missing_kucoin_exit = (not trade.get('exit_price') or float(trade.get('exit_price', 0) or 0) == 0)
 
                 if trade.get('status') == 'CLOSED' and (is_missing_exit or is_missing_kucoin_exit):
                     try:
@@ -2398,7 +2455,7 @@ async def backfill_kucoin_trades_from_history_enhanced(bot, supabase: Client, db
                         if exit_info and exit_info.get('exit_price'):
                             exit_price = exit_info['exit_price']
                             update_data['exit_price'] = str(exit_price)
-                            update_data['kucoin_exit_price'] = str(exit_price)
+                            update_data['exit_price'] = str(exit_price)
 
                             # Calculate PnL if we have all required data
                             entry_price = float(trade.get('entry_price') or actual_entry_price or exit_info.get('entry_price') or 0)
@@ -2414,7 +2471,7 @@ async def backfill_kucoin_trades_from_history_enhanced(bot, supabase: Client, db
                                 if exit_info.get('entry_price') and exit_info['entry_price'] > 0:
                                     if not trade.get('entry_price') or trade.get('entry_price') == 0:
                                         update_data['entry_price'] = str(exit_info['entry_price'])
-                                        update_data['kucoin_entry_price'] = str(exit_info['entry_price'])
+                                        update_data['entry_price'] = str(exit_info['entry_price'])
 
                                 # Update position size if we found it from trades
                                 if exit_info.get('position_size') and exit_info['position_size'] > 0:

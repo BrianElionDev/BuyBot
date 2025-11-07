@@ -332,6 +332,7 @@ async def trade_retry_scheduler():
     last_coin_symbol_backfill = 0
     last_active_futures_sync = 0
     last_order_monitor = 0
+    last_reconciliation = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
@@ -347,6 +348,7 @@ async def trade_retry_scheduler():
     BALANCE_SYNC_INTERVAL = 5 * 60  # 5 minutes
     COIN_SYMBOL_BACKFILL_INTERVAL = 6 * 60 * 60  # 6 hours
     ACTIVE_FUTURES_SYNC_INTERVAL = 5 * 60  # 5 minutes
+    RECONCILIATION_INTERVAL = 6 * 60 * 60  # 6 hours
 
     logger.info("[Scheduler] ✅ Scheduler running - monitoring for tasks")
 
@@ -550,6 +552,30 @@ async def trade_retry_scheduler():
                     tasks_run += 1
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in order monitoring: {e}")
+
+            # Trade reconciliation (every 6 hours) - fix status inconsistencies and backfill missing data
+            if current_time - last_reconciliation >= RECONCILIATION_INTERVAL:
+                logger.info("[Scheduler] Running trade reconciliation...")
+                try:
+                    from src.services.reconciliation_service import ReconciliationService
+
+                    recon_service = ReconciliationService(supabase, bot)
+                    results = await recon_service.reconcile_closed_trades(
+                        days_back=7,
+                        fix_status_inconsistencies=True,
+                        backfill_missing_data=True
+                    )
+
+                    # Also reconcile trades with PNL but no exit_price
+                    pnl_results = await recon_service.reconcile_trades_with_pnl_but_no_exit_price(days_back=30)
+
+                    logger.info(f"[Scheduler] Reconciliation completed: {results}")
+                    logger.info(f"[Scheduler] PNL reconciliation completed: {pnl_results}")
+
+                    last_reconciliation = current_time
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in trade reconciliation: {e}")
 
             await asyncio.sleep(1)
 

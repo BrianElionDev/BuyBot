@@ -253,13 +253,13 @@ async def reconcile_trade(
     try:
         entry_price_val = rec.get('avgEntryPrice') or rec.get('openPrice')
         if entry_price_val is not None:
-            update_data["kucoin_entry_price"] = float(entry_price_val)
+            update_data["entry_price"] = float(entry_price_val)
     except Exception:
         pass
     try:
         exit_price_val = rec.get('closePrice') or rec.get('avgExitPrice')
         if exit_price_val is not None:
-            update_data["kucoin_exit_price"] = float(exit_price_val)
+            update_data["exit_price"] = float(exit_price_val)
     except Exception:
         pass
 
