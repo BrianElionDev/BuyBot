@@ -333,6 +333,7 @@ async def trade_retry_scheduler():
     last_active_futures_sync = 0
     last_order_monitor = 0
     last_reconciliation = 0
+    last_missing_data_sync = 0
 
     # Task intervals (in seconds)
     DAILY_SYNC_INTERVAL = 24 * 60 * 60  # 24 hours
@@ -349,6 +350,7 @@ async def trade_retry_scheduler():
     COIN_SYMBOL_BACKFILL_INTERVAL = 6 * 60 * 60  # 6 hours
     ACTIVE_FUTURES_SYNC_INTERVAL = 5 * 60  # 5 minutes
     RECONCILIATION_INTERVAL = 6 * 60 * 60  # 6 hours
+    MISSING_DATA_SYNC_INTERVAL = 2 * 60 * 60  # 2 hours
 
     logger.info("[Scheduler] ✅ Scheduler running - monitoring for tasks")
 
@@ -576,6 +578,18 @@ async def trade_retry_scheduler():
                     tasks_run += 1
                 except Exception as e:
                     logger.error(f"[Scheduler] Error in trade reconciliation: {e}")
+
+            # Comprehensive missing data sync (every 2 hours) - populate entry_price, exit_price, position_size, pnl_usd
+            if current_time - last_missing_data_sync >= MISSING_DATA_SYNC_INTERVAL:
+                logger.info("[Scheduler] Running comprehensive missing trade data sync...")
+                try:
+                    from discord_bot.utils.trade_retry_utils import sync_missing_trade_data_comprehensive
+                    result = await sync_missing_trade_data_comprehensive(bot, supabase, days_back=7)
+                    last_missing_data_sync = current_time
+                    logger.info(f"[Scheduler] Missing data sync completed: {result}")
+                    tasks_run += 1
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error in missing data sync: {e}")
 
             await asyncio.sleep(1)
 

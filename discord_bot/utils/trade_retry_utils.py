@@ -2491,3 +2491,386 @@ async def backfill_kucoin_trades_from_history_enhanced(bot, supabase: Client, db
             logging.error(f"Error processing KuCoin trade {trade.get('id', 'unknown')}: {e}")
 
     logging.info(f"KuCoin backfill completed: {updates_made} trades updated")
+
+
+async def sync_missing_trade_data_comprehensive(bot: DiscordBot, supabase: Client, days_back: int = 7):
+    """
+    Comprehensive sync to populate missing entry_price, exit_price, position_size, and pnl_usd.
+
+    Uses existing sync functions and exchange APIs to fill missing data.
+    This is the permanent solution integrated into the scheduler.
+
+    Args:
+        bot: DiscordBot instance with exchange connections
+        supabase: Supabase client
+        days_back: Number of days to look back for trades
+    """
+    logging.info("🔄 Starting comprehensive missing trade data sync...")
+
+    try:
+        from datetime import datetime, timedelta, timezone
+        from src.core.data_enrichment import enrich_trade_data_before_close
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+        cutoff_iso = cutoff.isoformat()
+
+        # Get all trades from the period
+        response = supabase.from_("trades").select("*").gte("created_at", cutoff_iso).execute()
+        all_trades = response.data or []
+
+        logging.info(f"Found {len(all_trades)} trades to check for missing data")
+
+        trades_updated = 0
+        updates_by_field = {
+            'entry_price': 0,
+            'exit_price': 0,
+            'position_size': 0,
+            'pnl_usd': 0
+        }
+
+        for trade in all_trades:
+            try:
+                trade_id = trade.get('id')
+                exchange = str(trade.get('exchange', '')).lower()
+                status = trade.get('status', '')
+
+                # Skip failed trades
+                if status == 'FAILED':
+                    continue
+
+                update_data = {}
+                needs_update = False
+
+                # Check for missing entry_price
+                entry_price = trade.get('entry_price')
+                if not entry_price or float(entry_price or 0) == 0:
+                    entry_price_data = await _sync_entry_price(bot, trade, exchange)
+                    if entry_price_data:
+                        update_data.update(entry_price_data)
+                        needs_update = True
+                        updates_by_field['entry_price'] += 1
+
+                # Check for missing position_size
+                position_size = trade.get('position_size')
+                if not position_size or float(position_size or 0) == 0:
+                    position_size_data = await _sync_position_size(bot, trade, exchange)
+                    if position_size_data:
+                        update_data.update(position_size_data)
+                        needs_update = True
+                        updates_by_field['position_size'] += 1
+
+                # For closed trades, check exit_price and pnl_usd
+                if status in ['CLOSED', 'FILLED']:
+                    # Check for missing exit_price
+                    exit_price = trade.get('exit_price')
+                    if not exit_price or float(exit_price or 0) == 0:
+                        exit_price_data = await _sync_exit_price(bot, trade, exchange)
+                        if exit_price_data:
+                            update_data.update(exit_price_data)
+                            needs_update = True
+                            updates_by_field['exit_price'] += 1
+
+                    # Check for missing pnl_usd
+                    pnl_usd = trade.get('pnl_usd')
+                    if not pnl_usd or float(pnl_usd or 0) == 0:
+                        pnl_data = await _sync_pnl(bot, trade, exchange, update_data)
+                        if pnl_data:
+                            update_data.update(pnl_data)
+                            needs_update = True
+                            updates_by_field['pnl_usd'] += 1
+
+                # Use existing enrichment function as fallback
+                if needs_update:
+                    enriched = await enrich_trade_data_before_close(trade, bot, supabase)
+                    if enriched:
+                        update_data.update(enriched)
+
+                # Update database if we have data
+                if update_data:
+                    update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
+                    supabase.table("trades").update(update_data).eq("id", trade_id).execute()
+                    trades_updated += 1
+                    logging.info(f"✅ Updated trade {trade_id} ({trade.get('coin_symbol')}): {list(update_data.keys())}")
+
+            except Exception as e:
+                logging.error(f"Error syncing trade {trade.get('id')}: {e}")
+                continue
+
+        logging.info(f"✅ Comprehensive sync completed: {trades_updated} trades updated")
+        logging.info(f"   - entry_price: {updates_by_field['entry_price']}")
+        logging.info(f"   - exit_price: {updates_by_field['exit_price']}")
+        logging.info(f"   - position_size: {updates_by_field['position_size']}")
+        logging.info(f"   - pnl_usd: {updates_by_field['pnl_usd']}")
+
+        return {
+            'trades_updated': trades_updated,
+            'updates_by_field': updates_by_field
+        }
+
+    except Exception as e:
+        logging.error(f"Error in comprehensive missing trade data sync: {e}", exc_info=True)
+        return {'error': str(e)}
+
+
+async def _sync_entry_price(bot: DiscordBot, trade: Dict, exchange: str) -> Optional[Dict]:
+    """Sync entry price from exchange order status."""
+    try:
+        order_id = trade.get('exchange_order_id') or trade.get('kucoin_order_id')
+        coin_symbol = trade.get('coin_symbol')
+
+        if not order_id or not coin_symbol:
+            return None
+
+        if exchange == 'binance' and bot.binance_exchange:
+            symbol_pair = f"{coin_symbol}USDT"
+            order_status = await bot.binance_exchange.get_order_status(symbol_pair, str(order_id))
+            if order_status:
+                avg_price = order_status.get('avgPrice') or order_status.get('avg_price')
+                if avg_price and float(avg_price) > 0:
+                    return {'entry_price': str(float(avg_price))}
+
+        elif exchange == 'kucoin' and bot.kucoin_exchange:
+            from src.exchange.kucoin.kucoin_symbol_converter import KucoinSymbolConverter
+            symbol_converter = KucoinSymbolConverter()
+            kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(f"{coin_symbol}-USDT")
+            order_status = await bot.kucoin_exchange.get_order_status(kucoin_symbol, str(order_id))
+            if order_status:
+                filled_size = float(order_status.get('filledSize', 0))
+                filled_value = float(order_status.get('filledValue', 0))
+                actual_entry_price = order_status.get('actualEntryPrice')
+
+                if actual_entry_price and float(actual_entry_price) > 0:
+                    return {'entry_price': str(float(actual_entry_price))}
+                elif filled_size > 0 and filled_value > 0:
+                    entry_price = filled_value / filled_size
+                    return {'entry_price': str(entry_price)}
+
+        # Try to extract from stored responses
+        for resp_field in ['exchange_response', 'sync_order_response']:
+            resp_data = trade.get(resp_field)
+            if resp_data:
+                parsed = safe_parse_exchange_response(resp_data)
+                if isinstance(parsed, dict):
+                    if exchange == 'binance':
+                        avg_price = parsed.get('avgPrice') or parsed.get('avg_price')
+                        if avg_price and float(avg_price) > 0:
+                            return {'entry_price': str(float(avg_price))}
+                    elif exchange == 'kucoin':
+                        filled_size = float(parsed.get('filledSize', 0))
+                        filled_value = float(parsed.get('filledValue', 0))
+                        if filled_size > 0 and filled_value > 0:
+                            entry_price = filled_value / filled_size
+                            return {'entry_price': str(entry_price)}
+
+        return None
+    except Exception as e:
+        logging.warning(f"Error syncing entry price for trade {trade.get('id')}: {e}")
+        return None
+
+
+async def _sync_position_size(bot: DiscordBot, trade: Dict, exchange: str) -> Optional[Dict]:
+    """Sync position size from exchange order status."""
+    try:
+        order_id = trade.get('exchange_order_id') or trade.get('kucoin_order_id')
+        coin_symbol = trade.get('coin_symbol')
+
+        if not order_id or not coin_symbol:
+            return None
+
+        if exchange == 'binance' and bot.binance_exchange:
+            symbol_pair = f"{coin_symbol}USDT"
+            order_status = await bot.binance_exchange.get_order_status(symbol_pair, str(order_id))
+            if order_status:
+                executed_qty = order_status.get('executedQty') or order_status.get('executed_qty')
+                if executed_qty and float(executed_qty) > 0:
+                    return {'position_size': str(float(executed_qty))}
+
+        elif exchange == 'kucoin' and bot.kucoin_exchange:
+            from src.exchange.kucoin.kucoin_symbol_converter import KucoinSymbolConverter
+            symbol_converter = KucoinSymbolConverter()
+            kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(f"{coin_symbol}-USDT")
+            order_status = await bot.kucoin_exchange.get_order_status(kucoin_symbol, str(order_id))
+            if order_status:
+                filled_size = order_status.get('filledSize')
+                if filled_size and float(filled_size) > 0:
+                    return {'position_size': str(float(filled_size))}
+
+        # Try to extract from stored responses
+        for resp_field in ['exchange_response', 'sync_order_response']:
+            resp_data = trade.get(resp_field)
+            if resp_data:
+                parsed = safe_parse_exchange_response(resp_data)
+                if isinstance(parsed, dict):
+                    if exchange == 'binance':
+                        executed_qty = parsed.get('executedQty') or parsed.get('executed_qty')
+                        if executed_qty and float(executed_qty) > 0:
+                            return {'position_size': str(float(executed_qty))}
+                    elif exchange == 'kucoin':
+                        filled_size = parsed.get('filledSize')
+                        if filled_size and float(filled_size) > 0:
+                            return {'position_size': str(float(filled_size))}
+
+        return None
+    except Exception as e:
+        logging.warning(f"Error syncing position size for trade {trade.get('id')}: {e}")
+        return None
+
+
+async def _sync_exit_price(bot: DiscordBot, trade: Dict, exchange: str) -> Optional[Dict]:
+    """Sync exit price from exchange trade history or closing order."""
+    try:
+        order_id = trade.get('exchange_order_id') or trade.get('kucoin_order_id')
+        coin_symbol = trade.get('coin_symbol')
+        stop_loss_order_id = trade.get('stop_loss_order_id')
+
+        if not coin_symbol:
+            return None
+
+        if exchange == 'binance' and bot.binance_exchange:
+            symbol_pair = f"{coin_symbol}USDT"
+
+            # Try to get from closing order (stop loss or manual close)
+            if stop_loss_order_id:
+                close_order = await bot.binance_exchange.get_order_status(symbol_pair, str(stop_loss_order_id))
+                if close_order:
+                    avg_price = close_order.get('avgPrice') or close_order.get('avg_price')
+                    if avg_price and float(avg_price) > 0:
+                        return {
+                            'exit_price': str(float(avg_price)),
+                            'binance_exit_price': str(float(avg_price))
+                        }
+
+            # Try from user trades (last trade for this symbol)
+            try:
+                from datetime import datetime, timedelta, timezone
+                created_at = trade.get('created_at')
+                if created_at:
+                    created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    start_time = int((created_dt - timedelta(hours=48)).timestamp() * 1000)
+                    end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+                    user_trades = await bot.binance_exchange.get_user_trades(
+                        symbol=symbol_pair,
+                        start_time=start_time,
+                        end_time=end_time
+                    )
+                    if user_trades:
+                        # Find closing trade (opposite side or reduceOnly)
+                        for user_trade in reversed(user_trades):
+                            if user_trade.get('reduceOnly') or user_trade.get('realizedPnl'):
+                                price = user_trade.get('price') or user_trade.get('p')
+                                if price and float(price) > 0:
+                                    return {
+                                        'exit_price': str(float(price)),
+                                        'binance_exit_price': str(float(price))
+                                    }
+                        # Fallback to last trade
+                        last_trade = user_trades[-1]
+                        price = last_trade.get('price') or last_trade.get('p')
+                        if price and float(price) > 0:
+                            return {
+                                'exit_price': str(float(price)),
+                                'binance_exit_price': str(float(price))
+                            }
+            except Exception as e:
+                logging.warning(f"Could not get exit price from user trades: {e}")
+
+        elif exchange == 'kucoin' and bot.kucoin_exchange:
+            from src.exchange.kucoin.kucoin_symbol_converter import KucoinSymbolConverter
+            symbol_converter = KucoinSymbolConverter()
+            kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(f"{coin_symbol}-USDT")
+
+            # Try from trade history
+            try:
+                from datetime import datetime, timedelta, timezone
+                created_at = trade.get('created_at')
+                if created_at:
+                    created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    start_time = int((created_dt - timedelta(hours=48)).timestamp() * 1000)
+                    end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+                    trade_history = await bot.kucoin_exchange.get_user_trades(
+                        symbol=kucoin_symbol,
+                        start_time=start_time,
+                        end_time=end_time
+                    )
+                    if trade_history:
+                        # Find matching order or last trade
+                        if order_id:
+                            matching = [t for t in trade_history if str(t.get('orderId', '')) == str(order_id)]
+                            if matching:
+                                price = matching[-1].get('price')
+                                if price and float(price) > 0:
+                                    return {'exit_price': str(float(price))}
+                        # Fallback to last trade
+                        last_trade = trade_history[-1]
+                        price = last_trade.get('price')
+                        if price and float(price) > 0:
+                            return {'exit_price': str(float(price))}
+            except Exception as e:
+                logging.warning(f"Could not get exit price from KuCoin trade history: {e}")
+
+        return None
+    except Exception as e:
+        logging.warning(f"Error syncing exit price for trade {trade.get('id')}: {e}")
+        return None
+
+
+async def _sync_pnl(bot: DiscordBot, trade: Dict, exchange: str, existing_updates: Dict) -> Optional[Dict]:
+    """Sync PnL from exchange income history or calculate from prices."""
+    try:
+        coin_symbol = trade.get('coin_symbol')
+        entry_price = float(existing_updates.get('entry_price') or trade.get('entry_price') or 0)
+        exit_price = float(existing_updates.get('exit_price') or trade.get('exit_price') or 0)
+        position_size = float(existing_updates.get('position_size') or trade.get('position_size') or 0)
+        signal_type = str(trade.get('signal_type', 'LONG')).upper()
+
+        if exchange == 'binance' and bot.binance_exchange:
+            # Try to get from income history (most accurate)
+            try:
+                from datetime import datetime, timedelta, timezone
+                created_at = trade.get('created_at')
+                closed_at = trade.get('closed_at') or trade.get('updated_at')
+
+                if created_at and closed_at:
+                    created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    closed_dt = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+                    start_time = int(created_dt.timestamp() * 1000)
+                    end_time = int(closed_dt.timestamp() * 1000)
+
+                    symbol_pair = f"{coin_symbol}USDT"
+                    income_history = await bot.binance_exchange.get_income_history(
+                        symbol=symbol_pair,
+                        income_type='REALIZED_PNL',
+                        start_time=start_time,
+                        end_time=end_time
+                    )
+
+                    if income_history:
+                        total_pnl = sum(float(inc.get('income', 0)) for inc in income_history)
+                        if total_pnl != 0:
+                            return {'pnl_usd': str(total_pnl), 'pnl_source': 'income_history'}
+            except Exception as e:
+                logging.warning(f"Could not get PnL from income history: {e}")
+
+            # Fallback: calculate from entry/exit prices
+            if entry_price > 0 and exit_price > 0 and position_size > 0:
+                if signal_type == 'LONG':
+                    pnl = (exit_price - entry_price) * position_size
+                else:
+                    pnl = (entry_price - exit_price) * position_size
+                return {'pnl_usd': str(round(pnl, 2)), 'pnl_source': 'calculated'}
+
+        elif exchange == 'kucoin' and bot.kucoin_exchange:
+            # Calculate from entry/exit prices (KuCoin doesn't provide easy income history)
+            if entry_price > 0 and exit_price > 0 and position_size > 0:
+                if signal_type == 'LONG':
+                    pnl = (exit_price - entry_price) * position_size
+                else:
+                    pnl = (entry_price - exit_price) * position_size
+                return {'pnl_usd': str(round(pnl, 2)), 'pnl_source': 'calculated'}
+
+        return None
+    except Exception as e:
+        logging.warning(f"Error syncing PnL for trade {trade.get('id')}: {e}")
+        return None
