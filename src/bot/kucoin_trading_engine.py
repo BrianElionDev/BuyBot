@@ -303,7 +303,15 @@ class KucoinTradingEngine:
                 except Exception as e:
                     logger.warning(f"Failed to normalize stop loss '{stop_loss}': {e}")
 
-            # Calculate trade amount
+            # Get minimum quantity for validation
+            trading_pair = f"{coin_symbol.upper()}-USDT"
+            filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)
+            min_qty = 0.001
+            if filters:
+                lot_size_filter = filters.get('LOT_SIZE', {})
+                min_qty = float(lot_size_filter.get('minQty', 0.001))
+
+            # Calculate trade amount (this applies minimum adjustment internally)
             trade_amount = await self._calculate_trade_amount(
                 coin_symbol, current_price, quantity_multiplier, position_size_override
             )
@@ -313,6 +321,8 @@ class KucoinTradingEngine:
                 return False, f"Invalid trade amount calculated: {trade_amount}"
 
             # Risk-based cap if SL distance implies >3% risk
+            # IMPORTANT: Apply risk cap BEFORE minimum adjustment to avoid conflicts
+            # We need to recalculate the base amount without minimum adjustment
             try:
                 if stop_loss is not None:
                     entry_ref = float(final_price or current_price)
@@ -321,11 +331,41 @@ class KucoinTradingEngine:
                         pct_risk = abs(entry_ref - sl_val) / entry_ref
                         max_pct = 0.03
                         if pct_risk > max_pct:
+                            # Recalculate base amount without minimum adjustment for risk cap
+                            from src.services.trader_config_service import trader_config_service
+                            trader_id = (getattr(self, 'trader_id', None) or '').strip().lower()
+                            exchange_key = 'kucoin'
+
+                            if position_size_override is not None:
+                                base_usdt = float(position_size_override)
+                            else:
+                                base_usdt = self.config.TRADE_AMOUNT
+                                try:
+                                    config = await trader_config_service.get_trader_config(trader_id)
+                                    if config and config.exchange.value == exchange_key:
+                                        base_usdt = float(config.position_size)
+                                except Exception:
+                                    pass
+
+                            base_amount = base_usdt / current_price
+                            if quantity_multiplier and quantity_multiplier > 1:
+                                base_amount *= quantity_multiplier
+
+                            # Apply risk cap to base amount
                             scale = max_pct / pct_risk
-                            if scale < 1.0:
-                                old_amount = trade_amount
-                                trade_amount = trade_amount * scale
-                                logger.info(f"Capping KuCoin position due to risk {pct_risk*100:.2f}% > {max_pct*100:.2f}%, amount {old_amount} -> {trade_amount}")
+                            risk_capped_amount = base_amount * scale
+
+                            logger.info(f"Risk cap calculation: base={base_amount:.8f}, risk={pct_risk*100:.2f}%, capped={risk_capped_amount:.8f}, min={min_qty}")
+
+                            # Check if risk-capped amount meets minimum
+                            if risk_capped_amount < min_qty:
+                                error_msg = f"Position size ${base_usdt:.2f} too small for risk management. Risk cap ({pct_risk*100:.2f}% > {max_pct*100:.2f}%) would reduce quantity to {risk_capped_amount:.8f} below minimum {min_qty} for {kucoin_symbol}. Increase position size or use tighter stop loss."
+                                logger.error(error_msg)
+                                return False, error_msg
+
+                            # Apply risk cap (already validated to be >= min_qty)
+                            trade_amount = risk_capped_amount
+                            logger.info(f"Capping KuCoin position due to risk {pct_risk*100:.2f}% > {max_pct*100:.2f}%, amount {base_amount:.8f} -> {trade_amount:.8f}")
             except Exception as e:
                 logger.warning(f"Risk cap calculation failed: {e}")
 
