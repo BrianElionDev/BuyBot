@@ -264,6 +264,11 @@ class KucoinExchange(ExchangeBase):
             contract_size = int(contract_size) if contract_size >= 1 else 1  # Minimum 1 contract
             logger.info(f"Contract size calculation: {amount} assets ÷ {contract_multiplier} multiplier = {contract_size} contracts")
 
+            # Calculate actual asset quantity from contract size (for storage in origQty)
+            # This ensures we store asset quantity, not contract count
+            actual_asset_quantity = contract_size * contract_multiplier if contract_multiplier > 1 else contract_size
+            logger.info(f"Actual asset quantity for storage: {actual_asset_quantity} (from {contract_size} contracts × {contract_multiplier})")
+
             # Prepare order parameters
             order_params = {
                 "clientOid": client_order_id or f"kucoin_{int(asyncio.get_event_loop().time() * 1000)}",
@@ -322,6 +327,7 @@ class KucoinExchange(ExchangeBase):
             response = order_api.add_order(request)
 
             # Format response to match Binance format
+            # IMPORTANT: origQty should store asset quantity, not contract count
             formatted_response = {
                 "success": True,
                 "orderId": getattr(response, 'orderId', order_params["clientOid"]),
@@ -329,11 +335,13 @@ class KucoinExchange(ExchangeBase):
                 "symbol": pair,
                 "side": side.upper(),
                 "type": order_type.upper(),
-                "origQty": str(amount),
+                "origQty": str(actual_asset_quantity),  # Store asset quantity, not contract count
                 "price": str(price) if price else None,
                 "stopPrice": str(stop_price) if stop_price else None,
                 "status": "NEW",
-                "time": int(asyncio.get_event_loop().time() * 1000)
+                "time": int(asyncio.get_event_loop().time() * 1000),
+                "contract_multiplier": contract_multiplier,  # Store multiplier for reference
+                "contract_size": contract_size  # Store contract size for reference
             }
 
             try:
@@ -435,6 +443,23 @@ class KucoinExchange(ExchangeBase):
                 logger.warning(f"Order {order_id} not found")
                 return None
 
+            # Get contract multiplier for this symbol
+            contract_multiplier = 1
+            try:
+                filters = await self.get_futures_symbol_filters(pair)
+                if filters and 'multiplier' in filters:
+                    contract_multiplier = int(filters['multiplier'])
+            except Exception as e:
+                logger.warning(f"Could not get contract multiplier for {pair}: {e}")
+
+            # Convert contract sizes to asset quantities
+            size_contracts = float(getattr(order_data, 'size', '0'))
+            filled_size_contracts = float(getattr(order_data, 'filledSize', '0'))
+
+            # Calculate asset quantities
+            size_assets = size_contracts * contract_multiplier if contract_multiplier > 1 else size_contracts
+            filled_size_assets = filled_size_contracts * contract_multiplier if contract_multiplier > 1 else filled_size_contracts
+
             # Format response to match expected format
             formatted_response = {
                 "orderId": getattr(order_data, 'id', order_id),
@@ -443,12 +468,16 @@ class KucoinExchange(ExchangeBase):
                 "status": getattr(order_data, 'status', 'UNKNOWN'),
                 "side": getattr(order_data, 'side', 'UNKNOWN'),
                 "type": getattr(order_data, 'type', 'UNKNOWN'),
-                "size": str(getattr(order_data, 'size', '0')),
+                "size": str(size_contracts),  # Contract size (for API compatibility)
                 "price": str(getattr(order_data, 'price', '0')),
-                "filledSize": str(getattr(order_data, 'filledSize', '0')),
+                "filledSize": str(filled_size_contracts),  # Contract size (for API compatibility)
                 "filledValue": str(getattr(order_data, 'filledValue', '0')),
                 "time": getattr(order_data, 'createdAt', 0),
-                "raw_response": order_data
+                "raw_response": order_data,
+                # Add asset quantities for database storage
+                "origQty": str(size_assets),  # Asset quantity (for database storage)
+                "executedQty": str(filled_size_assets),  # Asset quantity (for database storage)
+                "contract_multiplier": contract_multiplier  # Store multiplier for reference
             }
 
             logger.info(f"Retrieved KuCoin order status for {order_id}: {formatted_response['status']}")
@@ -569,6 +598,22 @@ class KucoinExchange(ExchangeBase):
                 kucoin_symbol = pair.replace('-', 'USDTM')
             logger.info(f"Converting pair {pair} to KuCoin futures symbol: {kucoin_symbol}")
 
+            # Get contract multiplier for proper conversion
+            filters = await self.get_futures_symbol_filters(pair)
+            contract_multiplier = 1
+            if filters and 'multiplier' in filters:
+                contract_multiplier = int(filters['multiplier'])
+                logger.info(f"Using contract multiplier: {contract_multiplier} for {kucoin_symbol}")
+
+            # Determine if amount is in asset quantity or contract size
+            # If fetched from live position (line 581), it's contract size
+            # If from database position_size, it's asset quantity
+            # We'll assume it's asset quantity (from database) and convert to contracts
+            asset_quantity = amount  # Store original for response
+            contract_size = amount / contract_multiplier if contract_multiplier > 1 else amount
+            contract_size = int(contract_size) if contract_size >= 1 else 1
+            logger.info(f"Close order: {asset_quantity} assets → {contract_size} contracts (multiplier: {contract_multiplier})")
+
             # Initialize client (was under an unnecessary try block)
             await self._init_client()
 
@@ -614,7 +659,7 @@ class KucoinExchange(ExchangeBase):
                 .set_side(cast(Any, side)) \
                 .set_symbol(kucoin_symbol) \
                 .set_type(cast(Any, "market")) \
-                .set_size(int(amount)) \
+                .set_size(contract_size) \
                 .set_reduce_only(True) \
                 .set_leverage(close_leverage)
 
@@ -628,9 +673,11 @@ class KucoinExchange(ExchangeBase):
                     "symbol": pair,
                     "side": side.upper(),
                 "type": "MARKET",
-                    "origQty": str(amount),
+                    "origQty": str(asset_quantity),  # Store asset quantity, not contract count
                     "status": "NEW",
-                    "time": int(asyncio.get_event_loop().time() * 1000)
+                    "time": int(asyncio.get_event_loop().time() * 1000),
+                    "contract_multiplier": contract_multiplier,
+                    "contract_size": contract_size
                 }
 
             try:

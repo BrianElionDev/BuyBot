@@ -153,33 +153,37 @@ class TradeOperations:
 
                 position_size = None
 
-                if 'origQty' in normalized and normalized['origQty']:
+                # Priority: executedQty (already asset quantity) > origQty (asset quantity) > filledSize (needs conversion)
+                if 'executedQty' in normalized and normalized['executedQty']:
+                    position_size = float(normalized['executedQty'])
+                    logger.info(f"Using executedQty as position_size (asset quantity): {position_size}")
+                elif 'origQty' in normalized and normalized['origQty']:
                     position_size = float(normalized['origQty'])
                     logger.info(f"Using origQty as position_size (asset quantity): {position_size}")
                 elif 'filledSize' in normalized and normalized['filledSize']:
                     filled_size_contracts = float(normalized['filledSize'])
 
-                    # For filled orders, convert contract size back to asset quantity
-                    if 'executionDetails' in normalized and normalized.get('executionDetails'):
+                    # Get contract multiplier from response or execution details
+                    contract_multiplier = 1
+                    if 'contract_multiplier' in normalized:
+                        contract_multiplier = int(normalized['contract_multiplier'])
+                        logger.info(f"Using contract_multiplier from response: {contract_multiplier}")
+                    elif 'executionDetails' in normalized and normalized.get('executionDetails'):
                         execution_details = normalized['executionDetails']
-                        contract_multiplier = 1
-
-                        # Get contract multiplier from execution details
                         if isinstance(execution_details, dict) and 'contract_multiplier' in execution_details:
                             contract_multiplier = int(execution_details['contract_multiplier'])
                         elif hasattr(execution_details, 'contract_multiplier'):
                             contract_multiplier = int(getattr(execution_details, 'contract_multiplier', 1))
+                        logger.info(f"Using contract_multiplier from executionDetails: {contract_multiplier}")
 
-                        # Convert contract size to asset quantity
+                    # Convert contract size to asset quantity
+                    if contract_multiplier > 1:
                         position_size = filled_size_contracts * contract_multiplier
                         logger.info(f"Converted KuCoin contracts to assets: {filled_size_contracts} contracts × {contract_multiplier} = {position_size} assets")
                     else:
-                        # Fallback: use contract size as asset quantity
+                        # Fallback: assume it's already asset quantity if no multiplier
                         position_size = filled_size_contracts
-                        logger.info(f"Using KuCoin filled size as asset quantity: {position_size}")
-                elif 'executedQty' in normalized and normalized['executedQty']:
-                    position_size = float(normalized['executedQty'])
-                    logger.info(f"Using executedQty as position_size: {position_size}")
+                        logger.info(f"Using filledSize as position_size (no multiplier found, assuming asset quantity): {position_size}")
 
                 if position_size and position_size > 0:
                     updates['position_size'] = position_size
