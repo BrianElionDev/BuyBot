@@ -254,19 +254,33 @@ class KucoinExchange(ExchangeBase):
             kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(pair)
 
             # Get contract multiplier for proper size calculation
-            contract_multiplier = 1
+            contract_multiplier = 1.0
             if filters and 'multiplier' in filters:
-                contract_multiplier = int(filters['multiplier'])
+                try:
+                    contract_multiplier = float(filters['multiplier'])
+                except (TypeError, ValueError):
+                    contract_multiplier = 1.0
                 logger.info(f"Using contract multiplier: {contract_multiplier} for {kucoin_symbol}")
 
-            # Calculate proper contract size (amount / multiplier)
-            contract_size = amount / contract_multiplier if contract_multiplier > 1 else amount
-            contract_size = int(contract_size) if contract_size >= 1 else 1  # Minimum 1 contract
-            logger.info(f"Contract size calculation: {amount} assets ÷ {contract_multiplier} multiplier = {contract_size} contracts")
+            # Calculate proper contract size (contracts = asset_qty / multiplier)
+            lot_step = 1.0
+            if filters and filters.get('LOT_SIZE', {}).get('stepSize') is not None:
+                try:
+                    lot_step = float(filters['LOT_SIZE']['stepSize'])
+                except (TypeError, ValueError):
+                    lot_step = 1.0
+            raw_contracts = (amount / contract_multiplier) if contract_multiplier > 0 else amount
+            # Round to nearest multiple of lot_step (contracts), enforce minimum 1 contract
+            try:
+                rounded_contracts = int(round(raw_contracts / lot_step) * lot_step)
+            except Exception:
+                rounded_contracts = int(raw_contracts)
+            contract_size = max(1, rounded_contracts)
+            logger.info(f"Contract size calculation: {amount} assets ÷ {contract_multiplier} multiplier ≈ {contract_size} contracts (lot_step={lot_step})")
 
             # Calculate actual asset quantity from contract size (for storage in origQty)
             # This ensures we store asset quantity, not contract count
-            actual_asset_quantity = contract_size * contract_multiplier if contract_multiplier > 1 else contract_size
+            actual_asset_quantity = contract_size * contract_multiplier
             logger.info(f"Actual asset quantity for storage: {actual_asset_quantity} (from {contract_size} contracts × {contract_multiplier})")
 
             # Prepare order parameters
@@ -444,11 +458,14 @@ class KucoinExchange(ExchangeBase):
                 return None
 
             # Get contract multiplier for this symbol
-            contract_multiplier = 1
+            contract_multiplier = 1.0
             try:
                 filters = await self.get_futures_symbol_filters(pair)
                 if filters and 'multiplier' in filters:
-                    contract_multiplier = int(filters['multiplier'])
+                    try:
+                        contract_multiplier = float(filters['multiplier'])
+                    except (TypeError, ValueError):
+                        contract_multiplier = 1.0
             except Exception as e:
                 logger.warning(f"Could not get contract multiplier for {pair}: {e}")
 
@@ -457,8 +474,8 @@ class KucoinExchange(ExchangeBase):
             filled_size_contracts = float(getattr(order_data, 'filledSize', '0'))
 
             # Calculate asset quantities
-            size_assets = size_contracts * contract_multiplier if contract_multiplier > 1 else size_contracts
-            filled_size_assets = filled_size_contracts * contract_multiplier if contract_multiplier > 1 else filled_size_contracts
+            size_assets = size_contracts * contract_multiplier
+            filled_size_assets = filled_size_contracts * contract_multiplier
 
             # Format response to match expected format
             formatted_response = {
@@ -600,9 +617,12 @@ class KucoinExchange(ExchangeBase):
 
             # Get contract multiplier for proper conversion
             filters = await self.get_futures_symbol_filters(pair)
-            contract_multiplier = 1
+            contract_multiplier = 1.0
             if filters and 'multiplier' in filters:
-                contract_multiplier = int(filters['multiplier'])
+                try:
+                    contract_multiplier = float(filters['multiplier'])
+                except (TypeError, ValueError):
+                    contract_multiplier = 1.0
                 logger.info(f"Using contract multiplier: {contract_multiplier} for {kucoin_symbol}")
 
             # Determine if amount is in asset quantity or contract size
@@ -610,8 +630,18 @@ class KucoinExchange(ExchangeBase):
             # If from database position_size, it's asset quantity
             # We'll assume it's asset quantity (from database) and convert to contracts
             asset_quantity = amount  # Store original for response
-            contract_size = amount / contract_multiplier if contract_multiplier > 1 else amount
-            contract_size = int(contract_size) if contract_size >= 1 else 1
+            raw_contracts = (amount / contract_multiplier) if contract_multiplier > 0 else amount
+            lot_step = 1.0
+            try:
+                if filters and filters.get('LOT_SIZE', {}).get('stepSize') is not None:
+                    lot_step = float(filters['LOT_SIZE']['stepSize'])
+            except (TypeError, ValueError):
+                lot_step = 1.0
+            try:
+                rounded_contracts = int(round(raw_contracts / lot_step) * lot_step)
+            except Exception:
+                rounded_contracts = int(raw_contracts)
+            contract_size = max(1, rounded_contracts)
             logger.info(f"Close order: {asset_quantity} assets → {contract_size} contracts (multiplier: {contract_multiplier})")
 
             # Initialize client (was under an unnecessary try block)
@@ -944,6 +974,10 @@ class KucoinExchange(ExchangeBase):
                 return None
 
             # Extract symbol information and create filters
+            try:
+                multiplier_val = float(symbol_info.get('multiplier', 1))
+            except (TypeError, ValueError):
+                multiplier_val = 1.0
             filters = {
                 "symbol": symbol,
                 "kucoin_symbol": working_symbol,
@@ -959,8 +993,8 @@ class KucoinExchange(ExchangeBase):
                 "enableTrading": symbol_info.get('status', '') == 'Open',
                 "isMarginEnabled": getattr(symbol_info, 'isMarginEnabled', True),
                 "contractType": symbol_info.get('type', 'FUTURES'),
-                "contractSize": symbol_info.get('multiplier', 1),
-                "multiplier": symbol_info.get('multiplier', 1),
+                "contractSize": multiplier_val,
+                "multiplier": multiplier_val,
                 # KuCoin specific filters
                 "LOT_SIZE": {
                     "minQty": symbol_info.get('lotSize', '1'),

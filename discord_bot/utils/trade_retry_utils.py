@@ -645,15 +645,13 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                     position_size = orig_qty
                     logging.info(f"Using origQty as position_size (asset quantity): {position_size}")
                 elif filled_size > 0:
-                    # For filled orders, filledSize is contract size - need to convert to asset quantity
-                    contract_multiplier = order.get('contract_multiplier', 1)
-                    if contract_multiplier and contract_multiplier > 1:
-                        position_size = filled_size * contract_multiplier
-                        logging.info(f"Converted KuCoin contracts to assets: {filled_size} contracts × {contract_multiplier} = {position_size} assets")
-                    else:
-                        # Fallback: assume it's already asset quantity if no multiplier
-                        position_size = filled_size
-                        logging.info(f"Using filledSize as position_size (no multiplier, assuming asset quantity): {position_size}")
+                    # For filled orders, convert contract size to asset quantity
+                    try:
+                        contract_multiplier = float(order.get('contract_multiplier', 1) or 1)
+                    except (TypeError, ValueError):
+                        contract_multiplier = 1.0
+                    position_size = float(filled_size) * contract_multiplier
+                    logging.info(f"Converted KuCoin contracts to assets: {filled_size} contracts × {contract_multiplier} = {position_size} assets")
 
                 # Update order information with proper status mapping
                 update_data = {
@@ -820,7 +818,7 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
                 try:
                     # Convert contract size to asset quantity
                     contract_size = abs(float(position.get('size', 0)))
-                    contract_multiplier = 1
+                    contract_multiplier = 1.0
 
                     # Get contract multiplier for this symbol
                     try:
@@ -829,12 +827,15 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
                             trading_pair = f"{coin_symbol.upper()}-USDT"
                             filters = await bot.kucoin_exchange.get_futures_symbol_filters(trading_pair)
                             if filters and 'multiplier' in filters:
-                                contract_multiplier = int(filters['multiplier'])
+                                try:
+                                    contract_multiplier = float(filters['multiplier'])
+                                except (TypeError, ValueError):
+                                    contract_multiplier = 1.0
                     except Exception as e:
                         logging.warning(f"Could not get contract multiplier for {symbol}: {e}")
 
                     # Calculate asset quantity
-                    asset_quantity = contract_size * contract_multiplier if contract_multiplier > 1 else contract_size
+                    asset_quantity = contract_size * contract_multiplier
 
                     # Update position information
                     update_data = {
@@ -2729,9 +2730,12 @@ async def _sync_position_size(bot: DiscordBot, trade: Dict, exchange: str) -> Op
                     return {'position_size': str(float(orig_qty))}
                 # Last resort: convert filledSize (contract size) to asset quantity
                 filled_size = order_status.get('filledSize')
-                contract_multiplier = order_status.get('contract_multiplier', 1)
+                try:
+                    contract_multiplier = float(order_status.get('contract_multiplier', 1) or 1)
+                except (TypeError, ValueError):
+                    contract_multiplier = 1.0
                 if filled_size and float(filled_size) > 0:
-                    asset_quantity = float(filled_size) * contract_multiplier if contract_multiplier > 1 else float(filled_size)
+                    asset_quantity = float(filled_size) * contract_multiplier
                     return {'position_size': str(asset_quantity)}
 
         # Try to extract from stored responses
@@ -2755,9 +2759,12 @@ async def _sync_position_size(bot: DiscordBot, trade: Dict, exchange: str) -> Op
                             return {'position_size': str(float(orig_qty))}
                         # Last resort: convert filledSize (contract size) to asset quantity
                         filled_size = parsed.get('filledSize')
-                        contract_multiplier = parsed.get('contract_multiplier', 1)
+                        try:
+                            contract_multiplier = float(parsed.get('contract_multiplier', 1) or 1)
+                        except (TypeError, ValueError):
+                            contract_multiplier = 1.0
                         if filled_size and float(filled_size) > 0:
-                            asset_quantity = float(filled_size) * contract_multiplier if contract_multiplier > 1 else float(filled_size)
+                            asset_quantity = float(filled_size) * contract_multiplier
                             return {'position_size': str(asset_quantity)}
 
         return None

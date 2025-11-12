@@ -51,21 +51,24 @@ def safe_parse_json(data: Any) -> Optional[Any]:
 async def get_contract_multiplier(
     kucoin_exchange: KucoinExchange,
     coin_symbol: str
-) -> int:
+) -> float:
     """Get contract multiplier for a symbol."""
     try:
         trading_pair = f"{coin_symbol.upper()}-USDT"
         filters = await kucoin_exchange.get_futures_symbol_filters(trading_pair)
         if filters and 'multiplier' in filters:
-            return int(filters['multiplier'])
+            try:
+                return float(filters['multiplier'])
+            except (TypeError, ValueError):
+                return 1.0
     except Exception as e:
         logger.warning(f"Could not get contract multiplier for {coin_symbol}: {e}")
-    return 1
+    return 1.0
 
 
 def extract_position_size_from_response(
     response_data: Any,
-    contract_multiplier: int = 1
+    contract_multiplier: float = 1.0
 ) -> Optional[float]:
     """
     Extract position size (asset quantity) from exchange response.
@@ -119,10 +122,12 @@ def extract_position_size_from_response(
         try:
             filled_size_float = float(filled_size)
             # Get multiplier from response if available
-            multiplier = parsed.get('contract_multiplier', contract_multiplier)
-            if multiplier and multiplier > 1:
-                return filled_size_float * multiplier
-            return filled_size_float
+            mult_raw = parsed.get('contract_multiplier', contract_multiplier)
+            try:
+                multiplier = float(mult_raw)
+            except (TypeError, ValueError):
+                multiplier = float(contract_multiplier or 1.0)
+            return filled_size_float * multiplier
         except (ValueError, TypeError):
             pass
 
@@ -150,7 +155,7 @@ async def calculate_correct_position_size(
         logger.warning(f"Trade {trade.get('id')} has no coin_symbol")
         return None
 
-    contract_multiplier = 1
+    contract_multiplier = 1.0
     if kucoin_exchange:
         contract_multiplier = await get_contract_multiplier(kucoin_exchange, coin_symbol)
 
@@ -176,9 +181,13 @@ async def calculate_correct_position_size(
 
                 # Last resort: convert filledSize
                 filled_size = order_status.get('filledSize')
-                multiplier = order_status.get('contract_multiplier', contract_multiplier)
+                mult_raw = order_status.get('contract_multiplier', contract_multiplier)
+                try:
+                    multiplier = float(mult_raw)
+                except (TypeError, ValueError):
+                    multiplier = float(contract_multiplier or 1.0)
                 if filled_size and float(filled_size) > 0:
-                    asset_qty = float(filled_size) * multiplier if multiplier > 1 else float(filled_size)
+                    asset_qty = float(filled_size) * multiplier
                     logger.info(f"Trade {trade.get('id')}: Converted from exchange filledSize: {filled_size} contracts × {multiplier} = {asset_qty} assets")
                     return asset_qty
         except Exception as e:
@@ -193,14 +202,14 @@ async def calculate_correct_position_size(
                 # Check if extracted value looks like contract count (old data before fix)
                 # Heuristic: If it's a small integer (1-100), matches current position_size,
                 # and we have a multiplier > 1, it's likely contract count stored as origQty
-                if (contract_multiplier > 1 and
+                if (contract_multiplier > 0 and
                     position_size <= 100 and
                     position_size == int(position_size) and
                     current_position_size and
                     abs(float(current_position_size) - position_size) < 0.001):
                     # This is contract count - convert to asset quantity
-                    asset_qty = position_size / contract_multiplier
-                    logger.info(f"Trade {trade.get('id')}: Detected contract count in exchange_response origQty: {position_size} contracts ÷ {contract_multiplier} = {asset_qty} assets")
+                    asset_qty = float(position_size) * float(contract_multiplier)
+                    logger.info(f"Trade {trade.get('id')}: Detected contract count in exchange_response origQty: {position_size} contracts × {contract_multiplier} = {asset_qty} assets")
                     return asset_qty
                 logger.info(f"Trade {trade.get('id')}: Extracted from exchange_response: {position_size}")
                 return position_size
@@ -214,13 +223,13 @@ async def calculate_correct_position_size(
             position_size = extract_position_size_from_response(sync_order_response, contract_multiplier)
             if position_size:
                 # Same check for contract count
-                if (contract_multiplier > 1 and
+                if (contract_multiplier > 0 and
                     position_size <= 100 and
                     position_size == int(position_size) and
                     current_position_size and
                     abs(float(current_position_size) - position_size) < 0.001):
-                    asset_qty = position_size / contract_multiplier
-                    logger.info(f"Trade {trade.get('id')}: Detected contract count in sync_order_response: {position_size} contracts ÷ {contract_multiplier} = {asset_qty} assets")
+                    asset_qty = float(position_size) * float(contract_multiplier)
+                    logger.info(f"Trade {trade.get('id')}: Detected contract count in sync_order_response: {position_size} contracts × {contract_multiplier} = {asset_qty} assets")
                     return asset_qty
                 logger.info(f"Trade {trade.get('id')}: Extracted from sync_order_response: {position_size}")
                 return position_size
@@ -233,9 +242,9 @@ async def calculate_correct_position_size(
             current_size = float(current_position_size)
             # Heuristic: If position_size is a small integer (1-100) and we have a multiplier > 1,
             # it's likely contract count (old data before fix)
-            if contract_multiplier > 1 and 1 <= current_size <= 100 and current_size == int(current_size):
-                asset_qty = current_size / contract_multiplier
-                logger.info(f"Trade {trade.get('id')}: Converting suspected contract count {current_size} contracts ÷ {contract_multiplier} = {asset_qty} assets")
+            if contract_multiplier > 0 and 1 <= current_size <= 100 and current_size == int(current_size):
+                asset_qty = float(current_size) * float(contract_multiplier)
+                logger.info(f"Trade {trade.get('id')}: Converting suspected contract count {current_size} contracts × {contract_multiplier} = {asset_qty} assets")
                 return asset_qty
         except (ValueError, TypeError):
             pass

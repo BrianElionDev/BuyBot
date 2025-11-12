@@ -160,17 +160,34 @@ class KucoinTradingEngine:
 
             if filters:
                 lot_size_filter = filters.get('LOT_SIZE', {})
-                min_qty = float(lot_size_filter.get('minQty', 0.001))
-                max_qty = float(lot_size_filter.get('maxQty', 1000000))
+                try:
+                    mult = float(filters.get('multiplier', 1)) if filters else 1.0
+                except (TypeError, ValueError):
+                    mult = 1.0
 
-                # Apply precision formatting
-                step_size = float(lot_size_filter.get('stepSize', 0.0001))
-                if step_size > 0:
-                    trade_amount = round(trade_amount / step_size) * step_size
+                # LOT_SIZE values are in contracts; convert to asset units
+                try:
+                    step_contracts = float(lot_size_filter.get('stepSize', 1))
+                except (TypeError, ValueError):
+                    step_contracts = 1.0
+                try:
+                    min_contracts = float(lot_size_filter.get('minQty', 1))
+                except (TypeError, ValueError):
+                    min_contracts = 1.0
+                try:
+                    max_contracts = float(lot_size_filter.get('maxQty', 1000000))
+                except (TypeError, ValueError):
+                    max_contracts = 1000000.0
 
-                # Ensure within bounds
-                trade_amount = max(min_qty, min(max_qty, trade_amount))
-                logger.info(f"Adjusted trade amount: {trade_amount} (min: {min_qty}, max: {max_qty})")
+                step_asset = max(mult, mult * step_contracts)
+                min_asset = max(mult, mult * min_contracts)
+                max_asset = max_contracts * mult
+
+                # Round to asset-native step and clamp
+                if step_asset > 0:
+                    trade_amount = round(trade_amount / step_asset) * step_asset
+                trade_amount = max(min_asset, min(max_asset, trade_amount))
+                logger.info(f"Adjusted trade amount (asset units): {trade_amount} (min_asset: {min_asset}, max_asset: {max_asset}, step_asset: {step_asset})")
 
             return trade_amount
 

@@ -164,26 +164,27 @@ class TradeOperations:
                     filled_size_contracts = float(normalized['filledSize'])
 
                     # Get contract multiplier from response or execution details
-                    contract_multiplier = 1
+                    contract_multiplier = 1.0
                     if 'contract_multiplier' in normalized:
-                        contract_multiplier = int(normalized['contract_multiplier'])
+                        try:
+                            contract_multiplier = float(normalized['contract_multiplier'])
+                        except (TypeError, ValueError):
+                            contract_multiplier = 1.0
                         logger.info(f"Using contract_multiplier from response: {contract_multiplier}")
                     elif 'executionDetails' in normalized and normalized.get('executionDetails'):
                         execution_details = normalized['executionDetails']
-                        if isinstance(execution_details, dict) and 'contract_multiplier' in execution_details:
-                            contract_multiplier = int(execution_details['contract_multiplier'])
-                        elif hasattr(execution_details, 'contract_multiplier'):
-                            contract_multiplier = int(getattr(execution_details, 'contract_multiplier', 1))
+                        try:
+                            if isinstance(execution_details, dict) and 'contract_multiplier' in execution_details:
+                                contract_multiplier = float(execution_details['contract_multiplier'])
+                            elif hasattr(execution_details, 'contract_multiplier'):
+                                contract_multiplier = float(getattr(execution_details, 'contract_multiplier', 1))
+                        except (TypeError, ValueError):
+                            contract_multiplier = 1.0
                         logger.info(f"Using contract_multiplier from executionDetails: {contract_multiplier}")
 
                     # Convert contract size to asset quantity
-                    if contract_multiplier > 1:
-                        position_size = filled_size_contracts * contract_multiplier
-                        logger.info(f"Converted KuCoin contracts to assets: {filled_size_contracts} contracts × {contract_multiplier} = {position_size} assets")
-                    else:
-                        # Fallback: assume it's already asset quantity if no multiplier
-                        position_size = filled_size_contracts
-                        logger.info(f"Using filledSize as position_size (no multiplier found, assuming asset quantity): {position_size}")
+                    position_size = float(filled_size_contracts) * contract_multiplier
+                    logger.info(f"Converted KuCoin contracts to assets: {filled_size_contracts} contracts × {contract_multiplier} = {position_size} assets")
 
                 if position_size and position_size > 0:
                     updates['position_size'] = position_size
