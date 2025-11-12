@@ -371,6 +371,15 @@ class TradeOperations:
     async def find_trade_by_order_id(self, order_id: str) -> Optional[Dict[str, Any]]:
         """Find a trade by Binance order ID."""
         try:
+            # 1) Match explicit stop_loss_order_id (for STOP_MARKET-triggered closes)
+            try:
+                response = self.supabase.table("trades").select("*").eq("stop_loss_order_id", order_id).limit(1).execute()
+                if response.data and len(response.data) > 0:
+                    return response.data[0]
+            except Exception:
+                pass
+
+            # 2) Match main exchange_order_id
             try:
                 response = self.supabase.table("trades").select("*").eq("exchange_order_id", order_id).limit(1).execute()
                 if response.data and len(response.data) > 0:
@@ -378,6 +387,7 @@ class TradeOperations:
             except Exception:
                 pass
 
+            # 3) Fallback: scan recent trades for embedded references (sync/exchange responses)
             response = self.supabase.table("trades").select("*").order("created_at", desc=True).limit(100).execute()
 
             for trade in response.data or []:

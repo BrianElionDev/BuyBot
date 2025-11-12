@@ -215,6 +215,11 @@ class DatabaseSync:
             realized_pnl: Realized PnL
         """
         try:
+            try:
+                order_id = str(execution_data.get('i') or execution_data.get('orderId') or '')
+            except Exception:
+                order_id = ''
+
             updates: Dict[str, Any] = {
                 'updated_at': datetime.now(timezone.utc).isoformat(),
                 'sync_order_response': json.dumps(execution_data),
@@ -317,7 +322,7 @@ class DatabaseSync:
             # Check if this is a stop loss order cancellation
             is_stop_loss_order = False
             expire_reason = execution_data.get('V', '')
-            if expire_reason == 'EXPIRE_MAKER' or str(order_id) == str(trade.get('stop_loss_order_id', '')):
+            if expire_reason == 'EXPIRE_MAKER' or (order_id and str(order_id) == str(trade.get('stop_loss_order_id', ''))):
                 is_stop_loss_order = True
                 logger.info(f"Stop loss order {order_id} cancelled (EXPIRE_MAKER: {expire_reason == 'EXPIRE_MAKER'}), main trade {trade_id} unaffected")
 
@@ -353,6 +358,7 @@ class DatabaseSync:
                     updates['exit_price'] = avg_price
                 if realized_pnl is not None:
                     updates['pnl_usd'] = realized_pnl
+                updates['closed_at'] = datetime.now(timezone.utc).isoformat()
 
             # Auto-fix inconsistent order/position status combinations before DB update
             try:
