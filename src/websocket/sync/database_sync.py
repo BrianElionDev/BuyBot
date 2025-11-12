@@ -265,6 +265,10 @@ class DatabaseSync:
                             updates['sync_issues'] = (existing_issue + ' | ' + msg).strip(' |')
                     except Exception:
                         updates['sync_issues'] = msg
+                    # Guardrail: ensure no exit_price is persisted for non-exit, non-filled orders
+                    if trade.get('exit_price'):
+                        updates['exit_price'] = None
+                        logger.info(f"Cleared stale exit_price for trade {trade_id} on NEW/OPEN MARKET with zero fills")
             except Exception:
                 pass
 

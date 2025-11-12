@@ -254,7 +254,7 @@ class KucoinExchange(ExchangeBase):
             kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(pair)
 
             # Get contract multiplier for proper size calculation
-            contract_multiplier = 1.0
+            contract_multiplier = 2.0
             if filters and 'multiplier' in filters:
                 try:
                     contract_multiplier = float(filters['multiplier'])
