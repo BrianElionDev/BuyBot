@@ -128,11 +128,26 @@ class TradeOperations:
             if isinstance(normalized, dict):
                 entry_price = None
                 position_size = None
+                # Determine if there is evidence of a real fill
+                try:
+                    executed_qty = float(normalized.get('executedQty') or normalized.get('cumQty') or 0)
+                except (TypeError, ValueError):
+                    executed_qty = 0.0
+                try:
+                    filled_size_contracts_check = float(normalized.get('filledSize') or 0)
+                except (TypeError, ValueError):
+                    filled_size_contracts_check = 0.0
+                response_status_upper = str(normalized.get('status') or '').upper()
+                has_real_fill = (executed_qty > 0) or (filled_size_contracts_check > 0) or (response_status_upper in ('FILLED', 'PARTIALLY_FILLED', 'MATCHED'))
 
                 # Check for KuCoin execution details (from post-order status check)
-                if 'actualEntryPrice' in normalized and normalized['actualEntryPrice']:
-                    entry_price = float(normalized['actualEntryPrice'])
-                    logger.info(f"Using KuCoin actual entry price: {entry_price}")
+                # Guardrail: only accept actualEntryPrice if there is a real fill signal
+                if 'actualEntryPrice' in normalized and normalized['actualEntryPrice'] and has_real_fill:
+                    try:
+                        entry_price = float(normalized['actualEntryPrice'])
+                        logger.info(f"Using KuCoin actual entry price (validated by fill): {entry_price}")
+                    except (TypeError, ValueError):
+                        entry_price = None
                 elif 'filledSize' in normalized and 'filledValue' in normalized:
                     filled_size = float(normalized.get('filledSize', 0))
                     filled_value = float(normalized.get('filledValue', 0))
@@ -140,12 +155,16 @@ class TradeOperations:
                         entry_price = filled_value / filled_size
                         logger.info(f"Calculated KuCoin entry price from execution: {entry_price}")
 
-                # For Binance orders, use avgPrice if available, otherwise use price
-                if not entry_price:
-                    if 'avgPrice' in normalized and normalized['avgPrice']:
-                        entry_price = float(normalized['avgPrice'])
-                    elif 'price' in normalized and normalized['price']:
-                        entry_price = float(normalized['price'])
+                # For Binance orders, use avgPrice if available, otherwise use price,
+                # but only when we have a real fill signal
+                if not entry_price and has_real_fill:
+                    try:
+                        if 'avgPrice' in normalized and normalized['avgPrice']:
+                            entry_price = float(normalized['avgPrice'])
+                        elif 'price' in normalized and normalized['price']:
+                            entry_price = float(normalized['price'])
+                    except (TypeError, ValueError):
+                        entry_price = None
 
                 if entry_price and entry_price > 0:
                     updates['entry_price'] = entry_price

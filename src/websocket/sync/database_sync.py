@@ -233,6 +233,8 @@ class DatabaseSync:
             signal_type = str(trade.get('signal_type') or '').upper()
             reduce_only = bool(execution_data.get('R')) if 'R' in execution_data else False
             close_position_flag = bool(execution_data.get('cp')) if 'cp' in execution_data else False
+            order_type_raw = execution_data.get('o') or execution_data.get('type') or ''
+            order_type_upper = str(order_type_raw).upper()
 
             is_exit_order = False
             try:
@@ -246,6 +248,25 @@ class DatabaseSync:
                         is_exit_order = True
             except Exception:
                 is_exit_order = False
+
+            # Operational rule: MARKET entries that are NEW/OPEN with no fills remain PENDING and flagged for verification
+            try:
+                if (order_type_upper == 'MARKET'
+                    and str(status).upper() in ['NEW', 'OPEN']
+                    and executed_qty == 0
+                    and not is_exit_order):
+                    # Ensure position stays pending and annotate sync issues for visibility
+                    updates['status'] = 'PENDING'
+                    # Preserve mapped order_status (likely NEW)
+                    msg = 'Verification pending: MARKET order accepted but not filled yet (awaiting fills via WS/poll).'
+                    try:
+                        existing_issue = str(trade.get('sync_issues') or '')
+                        if msg not in existing_issue:
+                            updates['sync_issues'] = (existing_issue + ' | ' + msg).strip(' |')
+                    except Exception:
+                        updates['sync_issues'] = msg
+            except Exception:
+                pass
 
             # Update quantities and prices using canonical columns (guarded by verification flags)
             price_verified = bool(trade.get('price_verified')) if trade is not None else False
@@ -328,6 +349,18 @@ class DatabaseSync:
                     updates['exit_price'] = avg_price
                 if realized_pnl is not None:
                     updates['pnl_usd'] = realized_pnl
+
+            # Auto-fix inconsistent order/position status combinations before DB update
+            try:
+                os_val = str(updates.get('order_status', trade.get('order_status', 'NEW'))).upper().strip()
+                ps_val = str(updates.get('status', trade.get('status', 'PENDING'))).upper().strip()
+                if not StatusManager.validate_status_consistency(os_val, ps_val):
+                    fixed_os, fixed_ps = StatusManager.fix_inconsistent_status(os_val, ps_val)
+                    updates['order_status'] = fixed_os
+                    updates['status'] = fixed_ps
+                    logger.info(f"Auto-fixed inconsistent statuses for trade {trade_id}: {os_val}/{ps_val} -> {fixed_os}/{fixed_ps}")
+            except Exception:
+                pass
 
             # Update database
             response = self.db_manager.supabase.from_("trades").update(updates).eq("id", trade_id).execute()
