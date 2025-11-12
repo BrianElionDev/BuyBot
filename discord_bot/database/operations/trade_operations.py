@@ -177,8 +177,10 @@ class TradeOperations:
                     position_size = float(normalized['executedQty'])
                     logger.info(f"Using executedQty as position_size (asset quantity): {position_size}")
                 elif 'origQty' in normalized and normalized['origQty']:
-                    position_size = float(normalized['origQty'])
-                    logger.info(f"Using origQty as position_size (asset quantity): {position_size}")
+                    # Only trust origQty after we have evidence of a real fill
+                    if has_real_fill:
+                        position_size = float(normalized['origQty'])
+                        logger.info(f"Using origQty as position_size (validated by fill): {position_size}")
                 elif 'filledSize' in normalized and normalized['filledSize']:
                     filled_size_contracts = float(normalized['filledSize'])
 
@@ -641,8 +643,12 @@ class TradeOperations:
                             if not updates.get('entry_price') and entry_price > 0:
                                 updates['entry_price'] = entry_price
 
-                            # Store unrealized PnL (will be realized when position closes)
-                            if unrealized_pnl != 0:
+                            # Store unrealized PnL only for ACTIVE trades (not PENDING/NEW)
+                            try:
+                                current_status = str(trade.get('status') or '').upper()
+                            except Exception:
+                                current_status = ''
+                            if current_status == 'ACTIVE' and unrealized_pnl != 0:
                                 updates['pnl_usd'] = unrealized_pnl
                                 logger.info(f"Fetched Binance unrealized PnL {unrealized_pnl} for trade {trade.get('id')}")
                         else:
@@ -684,8 +690,12 @@ class TradeOperations:
                             if not updates.get('entry_price') and entry_price > 0:
                                 updates['entry_price'] = entry_price
 
-                            # Store unrealized PnL
-                            if unrealized_pnl != 0:
+                            # Store unrealized PnL only for ACTIVE trades (not PENDING/NEW)
+                            try:
+                                current_status = str(trade.get('status') or '').upper()
+                            except Exception:
+                                current_status = ''
+                            if current_status == 'ACTIVE' and unrealized_pnl != 0:
                                 updates['pnl_usd'] = unrealized_pnl
                                 logger.info(f"Fetched KuCoin unrealized PnL {unrealized_pnl} for trade {trade.get('id')}")
                         else:
