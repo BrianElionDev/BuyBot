@@ -273,7 +273,8 @@ async def cleanup_orphaned_orders_automatic(bot):
 
         for order in orphaned:
             try:
-                success = await cleanup.close_orphaned_order(order)
+                # success = await cleanup.close_orphaned_order(order)
+                success = False
                 if success:
                     closed_count += 1
                 else:
@@ -489,15 +490,16 @@ async def trade_retry_scheduler():
                         logger.error(f"[Scheduler] Error in take profit audit: {e}")
 
             # Orphaned orders cleanup (every 2 hours) - supervisor requirement
-            if current_time - last_orphaned_orders_cleanup >= ORPHANED_ORDERS_CLEANUP_INTERVAL:
-                logger.info("[Scheduler] Running orphaned orders cleanup...")
-                try:
-                    cleanup_results = await cleanup_orphaned_orders_automatic(bot)
-                    last_orphaned_orders_cleanup = current_time
-                    logger.info(f"[Scheduler] Orphaned orders cleanup completed: {cleanup_results}")
-                    tasks_run += 1
-                except Exception as e:
-                    logger.error(f"[Scheduler] Error in orphaned orders cleanup: {e}")
+            # Disabled: orphaned orders cleanup is not called from the scheduler
+            # if current_time - last_orphaned_orders_cleanup >= ORPHANED_ORDERS_CLEANUP_INTERVAL:
+            #     logger.info("[Scheduler] Running orphaned orders cleanup...")
+            #     try:
+            #         cleanup_results = await cleanup_orphaned_orders_automatic(bot)
+            #         last_orphaned_orders_cleanup = current_time
+            #         logger.info(f"[Scheduler] Orphaned orders cleanup completed: {cleanup_results}")
+            #         tasks_run += 1
+            #     except Exception as e:
+            #         logger.error(f"[Scheduler] Error in orphaned orders cleanup: {e}")
 
             # Balance sync (every 5 minutes) - fetch and store exchange balances
             if current_time - last_balance_sync >= BALANCE_SYNC_INTERVAL:
