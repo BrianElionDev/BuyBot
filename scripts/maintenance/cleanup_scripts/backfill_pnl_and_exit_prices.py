@@ -207,11 +207,11 @@ class BinancePnLBackfiller:
         except Exception:
             ps_val = 0.0
         try:
-            be_val = float(trade.get('binance_entry_price') or 0)
+            be_val = float(trade.get('entry_price') or 0)
         except Exception:
             be_val = 0.0
         try:
-            bx_val = float(trade.get('binance_exit_price') or 0)
+            bx_val = float(trade.get('exit_price') or 0)
         except Exception:
             bx_val = 0.0
         min_expected_pnl, max_expected_pnl = self.calculate_expected_pnl_range(
@@ -308,14 +308,17 @@ class BinancePnLBackfiller:
         if not within_range:
             flags.append("PNL_OUT_OF_RANGE")
 
+        # Prepare structured summary for audit table (NOT the trades table)
+        income_summary = {
+            'total_realized_pnl': total_realized_pnl,
+            'total_commission': total_commission,
+            'total_funding_fee': total_funding_fee,
+            'net_pnl': net_pnl,
+            'expected_pnl_range': (min_expected_pnl, max_expected_pnl)
+        }
+
+        # Keep trades table update_data minimal and schema-compliant
         update_data: Dict[str, Any] = {
-            'binance_income_summary': {
-                'total_realized_pnl': total_realized_pnl,
-                'total_commission': total_commission,
-                'total_funding_fee': total_funding_fee,
-                'net_pnl': net_pnl,
-                'expected_pnl_range': (min_expected_pnl, max_expected_pnl)
-            },
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
 
@@ -353,7 +356,9 @@ class BinancePnLBackfiller:
             'trade_id': trade_id,
             'status': status,
             'symbol': symbol,
-            'summary': update_data['binance_income_summary'],
+            'summary': income_summary,
+            'income_records': income_records,
+            'income_by_type': income_by_type,
             'flags': flags,
         }
 

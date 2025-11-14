@@ -67,7 +67,7 @@ async def enrich_trade_data_before_close(
             if exit_price and exit_price > 0:
                 enriched_data['exit_price'] = exit_price
                 if exchange_name == 'binance':
-                    enriched_data['binance_exit_price'] = exit_price
+                    enriched_data['exit_price'] = exit_price
                 elif exchange_name == 'kucoin':
                     enriched_data['exit_price'] = exit_price
 

@@ -98,7 +98,7 @@ class BinanceHistoryBackfiller:
             trades_needing_backfill = []
             for trade in trades:
                 pnl = trade.get('pnl_usd')
-                exit_price = trade.get('binance_exit_price')
+                exit_price = trade.get('exit_price')
                 order_id = trade.get('exchange_order_id')
 
                 # Include if missing PnL or exit price and has order ID
@@ -247,7 +247,7 @@ class BinanceHistoryBackfiller:
 
             # Only update if we have valid data
             if exit_price > 0:
-                update_data['binance_exit_price'] = str(exit_price)
+                update_data['exit_price'] = str(exit_price)
 
             if realized_pnl != 0:
                 update_data['pnl_usd'] = str(realized_pnl)

@@ -675,12 +675,15 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                     update_data['position_size'] = f"{position_size:.8f}"
                 if avg_price and avg_price > 0:
                     update_data['entry_price'] = f"{avg_price:.8f}"
+                    update_data.setdefault('price_source', 'kucoin_order_status')
 
                 # Update exchange-specific fields for KuCoin
                 if avg_price and avg_price > 0:
                     update_data['entry_price'] = f"{avg_price:.8f}"
+                    update_data.setdefault('price_source', 'kucoin_order_status')
                 if kucoin_status in ['FILLED', 'DONE']:
                     update_data['exit_price'] = f"{avg_price:.8f}"
+                    update_data['price_source'] = 'kucoin_order_status'
 
                 # For closed trades missing exit_price, try to get from trade history
                 if (db_trade.get('status') == 'CLOSED' and
@@ -697,6 +700,7 @@ async def sync_kucoin_orders_to_database_enhanced(bot: DiscordBot, supabase: Cli
                                 exit_price = float(last_trade.get('price', 0))
                                 if exit_price > 0:
                                     update_data['exit_price'] = f"{exit_price:.8f}"
+                                    update_data['price_source'] = 'kucoin_user_trades'
                                     update_data['exit_price'] = f"{exit_price:.8f}"
 
                                     # Do NOT compute KuCoin PnL here to avoid duplication/overlap; use dedicated reconciliation
@@ -841,7 +845,7 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
                     update_data = {
                         'position_size': asset_quantity,  # Store asset quantity, not contract count
                         'mark_price': float(position.get('markPrice', 0)),
-                        'unrealized_pnl': float(position.get('unrealizedPnl', 0)),
+                        # Do not write unrealized_pnl to trades (column not in schema, and we avoid PnL for unfilled)
                         'last_mark_sync': current_time,
                         'updated_at': current_time
                     }
@@ -965,9 +969,10 @@ async def sync_positions_to_database_enhanced(bot: DiscordBot, supabase: Client,
                     # Update position information
                     update_data = {
                         'position_size': abs(position_amt),
-                        'binance_exit_price': mark_price,
-                        'unrealized_pnl': unrealized_pnl,
-                        'last_pnl_sync': current_time,
+                        # Write unified mark snapshot fields
+                        'mark_price': mark_price,
+                        'last_mark_sync': current_time,
+                        # Do not write unrealized_pnl to trades (column not in schema, and we avoid PnL for unfilled)
                         'updated_at': current_time
                     }
 
@@ -1036,9 +1041,8 @@ async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, b
 
             # Set defaults only if data is truly missing (not 0 from enrichment)
             if not update_data.get('exit_price'):
-                if not trade.get('exit_price') and not trade.get('binance_exit_price'):
+                if not trade.get('exit_price'):
                     update_data['exit_price'] = '0'
-                    update_data['binance_exit_price'] = '0'
 
             if not update_data.get('pnl_usd'):
                 current_pnl = trade.get('pnl_usd')
@@ -1161,7 +1165,8 @@ async def sync_closed_trades_from_history_enhanced(bot: DiscordBot, supabase: Cl
                             if not position_open:
                                 # Position is closed, update status and exit price
                                 update_data['status'] = 'CLOSED'
-                                update_data['binance_exit_price'] = f"{float(matching_order.get('avgPrice', 0)):.8f}"
+                                update_data['exit_price'] = f"{float(matching_order.get('avgPrice', 0)):.8f}"
+                                update_data['price_source'] = 'binance_order_history'
                         except Exception:
                             # If we can't check position, keep the mapped status from StatusManager
                             pass
@@ -1475,7 +1480,7 @@ async def backfill_trades_from_binance_history(bot, supabase, days: int = 30, sy
         trades_needing_backfill = []
         for trade in trades:
             pnl = trade.get('pnl_usd')
-            exit_price = trade.get('binance_exit_price')
+            exit_price = trade.get('exit_price')
             coin_symbol = trade.get('coin_symbol')
 
             # Include if missing PnL or exit price, or if missing coin_symbol but has data to extract it
@@ -1684,14 +1689,15 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> Op
 
             try:
                 # Resolve entry price
-                entry_price = float(trade.get('entry_price') or trade.get('binance_entry_price') or 0.0)
+                entry_price = float(trade.get('entry_price') or 0.0)
                 # Resolve position size
                 size_raw = trade.get('position_size')
                 position_size = float(size_raw) if size_raw is not None else 0.0
                 # Resolve side
                 position_type = str(trade.get('signal_type') or '').upper()
 
-                exit_price_val = float(trade.get('exit_price') or trade.get('binance_exit_price') or 0.0)
+                exit_price_val = float(trade.get('exit_price') or 0.0)
+                price_source_str: Optional[str] = None
 
                 # If missing exit price, try to fetch last trade fill price during lifecycle
                 if exit_price_val <= 0 and hasattr(bot, 'binance_exchange') and bot.binance_exchange:
@@ -1703,6 +1709,7 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> Op
                             price_candidate = last_trade.get('price') or last_trade.get('p')
                             if price_candidate:
                                 exit_price_val = float(price_candidate)
+                                price_source_str = 'binance_user_trades_fallback'
                     except Exception as e:
                         logging.warning(f"Failed to fetch user trades for {symbol}: {e}")
 
@@ -1712,6 +1719,7 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> Op
                         mp = await bot.binance_exchange.get_futures_mark_price(f"{symbol}USDT")
                         if mp:
                             exit_price_val = float(mp)
+                            price_source_str = 'binance_mark_price_fallback'
                     except Exception as e:
                         logging.warning(f"Failed to fetch mark price for {symbol}: {e}")
 
@@ -1733,14 +1741,14 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> Op
                     # Persist exit price if we derived it
                     if not trade.get('exit_price') and exit_price_val > 0:
                         fallback_update['exit_price'] = str(exit_price_val)
-                    if not trade.get('binance_exit_price') and exit_price_val > 0:
-                        fallback_update['binance_exit_price'] = str(exit_price_val)
+                        if price_source_str:
+                            fallback_update['price_source'] = price_source_str
 
                 # Update if we prepared any fields
                 if len(fallback_update) > 1:
                     response = supabase.from_("trades").update(fallback_update).eq("id", trade_id).execute()
                     if response.data:
-                        logging.info(f"✅ Fallback backfill updated trade {trade_id}: exit={fallback_update.get('exit_price') or fallback_update.get('binance_exit_price')} pnl={fallback_update.get('pnl_usd')}")
+                        logging.info(f"✅ Fallback backfill updated trade {trade_id}: exit={fallback_update.get('exit_price')} pnl={fallback_update.get('pnl_usd')}")
                         return True
             except Exception as e:
                 logging.error(f"Fallback P&L computation failed for trade {trade_id}: {e}")
@@ -1809,7 +1817,8 @@ async def backfill_single_trade_with_lifecycle(bot, supabase, trade: Dict) -> Op
 
         # Update exit price if we have one from realized P&L records
         if exit_price > 0:
-            update_data['binance_exit_price'] = str(exit_price)
+            update_data['exit_price'] = str(exit_price)
+            update_data['price_source'] = 'binance_income_history'
             logging.info(f"✅ Updated trade {trade_id} - Exit Price: {exit_price:.6f}")
 
         # Also update coin_symbol if it was missing and we extracted it
@@ -2656,7 +2665,7 @@ async def _sync_entry_price(bot: DiscordBot, trade: Dict, exchange: str) -> Opti
             if order_status:
                 avg_price = order_status.get('avgPrice') or order_status.get('avg_price')
                 if avg_price and float(avg_price) > 0:
-                    return {'entry_price': str(float(avg_price))}
+                    return {'entry_price': str(float(avg_price)), 'price_source': 'binance_order_status'}
 
         elif exchange == 'kucoin' and bot.kucoin_exchange:
             from src.exchange.kucoin.kucoin_symbol_converter import KucoinSymbolConverter
@@ -2669,10 +2678,10 @@ async def _sync_entry_price(bot: DiscordBot, trade: Dict, exchange: str) -> Opti
                 actual_entry_price = order_status.get('actualEntryPrice')
 
                 if actual_entry_price and float(actual_entry_price) > 0:
-                    return {'entry_price': str(float(actual_entry_price))}
+                    return {'entry_price': str(float(actual_entry_price)), 'price_source': 'kucoin_order_status'}
                 elif filled_size > 0 and filled_value > 0:
                     entry_price = filled_value / filled_size
-                    return {'entry_price': str(entry_price)}
+                    return {'entry_price': str(entry_price), 'price_source': 'kucoin_order_status'}
 
         # Try to extract from stored responses
         for resp_field in ['exchange_response', 'sync_order_response']:
@@ -2683,13 +2692,13 @@ async def _sync_entry_price(bot: DiscordBot, trade: Dict, exchange: str) -> Opti
                     if exchange == 'binance':
                         avg_price = parsed.get('avgPrice') or parsed.get('avg_price')
                         if avg_price and float(avg_price) > 0:
-                            return {'entry_price': str(float(avg_price))}
+                            return {'entry_price': str(float(avg_price)), 'price_source': f'{exchange}_{resp_field}'}
                     elif exchange == 'kucoin':
                         filled_size = float(parsed.get('filledSize', 0))
                         filled_value = float(parsed.get('filledValue', 0))
                         if filled_size > 0 and filled_value > 0:
                             entry_price = filled_value / filled_size
-                            return {'entry_price': str(entry_price)}
+                            return {'entry_price': str(entry_price), 'price_source': f'{exchange}_{resp_field}'}
 
         return None
     except Exception as e:
@@ -2794,7 +2803,7 @@ async def _sync_exit_price(bot: DiscordBot, trade: Dict, exchange: str) -> Optio
                     if avg_price and float(avg_price) > 0:
                         return {
                             'exit_price': str(float(avg_price)),
-                            'binance_exit_price': str(float(avg_price))
+                            'price_source': 'binance_close_order_status'
                         }
 
             # Try from user trades (last trade for this symbol)
@@ -2819,7 +2828,7 @@ async def _sync_exit_price(bot: DiscordBot, trade: Dict, exchange: str) -> Optio
                                 if price and float(price) > 0:
                                     return {
                                         'exit_price': str(float(price)),
-                                        'binance_exit_price': str(float(price))
+                                        'price_source': 'binance_user_trades'
                                     }
                         # Fallback to last trade
                         last_trade = user_trades[-1]
@@ -2827,7 +2836,7 @@ async def _sync_exit_price(bot: DiscordBot, trade: Dict, exchange: str) -> Optio
                         if price and float(price) > 0:
                             return {
                                 'exit_price': str(float(price)),
-                                'binance_exit_price': str(float(price))
+                                'price_source': 'binance_user_trades'
                             }
             except Exception as e:
                 logging.warning(f"Could not get exit price from user trades: {e}")

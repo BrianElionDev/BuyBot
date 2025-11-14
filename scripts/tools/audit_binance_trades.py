@@ -98,7 +98,7 @@ async def audit_trade(binance: BinanceExchange, trade: Dict[str, Any]) -> Dict[s
         'db_status': trade.get('status'),
         'db_order_status': trade.get('order_status'),
         'db_entry_price': trade.get('binance_entry_price'),
-        'db_exit_price': trade.get('binance_exit_price'),
+        'db_exit_price': trade.get('exit_price'),
         'db_pnl_usd': trade.get('pnl_usd'),
         'exchange_status': status_str,
         'exchange_executedQty': executed,
@@ -127,11 +127,11 @@ async def main():
 
     # Trades to audit (from the user's payload)
     trades = [
-        { 'id': 32528, 'coin_symbol': 'TRUMP', 'exchange_order_id': '10643191102', 'created_at': '2025-10-30 00:41:55.306807+00', 'closed_at': '2025-10-30 09:37:14.204297+00', 'status': 'CLOSED', 'order_status': 'FILLED', 'binance_entry_price': 8.533, 'binance_exit_price': 7.8, 'pnl_usd': -10.73112 },
-        { 'id': 32515, 'coin_symbol': 'HYPE', 'exchange_order_id': '3141613007', 'created_at': '2025-10-29 15:01:34.119887+00', 'closed_at': '2025-10-30 09:37:14.065073+00', 'status': 'CLOSED', 'order_status': 'NEW', 'binance_entry_price': 0, 'binance_exit_price': 0, 'pnl_usd': 0 },
-        { 'id': 32514, 'coin_symbol': 'BTC', 'exchange_order_id': '804615126664', 'created_at': '2025-10-29 14:59:59.995613+00', 'closed_at': '2025-10-30 09:37:13.897853+00', 'status': 'CLOSED', 'order_status': 'NEW', 'binance_entry_price': 0, 'binance_exit_price': 0, 'pnl_usd': 0 },
-        { 'id': 32513, 'coin_symbol': 'ETH', 'exchange_order_id': '8389765999537327560', 'created_at': '2025-10-29 14:58:56.547982+00', 'closed_at': '2025-10-30 09:37:13.642036+00', 'status': 'CLOSED', 'order_status': 'NEW', 'binance_entry_price': 0, 'binance_exit_price': 3896.73618605, 'pnl_usd': -0.44217823245 },
-        { 'id': 32509, 'coin_symbol': 'TAO', 'exchange_order_id': '7809728793', 'created_at': '2025-10-29 13:26:51.978166+00', 'closed_at': '2025-10-30 09:37:13.424546+00', 'status': 'CLOSED', 'order_status': 'NEW', 'binance_entry_price': 0, 'binance_exit_price': 0, 'pnl_usd': 0 },
+        { 'id': 32528, 'coin_symbol': 'TRUMP', 'exchange_order_id': '10643191102', 'created_at': '2025-10-30 00:41:55.306807+00', 'closed_at': '2025-10-30 09:37:14.204297+00', 'status': 'CLOSED', 'order_status': 'FILLED', 'binance_entry_price': 8.533, 'exit_price': 7.8, 'pnl_usd': -10.73112 },
+        { 'id': 32515, 'coin_symbol': 'HYPE', 'exchange_order_id': '3141613007', 'created_at': '2025-10-29 15:01:34.119887+00', 'closed_at': '2025-10-30 09:37:14.065073+00', 'status': 'CLOSED', 'order_status': 'NEW', 'binance_entry_price': 0, 'exit_price': 0, 'pnl_usd': 0 },
+        { 'id': 32514, 'coin_symbol': 'BTC', 'exchange_order_id': '804615126664', 'created_at': '2025-10-29 14:59:59.995613+00', 'closed_at': '2025-10-30 09:37:13.897853+00', 'status': 'CLOSED', 'order_status': 'NEW', 'binance_entry_price': 0, 'exit_price': 0, 'pnl_usd': 0 },
+        { 'id': 32513, 'coin_symbol': 'ETH', 'exchange_order_id': '8389765999537327560', 'created_at': '2025-10-29 14:58:56.547982+00', 'closed_at': '2025-10-30 09:37:13.642036+00', 'status': 'CLOSED', 'order_status': 'NEW', 'binance_entry_price': 0, 'exit_price': 3896.73618605, 'pnl_usd': -0.44217823245 },
+        { 'id': 32509, 'coin_symbol': 'TAO', 'exchange_order_id': '7809728793', 'created_at': '2025-10-29 13:26:51.978166+00', 'closed_at': '2025-10-30 09:37:13.424546+00', 'status': 'CLOSED', 'order_status': 'NEW', 'binance_entry_price': 0, 'exit_price': 0, 'pnl_usd': 0 },
     ]
 
     results: List[Dict[str, Any]] = []

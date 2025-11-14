@@ -189,7 +189,7 @@ The WebSocket manager automatically updates your database with:
 {
     'status': 'CLOSED',
     'exit_price': 45000.0,
-    'binance_exit_price': 45000.0,
+    'exit_price': 45000.0,
     'pnl_usd': 150.25,
     'exchange_order_id': '123456789',  # Binance order ID
     'updated_at': '2025-01-28T10:30:00Z'
@@ -199,7 +199,7 @@ The WebSocket manager automatically updates your database with:
 {
     'status': 'PARTIALLY_CLOSED',
     'exit_price': 44500.0,
-    'binance_exit_price': 44500.0,
+    'exit_price': 44500.0,
     'position_size': 0.5,  # Updated position size
     'updated_at': '2025-01-28T10:30:00Z'
 }

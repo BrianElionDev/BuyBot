@@ -184,7 +184,7 @@ class BinanceEmergencyClose:
                 update_data = {
                     'status': 'CLOSED',
                     'exit_price': avg_price,
-                    'binance_exit_price': avg_price,
+                    'exit_price': avg_price,
                     'pnl_usd': pnl,
                     'realized_pnl': pnl,
                     'updated_at': datetime.now(timezone.utc).isoformat()

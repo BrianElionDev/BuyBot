@@ -397,7 +397,7 @@ class HistoricalTradeBackfillManager:
         """Compare existing prices with newly calculated prices."""
         try:
             existing_entry = trade.get('entry_price') or trade.get('binance_entry_price')
-            existing_exit = trade.get('exit_price') or trade.get('binance_exit_price')
+            existing_exit = trade.get('exit_price') or trade.get('exit_price')
 
             comparison = {
                 'entry_changed': False,
@@ -482,7 +482,7 @@ class HistoricalTradeBackfillManager:
 
                 # Check if prices are missing or if we should update existing ones
                 entry_price = trade.get('entry_price') or trade.get('binance_entry_price')
-                exit_price = trade.get('exit_price') or trade.get('binance_exit_price')
+                exit_price = trade.get('exit_price') or trade.get('exit_price')
 
                 missing_prices = not entry_price or float(entry_price or 0) == 0 or not exit_price or float(exit_price or 0) == 0
 

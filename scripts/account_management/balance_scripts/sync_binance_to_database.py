@@ -318,7 +318,7 @@ class BinanceDatabaseSync:
                         try:
                             current_price = await self.binance_exchange.get_order_status(symbol, order_id)
                             if current_price and current_price.get('avgPrice'):
-                                update_data['binance_exit_price'] = float(current_price['avgPrice'])
+                                update_data[''] = float(current_price['avgPrice'])
                         except Exception as e:
                             logger.warning(f"Could not get exit price for {symbol}: {e}")
 
@@ -642,7 +642,8 @@ class BinanceDatabaseSync:
                                 realized_pnl = float(user_trade_info.get('realizedPnl', 0))
 
                                 if price > 0:
-                                    update_data['binance_exit_price'] = price
+                                    update_data['exit_price'] = price
+                                    update_data['price_source'] = 'binance_user_trades'
 
                                 # Use Binance realized PnL if available, otherwise calculate
                                 if realized_pnl != 0:

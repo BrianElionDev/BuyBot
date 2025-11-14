@@ -180,7 +180,7 @@ class ReconciliationService:
                     update_data['exit_price'] = enriched_data['exit_price']
                     exchange_name = str(trade.get('exchange', '')).lower()
                     if exchange_name == 'binance':
-                        update_data['binance_exit_price'] = enriched_data['exit_price']
+                        update_data['exit_price'] = enriched_data['exit_price']
                     elif exchange_name == 'kucoin':
                         update_data['exit_price'] = enriched_data['exit_price']
 
@@ -247,7 +247,7 @@ class ReconciliationService:
 
                             exchange_name = str(trade.get('exchange', '')).lower()
                             if exchange_name == 'binance':
-                                update_data['binance_exit_price'] = str(exit_price_calculated)
+                                update_data['exit_price'] = str(exit_price_calculated)
                             elif exchange_name == 'kucoin':
                                 update_data['exit_price'] = str(exit_price_calculated)
 

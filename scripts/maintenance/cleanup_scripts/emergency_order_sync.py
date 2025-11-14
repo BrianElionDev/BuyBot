@@ -164,7 +164,7 @@ async def emergency_order_sync():
 
                     update_data.update({
                         'position_size': abs(position_amt),
-                        'binance_exit_price': mark_price,
+                        'exit_price': mark_price,
                         'unrealized_pnl': unrealized_pnl,
                         'last_pnl_sync': datetime.now(timezone.utc).isoformat()
                     })

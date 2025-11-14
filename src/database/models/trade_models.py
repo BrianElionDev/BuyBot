@@ -49,7 +49,7 @@ class Trade:
     exit_price: Optional[float] = None
     pnl_usd: Optional[float] = None
     net_pnl: Optional[float] = None
-    binance_exit_price: Optional[float] = None
+    exit_price: Optional[float] = None
     unrealized_pnl: Optional[float] = None
     parsed_signal: Optional[str] = None
     binance_response: Optional[str] = None
@@ -105,7 +105,7 @@ class TradeUpdate:
     exit_price: Optional[float] = None
     pnl_usd: Optional[float] = None
     net_pnl: Optional[float] = None
-    binance_exit_price: Optional[float] = None
+    exit_price: Optional[float] = None
     unrealized_pnl: Optional[float] = None
     binance_response: Optional[str] = None
     sync_order_response: Optional[str] = None

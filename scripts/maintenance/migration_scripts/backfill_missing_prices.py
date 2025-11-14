@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to backfill missing binance_entry_price and binance_exit_price for trades
+Script to backfill missing binance_entry_price and exit_price for trades
 that were executed but not properly updated by the WebSocket due to the truncation issue.
 """
 

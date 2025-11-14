@@ -6,14 +6,14 @@ The Binance History Backfiller is designed to backfill the `trades` table in the
 ## Purpose
 The primary objective is **not** to produce CSV and JSON files for analysis, but rather to:
 - Backfill the `trades` table with `pnl_usd` (profit and loss in USD)
-- Backfill the `trades` table with `binance_exit_price` (price the trade exited at)
+- Backfill the `trades` table with `exit_price` (price the trade exited at)
 - Update the `updated_at` field with the current timestamp
 - Use `exchange_order_id` to link Binance data with database records
 
 ## Key Features
 
 ### Database Backfilling
-- **Target Fields**: `pnl_usd`, `binance_exit_price`, `updated_at`
+- **Target Fields**: `pnl_usd`, `exit_price`, `updated_at`
 - **Linking Method**: Uses `exchange_order_id` to match Binance orders with database records
 - **Scope**: Focuses on closed trades missing PnL or exit price data
 - **Time Range**: Configurable (default: last 30 days)
@@ -68,7 +68,7 @@ python scripts/cleanup_scripts/sync_trade_statuses.py
 ```sql
 -- Key fields that get backfilled
 pnl_usd DECIMAL(20,8)           -- Profit/Loss in USD
-binance_exit_price DECIMAL(20,8) -- Exit price from Binance
+exit_price DECIMAL(20,8) -- Exit price from Binance
 updated_at TIMESTAMP            -- Last update timestamp
 exchange_order_id VARCHAR(255)  -- Links to Binance orderId
 ```

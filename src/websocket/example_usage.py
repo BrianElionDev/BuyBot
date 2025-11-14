@@ -98,7 +98,7 @@ class WebSocketIntegrationExample:
                             updates.update({
                                 'status': 'CLOSED',
                                 'exit_price': avg_price,
-                                'binance_exit_price': avg_price,
+                                'exit_price': avg_price,
                                 'pnl_usd': realized_pnl,
                                 'position_size': executed_qty
                             })
@@ -127,7 +127,7 @@ class WebSocketIntegrationExample:
                         updates.update({
                             'status': 'PARTIALLY_CLOSED',
                             'exit_price': avg_price,
-                            'binance_exit_price': avg_price,
+                            'exit_price': avg_price,
                             'position_size': executed_qty
                         })
                         logger.info(f"Trade {trade['id']} PARTIAL EXIT ORDER FILLED at {avg_price}")

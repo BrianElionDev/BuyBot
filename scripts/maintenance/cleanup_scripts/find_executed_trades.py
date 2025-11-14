@@ -35,14 +35,14 @@ async def find_executed_trades():
         # Set start date to last 7 days
         from datetime import datetime, timezone, timedelta
         start_date = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-        
+
         logging.info(f"Filtering trades from: {start_date}")
 
         # We query for trades where either the order ID is present OR the binance_response is not empty/null.
         # This covers all bases for what we would consider an "executed" trade.
         response = (
             supabase.from_("trades")
-            .select("id, discord_id, exchange_order_id, stop_loss_order_id, position_size, binance_response, status, created_at, binance_entry_price, binance_exit_price")
+            .select("id, discord_id, exchange_order_id, stop_loss_order_id, position_size, binance_response, status, created_at, binance_entry_price, exit_price")
             .not_.is_("exchange_order_id", "null")
             .gte("created_at", start_date)
             .execute()
@@ -54,7 +54,7 @@ async def find_executed_trades():
         # Also check for trades that might have a response but no ID (less likely but possible)
         response_alt = (
             supabase.from_("trades")
-            .select("id, discord_id, exchange_order_id, stop_loss_order_id, position_size, binance_response, status, created_at, binance_entry_price, binance_exit_price")
+            .select("id, discord_id, exchange_order_id, stop_loss_order_id, position_size, binance_response, status, created_at, binance_entry_price, exit_price")
             .not_.is_("binance_response", "null")
             .neq("binance_response", "") # Check for not empty string
             .is_("exchange_order_id", "null") # Avoid duplicates from the first query
@@ -82,14 +82,14 @@ async def find_executed_trades():
             logging.info(f"  Stop Loss Order ID: {trade.get('stop_loss_order_id')}")
             logging.info(f"  Position Size: {trade.get('position_size')}")
             logging.info(f"  Binance Entry Price: {trade.get('binance_entry_price')}")
-            logging.info(f"  Binance Exit Price: {trade.get('binance_exit_price')}")
+            logging.info(f"  Binance Exit Price: {trade.get('exit_price')}")
             logging.info(f"  Binance Response: {trade.get('binance_response')}")
-            
+
             # Check for price filling issues
             if not trade.get('binance_entry_price') or float(trade.get('binance_entry_price', 0)) == 0:
                 logging.warning(f"  ⚠️  MISSING binance_entry_price")
-            if not trade.get('binance_exit_price') or float(trade.get('binance_exit_price', 0)) == 0:
-                logging.warning(f"  ⚠️  MISSING binance_exit_price")
+            if not trade.get('exit_price') or float(trade.get('exit_price', 0)) == 0:
+                logging.warning(f"  ⚠️  MISSING exit_price")
 
         logging.info("\nCONCLUSION: The trades listed above appear to have been executed. If their follow-up alerts failed, we need to investigate them specifically.")
 
