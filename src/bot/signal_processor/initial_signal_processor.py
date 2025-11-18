@@ -191,7 +191,9 @@ class InitialSignalProcessor:
         lot_size_filter = filters.get('LOT_SIZE', {})
         min_qty = float(lot_size_filter.get('minQty', 0))
         max_qty = float(lot_size_filter.get('maxQty', float('inf')))
-        min_notional = float(filters.get('MIN_NOTIONAL', {}).get('notional', 0)) if 'MIN_NOTIONAL' in filters else 0
+        min_notional_filter = filters.get('MIN_NOTIONAL', {}) if 'MIN_NOTIONAL' in filters else {}
+        min_notional_val = min_notional_filter.get('minNotional', min_notional_filter.get('notional', 0))
+        min_notional = float(min_notional_val or 0)
 
         logger.info(f"Processing trade for {trading_pair} ({'Futures' if is_futures else 'Spot'})")
         logger.info(f"Position Type: {position_type}")

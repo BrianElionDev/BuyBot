@@ -117,6 +117,15 @@ class ReconciliationService:
 
             # If position is CLOSED but order_status is inconsistent, query exchange
             if current_position_status == 'CLOSED' and current_order_status in ['PENDING', 'NEW']:
+                # Ensure trade_id is a valid int
+                if not isinstance(trade_id, int):
+                    try:
+                        trade_id = int(trade_id) if trade_id is not None else None
+                    except Exception:
+                        trade_id = None
+                if trade_id is None:
+                    logger.error("Cannot update status safely: invalid trade_id")
+                    return False
                 success, status_update = await update_trade_status_safely(
                     supabase=self.supabase,
                     trade_id=trade_id,
@@ -129,6 +138,8 @@ class ReconciliationService:
                     self.supabase.table("trades").update(status_update).eq("id", trade_id).execute()
                     logger.info(f"Fixed status inconsistency for trade {trade_id}: {status_update}")
                     return True
+                # Unable to update safely
+                return False
             else:
                 # Use fixed statuses from StatusManager
                 update_data = {
@@ -199,6 +210,8 @@ class ReconciliationService:
                     self.supabase.table("trades").update(update_data).eq("id", trade_id).execute()
                     logger.info(f"Backfilled missing data for trade {trade_id}: {list(update_data.keys())}")
                     return True
+            # Nothing to backfill or enrich
+            return False
 
         except Exception as e:
             logger.error(f"Error backfilling data for trade {trade.get('id')}: {e}")
@@ -308,4 +321,41 @@ class ReconciliationService:
         except Exception as e:
             logger.warning(f"Error calculating exit price from PNL: {e}")
             return None
+
+    async def reconcile_open_with_exit_or_pnl(self, days_back: int = 30) -> Dict[str, Any]:
+        """
+        Flip trades to CLOSED when exit_price or pnl_usd is present but status is not CLOSED/CANCELLED/FAILED.
+        """
+        logger.info(f"Reconciling OPEN trades that already have exit/PNL (last {days_back} days)")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days_back)).isoformat()
+        try:
+            response = self.supabase.from_("trades").select("*").neq("status", "CLOSED").gte("created_at", cutoff).execute()
+            trades = response.data or []
+            fixed = 0
+            errors = 0
+            for trade in trades:
+                try:
+                    exit_price = trade.get('exit_price')
+                    pnl_usd = trade.get('pnl_usd') or trade.get('net_pnl')
+                    has_exit = (exit_price is not None) and (float(exit_price) != 0.0)
+                    has_pnl = (pnl_usd is not None) and (float(pnl_usd) != 0.0)
+                    if has_exit or has_pnl:
+                        update_data = {
+                            'status': 'CLOSED',
+                            'closed_at': trade.get('closed_at') or datetime.now(timezone.utc).isoformat(),
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        }
+                        # If order_status is terminal cancel, preserve; otherwise set to FILLED
+                        os_val = str(trade.get('order_status') or '').upper()
+                        if os_val not in ['CANCELLED', 'CANCELED', 'EXPIRED', 'FAILED', 'REJECTED']:
+                            update_data['order_status'] = 'FILLED'
+                        self.supabase.table("trades").update(update_data).eq("id", trade.get('id')).execute()
+                        fixed += 1
+                except Exception as e:
+                    logger.warning(f"Error reconciling trade {trade.get('id')}: {e}")
+                    errors += 1
+            return {'checked': len(trades), 'fixed': fixed, 'errors': errors}
+        except Exception as e:
+            logger.error(f"Error in reconcile_open_with_exit_or_pnl: {e}")
+            return {'error': str(e)}
 

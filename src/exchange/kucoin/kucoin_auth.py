@@ -35,6 +35,27 @@ class KucoinAuth:
         self.api_key = api_key
         self.api_secret = api_secret
         self.api_passphrase = api_passphrase
+        # Server time offset in seconds (server_ms - local_ms) / 1000
+        self._time_offset: float = 0.0
+
+    def set_time_offset(self, offset_seconds: float) -> None:
+        """
+        Set server time offset in seconds.
+        Positive value means server time is ahead of local time.
+        """
+        try:
+            self._time_offset = float(offset_seconds)
+        except Exception:
+            self._time_offset = 0.0
+
+    def _now_ms(self) -> str:
+        """
+        Current timestamp in milliseconds adjusted by server time offset.
+        """
+        try:
+            return str(int((time.time() + self._time_offset) * 1000))
+        except Exception:
+            return str(int(time.time() * 1000))
 
     def generate_signature(self, timestamp: str, method: str, endpoint: str, body: str = "") -> str:
         """
@@ -100,7 +121,7 @@ class KucoinAuth:
             Dictionary of authentication headers
         """
         try:
-            timestamp = str(int(time.time() * 1000))
+            timestamp = self._now_ms()
             signature = self.generate_signature(timestamp, method, endpoint, body)
             passphrase_signature = self.generate_passphrase_signature()
 
@@ -138,7 +159,7 @@ class KucoinAuth:
             if params:
                 query = "?" + urlencode(params)
 
-            timestamp = str(int(time.time() * 1000))
+            timestamp = self._now_ms()
             str_to_sign = timestamp + method + endpoint + query + body
             signature = self.generate_signature(timestamp, method, endpoint, query + body)
             passphrase_signature = self.generate_passphrase_signature()

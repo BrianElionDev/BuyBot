@@ -187,11 +187,25 @@ Return ONLY the JSON object, no additional text."""
             result['close_percentage'] = 50.0
         elif result['action_type'] == 'take_profit_2' and result.get('close_percentage') is None:
             result['close_percentage'] = 25.0
+        elif result['action_type'] in ['stop_loss_hit', 'position_closed'] and result.get('close_percentage') is None:
+            # Default full close for stop-loss or manual close
+            result['close_percentage'] = 100.0
 
         # Enhance with additional data
         result['original_content'] = original_content
         result['parsed_at'] = datetime.now(timezone.utc).isoformat()
         result['parsing_method'] = 'ai'
+
+        # Heuristic reclassification for vague alerts (regex-independent safety net)
+        try:
+            text = (original_content or "").lower()
+            if result['action_type'] == 'unknown':
+                if 'stop' in text and ('be' in text or 'break even' in text or 'breakeven' in text):
+                    result['action_type'] = 'break_even'
+                elif ('updated stop' in text) or ('stoploss' in text) or ('stops moved' in text):
+                    result['action_type'] = 'stop_loss_update'
+        except Exception:
+            pass
 
         return result
 

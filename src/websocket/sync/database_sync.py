@@ -319,6 +319,15 @@ class DatabaseSync:
                             updates['entry_price'] = avg_price
                             updates['price_source'] = 'ws_execution'
 
+            # Guardrail: if we have a PnL update (realized) for this event, ensure status is CLOSED
+            try:
+                if updates.get('pnl_usd') is not None:
+                    if str(updates.get('status', '')).upper() not in ['CLOSED', 'CANCELLED', 'FAILED']:
+                        updates['status'] = 'CLOSED'
+                        updates.setdefault('closed_at', datetime.now(timezone.utc).isoformat())
+            except Exception:
+                pass
+
             # Check if this is a stop loss order cancellation
             is_stop_loss_order = False
             expire_reason = execution_data.get('V', '')

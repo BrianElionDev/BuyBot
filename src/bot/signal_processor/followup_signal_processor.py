@@ -470,8 +470,9 @@ class FollowupSignalProcessor:
                 return False, {"error": f"No valid position size found for {coin_symbol}"}
 
             # Calculate amount to close
-            close_pct = details.get('close_percentage', 100.0)
-            if not isinstance(close_pct, (float, int)) or close_pct <= 0 or close_pct > 100:
+            raw_close = details.get('close_percentage')
+            close_pct = float(raw_close) if isinstance(raw_close, (int, float)) and raw_close > 0 else 100.0
+            if close_pct <= 0 or close_pct > 100:
                 logger.error(f"Invalid close_percentage: {close_pct}. Must be between 0 and 100")
                 return False, {"error": f"Invalid close_percentage: {close_pct}. Must be between 0 and 100"}
 
@@ -652,7 +653,8 @@ class FollowupSignalProcessor:
             # Validate close_percentage if provided
             if 'close_percentage' in details:
                 close_pct = details.get('close_percentage')
-                if not isinstance(close_pct, (float, int)) or close_pct <= 0 or close_pct > 100:
+                # Treat None as acceptable (will default downstream)
+                if close_pct is not None and (not isinstance(close_pct, (float, int)) or close_pct <= 0 or close_pct > 100):
                     return False, f"Invalid close_percentage: {close_pct}. Must be between 0 and 100"
 
             return True, None

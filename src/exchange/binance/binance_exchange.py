@@ -181,10 +181,12 @@ class BinanceExchange(ExchangeBase):
             if filters:
                 lot_size_filter = filters.get('LOT_SIZE', {})
                 price_filter = filters.get('PRICE_FILTER', {})
+                min_notional_filter = filters.get('MIN_NOTIONAL', {})
                 step_size = lot_size_filter.get('stepSize')
                 tick_size = price_filter.get('tickSize')
                 min_qty = float(lot_size_filter.get('minQty', 0))
                 max_qty = float(lot_size_filter.get('maxQty', float('inf')))
+                min_notional = float(min_notional_filter.get('notional', 0) or min_notional_filter.get('minNotional', 0))
 
                 # Validate quantity bounds
                 if amount < min_qty:
@@ -200,6 +202,18 @@ class BinanceExchange(ExchangeBase):
                 if stop_price and tick_size:
                     stop_price = float(format_value(stop_price, tick_size))
 
+                # Validate minimum notional using a reference price
+                try:
+                    ref_price = None
+                    if order_type.upper() == 'MARKET':
+                        ref_price = await self.get_futures_mark_price(pair)
+                    if not ref_price:
+                        ref_price = price or 0.0
+                    if min_notional and ref_price and float(amount) * float(ref_price) < min_notional:
+                        return {'error': f"Order's notional must be no smaller than {min_notional}", 'code': -4164}
+                except Exception:
+                    # Best-effort; if price lookup fails, proceed
+                    pass
             # Prepare order parameters
             order_params = {
                 'symbol': pair,

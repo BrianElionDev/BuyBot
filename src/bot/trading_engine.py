@@ -295,10 +295,16 @@ class TradingEngine:
                 action = action or 'unknown'
             details = {
                 'stop_price': parsed_alert.get('stop_loss_price'),
-                'close_percentage': parsed_alert.get('close_percentage'),
                 'reason': parsed_alert.get('reason'),
                 'exchange_action': parsed_alert.get('exchange_action')
             }
+            # Only include close_percentage if it is explicitly provided as a positive number
+            try:
+                cp = parsed_alert.get('close_percentage')
+                if isinstance(cp, (int, float)) and cp > 0:
+                    details['close_percentage'] = float(cp)
+            except Exception:
+                pass
 
             # Trade id is required for processor
             trade_id = trade_row.get('id')

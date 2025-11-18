@@ -376,7 +376,11 @@ class KucoinTradingEngine:
 
                             # Check if risk-capped amount meets minimum
                             if risk_capped_amount < min_qty:
-                                error_msg = f"Position size ${base_usdt:.2f} too small for risk management. Risk cap ({pct_risk*100:.2f}% > {max_pct*100:.2f}%) would reduce quantity to {risk_capped_amount:.8f} below minimum {min_qty} for {kucoin_symbol}. Increase position size or use tighter stop loss."
+                                required_usdt = min_qty * current_price
+                                error_msg = (
+                                    f"Risk {pct_risk*100:.2f}% > {max_pct*100:.2f}%. "
+                                    f"Increase position size to ≥ ${required_usdt:.2f} or move SL closer."
+                                )
                                 logger.error(error_msg)
                                 return False, error_msg
 
@@ -671,10 +675,22 @@ class KucoinTradingEngine:
                 action = action or 'unknown'
             details = {
                 'stop_price': parsed_alert.get('stop_loss_price'),
-                'close_percentage': parsed_alert.get('close_percentage'),
                 'reason': parsed_alert.get('reason'),
                 'exchange_action': parsed_alert.get('exchange_action')
             }
+            try:
+                cp = parsed_alert.get('close_percentage')
+                if isinstance(cp, (int, float)) and cp > 0:
+                    details['close_percentage'] = float(cp)
+            except Exception:
+                pass
+
+            # Ensure coin_symbol present in trade_row for downstream operations
+            try:
+                if not trade_row.get('coin_symbol') and parsed_alert.get('coin_symbol'):
+                    trade_row['coin_symbol'] = parsed_alert.get('coin_symbol')
+            except Exception:
+                pass
 
             if not action or action == 'unknown':
                 return {"success": False, "message": f"Unrecognized follow-up action: {action}"}
