@@ -267,13 +267,46 @@ def format_entry_signal_payload(payload: dict) -> str:
 def format_update_signal_payload(payload: dict) -> str:
     """Format update signal payload"""
     trader = payload.get("trader") or "-"
-    trade = payload.get("trade") or "-"
+    trade = payload.get("trade") or payload.get("discord_id") or "-"
     timestamp = payload.get("timestamp") or "-"
     content = payload.get("content") or "-"
+
+    status_raw = (payload.get("status") or "").strip().lower()
+    status_emoji = "✅" if status_raw == "success" else ("❌" if status_raw == "failed" else "🔔")
+    status_line = f"\n<b>Status:</b> <code>{status_raw.upper()}</code>" if status_raw in ("success", "failed") else ""
+
+    exchange = payload.get("exchange")
+    exchange_line = f"\n<b>Exchange:</b> <code>{exchange}</code>" if exchange else ""
+
+    action_type = payload.get("action_type")
+    action_line = f"\n<b>Action:</b> <code>{action_type}</code>" if action_type else ""
+
+    message = payload.get("message")
+    message_line = f"\n<b>Message:</b> {message}" if message else ""
+
+    error = payload.get("error")
+    error_line = f"\n<b>Error:</b> {error}" if error else ""
+
+    exch_resp = payload.get("exchange_response") or payload.get("binance_response") or payload.get("kucoin_response")
+    if isinstance(exch_resp, (dict, list)):
+        exch_resp_str = str(exch_resp)
+    else:
+        exch_resp_str = exch_resp or ""
+    # keep messages reasonably short for Telegram; HTML parse_mode is used by caller
+    if exch_resp_str and len(exch_resp_str) > 2000:
+        exch_resp_str = exch_resp_str[:2000] + "...(truncated)"
+    exch_resp_line = f"\n<b>Exchange Response:</b>\n<code>{exch_resp_str}</code>" if exch_resp_str else ""
+
     return (
-    "🔔 <b>Trade Update</b>\n"
+        f"{status_emoji} <b>Trade Update</b>\n"
         f"Trader: {trader}\n"
         f"Trade: {trade}\n"
         f"Timestamp: {timestamp}\n"
         f"Content:\n{content}"
-        )
+        f"{status_line}"
+        f"{exchange_line}"
+        f"{action_line}"
+        f"{message_line}"
+        f"{error_line}"
+        f"{exch_resp_line}"
+    ).strip()

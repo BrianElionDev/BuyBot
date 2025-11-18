@@ -777,7 +777,12 @@ class DiscordBot:
                         'content': signal.content,
                         'status': 'success',
                         'exchange': exchange_type.value,
-                        'message': result.get('message', 'Follow-up processed successfully')
+                        'message': result.get('message', 'Follow-up processed successfully'),
+                        'exchange_response': (
+                            result.get('exchange_response')
+                            or result.get('binance_response')
+                            or result.get('kucoin_response')
+                        ),
                     }
                     if result.get('parsed_alert'):
                         result_payload['action_type'] = result['parsed_alert'].get('action_type')
@@ -797,7 +802,12 @@ class DiscordBot:
                         'status': 'failed',
                         'exchange': exchange_type.value,
                         'error': result.get('message', 'Follow-up processing failed'),
-                        'action_type': result.get('parsed_alert', {}).get('action_type') if result.get('parsed_alert') else None
+                        'action_type': result.get('parsed_alert', {}).get('action_type') if result.get('parsed_alert') else None,
+                        'exchange_response': (
+                            result.get('exchange_response')
+                            or result.get('binance_response')
+                            or result.get('kucoin_response')
+                        ),
                     }
                     await self.notification_manager.notify_update_signal(error_payload)
                     # Also send error notification for visibility when action fails
