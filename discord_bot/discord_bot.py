@@ -684,12 +684,6 @@ class DiscordBot:
             signal = DiscordUpdateSignal(**signal_data)
             logger.info(f"Processing update signal from trader {signal.trader}: {signal.content}")
 
-            try:
-                await self.notification_manager.notify_update_signal(signal_data)
-                logger.info("✅ Update signal notification sent successfully")
-            except Exception as notify_error:
-                logger.error(f"❌ Failed to send update signal notification: {notify_error}")
-
             # Validate trader and determine exchange
             if not await self.signal_router.is_trader_supported(signal.trader or ""):
                 logger.error(f"❌ UNSUPPORTED TRADER REJECTED: {signal.trader}")
@@ -707,6 +701,10 @@ class DiscordBot:
             if await self._is_duplicate_alert(alert_hash):
                 logger.warning(f"Duplicate alert detected: {signal.content}")
                 return {"status": "skipped", "message": "Duplicate alert"}
+            try:
+                await self._store_alert_hash(alert_hash)
+            except Exception as e:
+                logger.warning(f"Failed to store alert hash for deduplication: {e}")
 
             alert_result = None
 
@@ -742,6 +740,12 @@ class DiscordBot:
                     logger.warning(f"No existing alert found for discord_id: {signal.discord_id}")
             except Exception as e:
                 logger.error(f"Error finding existing alert: {e}")
+
+            try:
+                await self.notification_manager.notify_update_signal(signal_data)
+                logger.info("✅ Update signal notification sent successfully")
+            except Exception as notify_error:
+                logger.error(f"❌ Failed to send update signal notification: {notify_error}")
 
             # Route the follow-up signal to the appropriate exchange
             result = await self.signal_router.route_followup_signal(signal_data, signal.trader or "")
