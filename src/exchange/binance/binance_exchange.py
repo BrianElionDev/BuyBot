@@ -286,6 +286,12 @@ class BinanceExchange(ExchangeBase):
                 order_params['price'] = safe_price
             if stop_price:
                 order_params['stopPrice'] = stop_price
+                # For trigger orders (STOP/TAKE_PROFIT variants), prefer MARK_PRICE working type
+                try:
+                    if str(order_type).upper() in ('STOP_MARKET', 'TAKE_PROFIT_MARKET', 'STOP', 'TAKE_PROFIT'):
+                        order_params['workingType'] = 'MARK_PRICE'
+                except Exception:
+                    pass
             if client_order_id:
                 order_params['newClientOrderId'] = client_order_id
 

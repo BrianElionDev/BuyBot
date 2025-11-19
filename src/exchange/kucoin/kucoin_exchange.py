@@ -84,6 +84,42 @@ class KucoinExchange(ExchangeBase):
                 self.is_testnet
             )
             await self.client.initialize()
+            # Best-effort server time sync to avoid KC-API-TIMESTAMP errors
+            try:
+                await self._sync_server_time()
+            except Exception as e:
+                logger.warning(f"KuCoin server time sync failed (will proceed without offset): {e}")
+
+    async def _sync_server_time(self) -> None:
+        """
+        Sync local time with KuCoin futures server time to prevent KC-API-TIMESTAMP errors.
+        """
+        try:
+            futures_base_url = self._futures_base_url()
+            url = f"{futures_base_url}/api/v1/timestamp"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    data = await resp.json()
+                    if isinstance(data, dict) and data.get('code') == '200000':
+                        server_val = data.get('data', 0)
+                        try:
+                            server_ms = float(server_val) if isinstance(server_val, (int, float, str)) else 0.0
+                        except Exception:
+                            server_ms = 0.0
+                    else:
+                        # Some environments may return a plain numeric/string timestamp
+                        try:
+                            server_ms = float(data) if isinstance(data, (int, float, str)) else 0.0
+                        except Exception:
+                            server_ms = 0.0
+            if server_ms and self.client and self.client.auth:
+                import time as _t
+                local_ms = _t.time() * 1000.0
+                offset_seconds = (server_ms - local_ms) / 1000.0
+                self.client.auth.set_time_offset(offset_seconds)
+                logger.info(f"Synchronized KuCoin server time offset: {offset_seconds:.3f}s")
+        except Exception as e:
+            logger.warning(f"Failed to synchronize KuCoin server time: {e}")
 
     def _futures_base_url(self) -> str:
         # KuCoin futures sandbox is currently offline, so always use production
@@ -1708,7 +1744,8 @@ class KucoinExchange(ExchangeBase):
                     if isinstance(payload, list):
                         return payload
                     if isinstance(payload, dict):
-                        return payload  # caller will normalize dict vs list
+                        # Normalize to list-of-dicts to satisfy return type
+                        return [payload]
                     # Some endpoints return paginated objects {items: [...]} or {data: [...]}
                     if 'items' in data:
                         items = data.get('items') or []

@@ -54,6 +54,16 @@ class DynamicAlertParser:
         if not content or not isinstance(content, str):
             return self._create_error_result("Invalid content provided")
 
+        # Normalize/sanitize incoming text: strip zero-width and BOM/invisible characters, trim whitespace
+        try:
+            # Remove zero-width spaces and BOMs that break regex/AI parsing
+            content = re.sub(r'[\u200B-\u200D\uFEFF]', '', content)
+            # Normalize repeated whitespace
+            content = re.sub(r'\s+', ' ', content or '').strip()
+        except Exception:
+            # Best-effort; proceed with original content if normalization fails
+            pass
+
         # Try AI parsing first if available
         if self.openai_client:
             try:
@@ -281,6 +291,33 @@ Return ONLY the JSON object, no additional text."""
                 match = re.search(pattern, content_lower)
                 if match:
                     return self._create_action_result(action_type, coin_symbol, content, match, pattern)
+
+        # Heuristic: handle common “updated stoploss” style messages without explicit price
+        try:
+            if 'updated stoploss' in content_lower or 'updated stop loss' in content_lower or 'updated sl' in content_lower:
+                # Treat as stop loss update to break-even when price absent
+                m = re.search(r'.', content_lower)
+                if m:
+                    result = self._create_action_result('stop_loss_update', coin_symbol, content, m, 'heuristic:updated_stoploss')
+                    result['stop_loss_price'] = 'BE'
+                    return result
+                else:
+                    # Construct minimal result if match cannot be created
+                    return {
+                        'action_type': 'stop_loss_update',
+                        'coin_symbol': coin_symbol,
+                        'action_description': self._get_action_description('stop_loss_update', coin_symbol),
+                        'exchange_action': self._get_exchange_action('stop_loss_update'),
+                        'position_status': self._get_position_status('stop_loss_update'),
+                        'reason': self._get_action_reason('stop_loss_update', coin_symbol),
+                        'original_content': content,
+                        'parsed_at': datetime.now(timezone.utc).isoformat(),
+                        'parsing_method': 'regex',
+                        'matched_pattern': 'heuristic:updated_stoploss',
+                        'stop_loss_price': 'BE'
+                    }
+        except Exception:
+            pass
 
         # No pattern matched
         return self._create_unknown_result(coin_symbol, content)

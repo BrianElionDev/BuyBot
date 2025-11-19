@@ -271,14 +271,36 @@ class InitialSignalProcessor:
                 logger.warning(f"Pre-validation check failed, proceeding with normal flow: {e}")
 
         # --- Proximity Check for LIMIT Orders ---
-        if order_type.upper() == "LIMIT":
-            threshold = 0.2
-            price_diff_pct = abs(signal_price - current_price) / current_price if current_price > 0 else 0
-
-            if current_price and price_diff_pct > threshold:
-                logger.warning(f"LIMIT order price {signal_price} is too far from market price {current_price} ({price_diff_pct*100:.2f}% > {threshold*100}%). Converting to MARKET order.")
-                order_type = "MARKET"
-                logger.info(f"Converted LIMIT order to MARKET order for {coin_symbol} due to price distance")
+        # Apply platform price-range logic: decide MARKET vs LIMIT and optimal limit price
+        try:
+            if entry_prices and isinstance(entry_prices, list) and len(entry_prices) > 0:
+                upper_bound = max(entry_prices)
+                lower_bound = min(entry_prices)
+                pos_upper = position_type.upper() == "LONG"
+                # Market execution if current within acceptable side bound, else place limit at optimal bound
+                if position_type.upper() == "LONG":
+                    if current_price <= upper_bound:
+                        order_type = "MARKET"
+                    else:
+                        order_type = "LIMIT"
+                        signal_price = upper_bound
+                elif position_type.upper() == "SHORT":
+                    if current_price >= lower_bound:
+                        order_type = "MARKET"
+                    else:
+                        order_type = "LIMIT"
+                        signal_price = lower_bound
+            else:
+                # Keep existing LIMIT sanity check if no range provided
+                if order_type.upper() == "LIMIT":
+                    threshold = 0.2
+                    price_diff_pct = abs(signal_price - current_price) / current_price if current_price > 0 else 0
+                    if current_price and price_diff_pct > threshold:
+                        logger.warning(f"LIMIT order price {signal_price} is too far from market price {current_price} ({price_diff_pct*100:.2f}% > {threshold*100}%). Converting to MARKET order.")
+                        order_type = "MARKET"
+                        logger.info(f"Converted LIMIT order to MARKET order for {coin_symbol} due to price distance")
+        except Exception as e:
+            logger.warning(f"Price-range decision failed, keeping provided order_type {order_type}: {e}")
 
         # --- Order Book Liquidity Check ---
         order_book = None
@@ -648,7 +670,7 @@ class InitialSignalProcessor:
                         fill_price = float(price_val)
                 except Exception:
                     fill_price = None
-                else:
+                if fill_price is None:
                     fill_price = signal_price
 
                 # Use executedQty if available (actual filled quantity), otherwise origQty or trade_amount
@@ -683,12 +705,59 @@ class InitialSignalProcessor:
             except Exception as e:
                 logger.error(f"Failed to send trade execution notification: {e}")
 
-            # Create TP/SL orders if specified
+            # Create TP/SL orders: enforce platform defaults (5%) and apply overrides from signal
             tp_sl_orders = []
             stop_loss_order_id = None
-            if stop_loss or take_profits:
+            try:
+                # Determine effective entry for default calculations
+                effective_entry = float(fill_price if fill_price is not None else signal_price)
+            except Exception:
+                effective_entry = float(signal_price)
+
+            # Compute defaults if not provided by the signal
+            default_sl = None
+            default_tp = None
+            try:
+                from src.bot.utils.price_calculator import PriceCalculator
+                if stop_loss is None and effective_entry > 0:
+                    default_sl = PriceCalculator.calculate_5_percent_stop_loss(effective_entry, position_type)
+                if (not take_profits or len(take_profits) == 0) and effective_entry > 0:
+                    default_tp = PriceCalculator.calculate_5_percent_take_profit(effective_entry, position_type)
+            except Exception as e:
+                logger.warning(f"Failed default TP/SL computation: {e}")
+
+            # Apply platform rule:
+            # - Always place an SL: use provided SL if present else default 5%
+            # - TP: if signal TP provided, place it for 50% of position; else place default 5% for 100%
+            final_sl = None
+            if stop_loss is not None:
+                try:
+                    final_sl = float(stop_loss)
+                except Exception:
+                    final_sl = default_sl
+            else:
+                final_sl = default_sl
+
+            final_tps: List[float] = []
+            partial_tp_size = None
+            if take_profits and len(take_profits) > 0:
+                # Use only first TP from signal and make it 50% size
+                try:
+                    final_tps = [float(take_profits[0])]
+                except Exception:
+                    final_tps = []
+                partial_tp_size = float(trade_amount) * 0.5
+            elif default_tp is not None:
+                final_tps = [float(default_tp)]
+                partial_tp_size = None  # full size by default
+
+            # Create orders via order creator (handles partial TP and full-size SL internally)
+            if final_sl is not None or final_tps:
+                # If partial TP size is set, temporarily pass that as position_size for TP creation,
+                # and rely on internal logic to place SL for full size.
+                tp_size_to_use = float(trade_amount if partial_tp_size is None else partial_tp_size)
                 tp_sl_orders, stop_loss_order_id = await self.trading_engine._create_tp_sl_orders(
-                    trading_pair, position_type, trade_amount, take_profits, float(stop_loss) if stop_loss is not None else None
+                    trading_pair, position_type, tp_size_to_use, final_tps, final_sl
                 )
 
             # Update cooldown
@@ -704,6 +773,19 @@ class InitialSignalProcessor:
                 'stop_loss_order_id': stop_loss_order_id,
                 'status': 'OPEN'
             }
+
+            # Final safety validation to prevent half-empty PENDING-like records
+            try:
+                essential_ok = (
+                    bool(trading_pair) and
+                    bool(response_data.get('order_id')) and
+                    position_type.upper() in ('LONG', 'SHORT')
+                )
+                if not essential_ok:
+                    logger.error(f"Essential fields missing for trade creation: {response_data}")
+                    return False, "Essential fields missing; refusing to create incomplete trade"
+            except Exception:
+                pass
 
             return True, response_data
 

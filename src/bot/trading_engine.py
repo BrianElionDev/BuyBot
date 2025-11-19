@@ -333,6 +333,12 @@ class TradingEngine:
             # Process single action
             success, result = await self.process_trade_update(trade_id, action, details)
             if success:
+                # Best-effort PnL reconciliation for closures
+                try:
+                    if action in ('stop_loss_hit', 'position_closed'):
+                        await self._reconcile_pnl_for_closed_trade(trade_row)
+                except Exception:
+                    pass
                 return {
                     "success": True,
                     "message": "Follow-up processed successfully",
@@ -350,6 +356,80 @@ class TradingEngine:
         except Exception as e:
             logger.error(f"Error processing follow-up signal: {e}")
             return {"success": False, "message": f"Error processing follow-up: {str(e)}"}
+
+    async def _reconcile_pnl_for_closed_trade(self, trade_row: Dict[str, Any]) -> None:
+        """
+        Attempt to reconcile realized PnL for a closed trade using exchange data,
+        falling back to price-based computation if needed.
+        """
+        try:
+            trade_id = trade_row.get('id')
+            if not trade_id:
+                return
+            coin_symbol = trade_row.get('coin_symbol')
+            if not coin_symbol:
+                return
+            exchange_name = (trade_row.get('exchange') or '').lower()
+            entry_price = float(trade_row.get('entry_price') or 0)
+            exit_price = float(trade_row.get('exit_price') or 0)
+            position_size = float(trade_row.get('position_size') or 0)
+            signal_type = str(trade_row.get('signal_type', 'LONG')).upper()
+
+            pnl_updates: Dict[str, Any] = {}
+
+            # First, try Binance income history when on Binance
+            if exchange_name == 'binance':
+                try:
+                    created_at = trade_row.get('created_at')
+                    closed_at = trade_row.get('closed_at') or trade_row.get('updated_at')
+                    if created_at and closed_at and hasattr(self.exchange, 'get_income_history'):
+                        from datetime import datetime, timezone
+                        created_dt = datetime.fromisoformat(str(created_at).replace('Z', '+00:00'))
+                        closed_dt = datetime.fromisoformat(str(closed_at).replace('Z', '+00:00'))
+                        start_time = int(created_dt.timestamp() * 1000)
+                        end_time = int(closed_dt.timestamp() * 1000)
+                        symbol_pair = f"{coin_symbol}USDT"
+                        income = await self.exchange.get_income_history(
+                            symbol=symbol_pair,
+                            income_type='REALIZED_PNL',
+                            start_time=start_time,
+                            end_time=end_time
+                        )
+                        if income:
+                            total_pnl = sum(float(it.get('income', 0)) for it in income)
+                            pnl_updates['pnl_usd'] = float(total_pnl)
+                            pnl_updates['net_pnl'] = float(total_pnl)
+                            pnl_updates['pnl_source'] = 'income_history'
+                except Exception:
+                    pass
+
+            # Fallback: compute from prices if we have all inputs
+            if not pnl_updates and entry_price > 0 and exit_price > 0 and position_size > 0:
+                try:
+                    from src.services.analytics.pnl_calculator import PnLCalculator
+                    calc = PnLCalculator()
+                    data = calc.calculate_realized_pnl(
+                        symbol=f"{coin_symbol}USDT",
+                        position_type=signal_type,
+                        entry_price=entry_price,
+                        exit_price=exit_price,
+                        quantity=position_size
+                    )
+                    pnl_updates['pnl_usd'] = float(data.realized_pnl or 0.0)
+                    pnl_updates['net_pnl'] = float(data.realized_pnl or 0.0)
+                    pnl_updates['pnl_source'] = 'calculated'
+                except Exception:
+                    pass
+
+            if pnl_updates:
+                try:
+                    pnl_updates['updated_at'] = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
+                except Exception:
+                    pass
+                await self.db_manager.update_trade(trade_id, pnl_updates)
+        except Exception:
+            # best-effort
+            pass
 
     async def update_stop_loss(self, active_trade: Dict, new_sl_price: float) -> Tuple[bool, Dict]:
         """

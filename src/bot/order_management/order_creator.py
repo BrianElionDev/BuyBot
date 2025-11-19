@@ -136,29 +136,29 @@ class OrderCreator:
 
             # Create Take Profit orders
             if take_profits and isinstance(take_profits, list):
-                for i, tp_price in enumerate(take_profits):
-                    try:
-                        tp_price_float = float(tp_price)
+                # Per platform rule: when signal provides TP, place TP for 50% of the position using first TP only
+                try:
+                    tp_price = float(take_profits[0])
+                    tp_amount = float(position_size) * 0.5
+                    tp_order = await self.exchange.create_futures_order(
+                        pair=trading_pair,
+                        side=tp_sl_side,
+                        order_type='TAKE_PROFIT_MARKET',
+                        amount=tp_amount,
+                        stop_price=tp_price,
+                        reduce_only=True  # Only reduce by the partial amount
+                    )
 
-                        # For take profits, use reduceOnly with specific amount to handle partial positions correctly
-                        tp_order = await self.exchange.create_futures_order(
-                            pair=trading_pair,
-                            side=tp_sl_side,
-                            order_type='TAKE_PROFIT_MARKET',
-                            amount=position_size,  # Use specific amount for partial positions
-                            stop_price=tp_price_float,
-                            reduce_only=True  # This ensures it only reduces the position by the specified amount
-                        )
-
-                        if tp_order and 'orderId' in tp_order:
-                            tp_order['order_type'] = 'TAKE_PROFIT'
-                            tp_order['tp_level'] = i + 1
-                            tp_sl_orders.append(tp_order)
-                            logger.info(f"Created TP order {i+1} at {tp_price_float} for {trading_pair} with amount {position_size}")
-                        else:
-                            logger.error(f"Failed to create TP order {i+1}: {tp_order}")
-                    except Exception as e:
-                        logger.error(f"Error creating TP order {i+1} at {tp_price}: {e}")
+                    if tp_order and 'orderId' in tp_order:
+                        tp_order['order_type'] = 'TAKE_PROFIT'
+                        tp_order['tp_level'] = 1
+                        tp_order['tp_amount'] = tp_amount
+                        tp_sl_orders.append(tp_order)
+                        logger.info(f"Created TP order at {tp_price} for {trading_pair} with amount {tp_amount} (50% of position)")
+                    else:
+                        logger.error(f"Failed to create TP order: {tp_order}")
+                except Exception as e:
+                    logger.error(f"Error creating TP order at {take_profits[0] if take_profits else 'N/A'}: {e}")
 
             # Create Stop Loss order (supervisor requirement: default 5% if no SL provided)
             if stop_loss:
