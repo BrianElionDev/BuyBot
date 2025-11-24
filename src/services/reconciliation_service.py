@@ -342,6 +342,7 @@ class ReconciliationService:
                     if has_exit or has_pnl:
                         update_data = {
                             'status': 'CLOSED',
+                            'is_active': False,
                             'closed_at': trade.get('closed_at') or datetime.now(timezone.utc).isoformat(),
                             'updated_at': datetime.now(timezone.utc).isoformat()
                         }
@@ -357,5 +358,62 @@ class ReconciliationService:
             return {'checked': len(trades), 'fixed': fixed, 'errors': errors}
         except Exception as e:
             logger.error(f"Error in reconcile_open_with_exit_or_pnl: {e}")
+            return {'error': str(e)}
+
+    async def reconcile_closed_at_mismatch(self, days_back: int = 30) -> Dict[str, Any]:
+        """
+        Fix trades that have closed_at timestamp but status is not CLOSED/CANCELLED/FAILED.
+        This catches cases where closed_at was set but status update failed.
+        """
+        logger.info(f"Reconciling trades with closed_at but wrong status (last {days_back} days)")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days_back)).isoformat()
+        try:
+            response = self.supabase.from_("trades").select("*").not_.is_("closed_at", "null").neq("status", "CLOSED").neq("status", "CANCELLED").neq("status", "FAILED").gte("created_at", cutoff).execute()
+            trades = response.data or []
+            fixed = 0
+            errors = 0
+            for trade in trades:
+                try:
+                    closed_at = trade.get('closed_at')
+                    if not closed_at:
+                        continue
+
+                    # Check if this is a failed trade
+                    exchange_response = trade.get('exchange_response')
+                    is_failed = False
+                    if exchange_response:
+                        if isinstance(exchange_response, list):
+                            response_str = ' '.join(str(x) for x in exchange_response)
+                        else:
+                            response_str = str(exchange_response)
+                        if 'Trade execution failed' in response_str or 'execution failed' in response_str.lower():
+                            is_failed = True
+
+                    if is_failed:
+                        update_data = {
+                            'status': 'FAILED',
+                            'order_status': 'FAILED',
+                            'is_active': False,
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        }
+                    else:
+                        update_data = {
+                            'status': 'CLOSED',
+                            'is_active': False,
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        }
+                        os_val = str(trade.get('order_status') or '').upper()
+                        if os_val not in ['CANCELLED', 'CANCELED', 'EXPIRED', 'FAILED', 'REJECTED']:
+                            update_data['order_status'] = 'FILLED'
+
+                    self.supabase.table("trades").update(update_data).eq("id", trade.get('id')).execute()
+                    fixed += 1
+                    logger.info(f"Fixed trade {trade.get('id')}: closed_at={closed_at}, status={trade.get('status')} -> {update_data['status']}")
+                except Exception as e:
+                    logger.warning(f"Error fixing trade {trade.get('id')}: {e}")
+                    errors += 1
+            return {'checked': len(trades), 'fixed': fixed, 'errors': errors}
+        except Exception as e:
+            logger.error(f"Error in reconcile_closed_at_mismatch: {e}")
             return {'error': str(e)}
 

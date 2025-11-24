@@ -103,8 +103,13 @@ async def reconcile_trade(
     symbol = str(trade.get('coin_symbol') or '').upper()
     if not symbol:
         return None
-
-    kucoin_symbol = ex.get_futures_trading_pair(symbol)
+    # Normalize bot coin symbol to KuCoin futures symbol.
+    # Use the same BTC→XBT mapping as other KuCoin backfill code to avoid
+    # missing BTC position history (XBTUSDTM vs BTCUSDTM).
+    if symbol == 'BTC':
+        kucoin_symbol = 'XBTUSDTM'
+    else:
+        kucoin_symbol = f"{symbol}USDTM"
 
     # Pull position history for symbol and time window
     # Endpoint used via exchange's direct signed call

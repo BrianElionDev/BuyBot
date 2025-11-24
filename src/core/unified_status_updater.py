@@ -131,6 +131,7 @@ async def update_trade_status_safely(
             # If force_closed, override position status to CLOSED
             if force_closed:
                 mapped_position_status = 'CLOSED'
+                update_data['is_active'] = False  # Always set is_active to false when closing
 
             # Validate consistency
             is_consistent = StatusManager.validate_status_consistency(
@@ -159,6 +160,7 @@ async def update_trade_status_safely(
                 # If position is closed, order should be FILLED
                 update_data['order_status'] = 'FILLED'
                 update_data['status'] = 'CLOSED'
+                update_data['is_active'] = False  # Always set is_active to false when closing
             else:
                 # Validate current statuses and fix if needed
                 is_consistent = StatusManager.validate_status_consistency(
