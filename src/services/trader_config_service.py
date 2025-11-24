@@ -7,6 +7,7 @@ providing a centralized way to handle trader configurations dynamically.
 
 import logging
 import time
+import unicodedata
 from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
 from enum import Enum
@@ -75,9 +76,20 @@ class TraderConfigService:
         return f"trader_config:{trader_id}"
 
     def _canonical(self, trader_id: str) -> str:
-        """Return a canonical, case-insensitive trader id without leading @ or -."""
+        """Return a canonical, case-insensitive trader id without leading @ or -.
+
+        This method aggressively normalizes Unicode to avoid subtle mismatches caused
+        by zero-width or formatting characters occasionally present in Discord names.
+        """
         try:
-            return (trader_id or "").strip().lstrip("@-").lower()
+            s = trader_id or ""
+            s = unicodedata.normalize("NFKC", s)
+            s = "".join(
+                ch
+                for ch in s
+                if unicodedata.category(ch) not in ("Cf", "Cc", "Cs")
+            )
+            return s.strip().lstrip("@-").lower()
         except Exception:
             return ""
 
@@ -85,7 +97,7 @@ class TraderConfigService:
         """Generate common variants of a trader id for robust lookups."""
         original = (trader_id or "").strip()
         base = self._canonical(original)
-        # Include common forms seen in inputs and storage
+
         candidates = {
             original,
             original.lstrip("@-"),
@@ -96,7 +108,7 @@ class TraderConfigService:
             f"@-{base}",
             f"-{base}",
         }
-        # Remove empties
+
         return [c for c in candidates if c]
 
     async def get_trader_config(self, trader_id: str) -> Optional[TraderConfig]:
@@ -183,7 +195,22 @@ class TraderConfigService:
         if config:
             return config.exchange
 
-        # Fallback to default exchange
+        # Fallback 1: legacy static mapping (src.config.trader_config)
+        try:
+            from src.config.trader_config import TraderConfig as LegacyTraderConfig
+
+            if LegacyTraderConfig.is_trader_supported(trader_id):
+                legacy_exchange = LegacyTraderConfig.get_exchange_for_trader(trader_id)
+                if legacy_exchange and isinstance(legacy_exchange.value, str):
+                    logger.warning(
+                        f"No DB config for trader {trader_id}, using legacy mapping: "
+                        f"{legacy_exchange.value}"
+                    )
+                    return ExchangeType(legacy_exchange.value)
+        except Exception as e:
+            logger.warning(f"Legacy trader_config fallback failed for {trader_id}: {e}")
+
+        # Fallback 2: hard default
         logger.warning(f"No config found for trader {trader_id}, using default exchange")
         return ExchangeType.BINANCE
 
