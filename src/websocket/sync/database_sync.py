@@ -344,6 +344,7 @@ class DatabaseSync:
 
                     # CRITICAL FIX: Recreate stop loss if position is still open and order expired with EXPIRE_MAKER
                     if expire_reason == 'EXPIRE_MAKER':
+                        logger.info(f"Stop loss order {order_id} expired with EXPIRE_MAKER, attempting recreation for trade {trade_id}")
                         await self._recreate_stop_loss_on_expire(trade_id, trade, order_id)
                 else:
                     # Only backfill defaults if currently missing in DB for main order cancellations

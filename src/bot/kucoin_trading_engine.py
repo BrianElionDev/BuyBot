@@ -154,7 +154,7 @@ class KucoinTradingEngine:
                 trade_amount *= quantity_multiplier
                 logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
 
-            # Get symbol filters for precision formatting
+            # Get symbol filters for precision formatting and contract conversion
             trading_pair = f"{coin_symbol.upper()}-USDT"
             filters = await self.kucoin_exchange.get_futures_symbol_filters(trading_pair)
 
@@ -164,6 +164,7 @@ class KucoinTradingEngine:
                     mult = float(filters.get('multiplier', 1)) if filters else 1.0
                 except (TypeError, ValueError):
                     mult = 1.0
+                    logger.warning(f"Could not get multiplier from filters, using default 1.0")
 
                 # LOT_SIZE values are in contracts; convert to asset units
                 try:
@@ -179,15 +180,28 @@ class KucoinTradingEngine:
                 except (TypeError, ValueError):
                     max_contracts = 1000000.0
 
-                step_asset = max(mult, mult * step_contracts)
-                min_asset = max(mult, mult * min_contracts)
-                max_asset = max_contracts * mult
+                # CRITICAL FIX: Kucoin requires minimum 1.0 contracts
+                # Convert asset quantity to contracts, enforce minimum, then convert back
+                original_assets = trade_amount
+                contracts = trade_amount / mult if mult > 0 else trade_amount
+                logger.info(f"Kucoin contract conversion - Original: {original_assets:.8f} assets, contracts before min: {contracts:.8f}")
 
-                # Round to asset-native step and clamp
-                if step_asset > 0:
-                    trade_amount = round(trade_amount / step_asset) * step_asset
-                trade_amount = max(min_asset, min(max_asset, trade_amount))
-                logger.info(f"Adjusted trade amount (asset units): {trade_amount} (min_asset: {min_asset}, max_asset: {max_asset}, step_asset: {step_asset})")
+                # Enforce minimum 1.0 contracts (Kucoin requirement)
+                if contracts < 1.0:
+                    logger.info(f"Enforcing minimum 1.0 contracts (was {contracts:.8f})")
+                    contracts = 1.0
+
+                # Round to nearest step
+                if step_contracts > 0:
+                    contracts = round(contracts / step_contracts) * step_contracts
+                # Clamp to min/max contracts
+                contracts = max(min_contracts, min(max_contracts, contracts))
+                # Convert back to asset units
+                trade_amount = contracts * mult
+
+                logger.info(f"Kucoin contract conversion: {original_assets:.8f} assets -> {contracts:.8f} contracts -> {trade_amount:.8f} assets (min_contracts: {min_contracts}, mult: {mult})")
+            else:
+                logger.warning(f"No filters found for {trading_pair}, skipping contract conversion - this may cause validation errors")
 
             return trade_amount
 
@@ -336,59 +350,6 @@ class KucoinTradingEngine:
             if trade_amount <= 0:
                 logger.error(f"Invalid trade amount calculated: {trade_amount}")
                 return False, f"Invalid trade amount calculated: {trade_amount}"
-
-            # Risk-based cap if SL distance implies >3% risk
-            # IMPORTANT: Apply risk cap BEFORE minimum adjustment to avoid conflicts
-            # We need to recalculate the base amount without minimum adjustment
-            try:
-                if stop_loss is not None:
-                    entry_ref = float(final_price or current_price)
-                    sl_val = float(stop_loss)
-                    if entry_ref > 0 and sl_val > 0:
-                        pct_risk = abs(entry_ref - sl_val) / entry_ref
-                        max_pct = 0.03
-                        if pct_risk > max_pct:
-                            # Recalculate base amount without minimum adjustment for risk cap
-                            from src.services.trader_config_service import trader_config_service
-                            trader_id = (getattr(self, 'trader_id', None) or '').strip().lower()
-                            exchange_key = 'kucoin'
-
-                            if position_size_override is not None:
-                                base_usdt = float(position_size_override)
-                            else:
-                                base_usdt = self.config.TRADE_AMOUNT
-                                try:
-                                    config = await trader_config_service.get_trader_config(trader_id)
-                                    if config and config.exchange.value == exchange_key:
-                                        base_usdt = float(config.position_size)
-                                except Exception:
-                                    pass
-
-                            base_amount = base_usdt / current_price
-                            if quantity_multiplier and quantity_multiplier > 1:
-                                base_amount *= quantity_multiplier
-
-                            # Apply risk cap to base amount
-                            scale = max_pct / pct_risk
-                            risk_capped_amount = base_amount * scale
-
-                            logger.info(f"Risk cap calculation: base={base_amount:.8f}, risk={pct_risk*100:.2f}%, capped={risk_capped_amount:.8f}, min={min_qty}")
-
-                            # Check if risk-capped amount meets minimum
-                            if risk_capped_amount < min_qty:
-                                required_usdt = min_qty * current_price
-                                error_msg = (
-                                    f"Risk {pct_risk*100:.2f}% > {max_pct*100:.2f}%. "
-                                    f"Increase position size to ≥ ${required_usdt:.2f} or move SL closer."
-                                )
-                                logger.error(error_msg)
-                                return False, error_msg
-
-                            # Apply risk cap (already validated to be >= min_qty)
-                            trade_amount = risk_capped_amount
-                            logger.info(f"Capping KuCoin position due to risk {pct_risk*100:.2f}% > {max_pct*100:.2f}%, amount {base_amount:.8f} -> {trade_amount:.8f}")
-            except Exception as e:
-                logger.warning(f"Risk cap calculation failed: {e}")
 
             # Get leverage from database
             leverage_value = 1.0  # Default leverage

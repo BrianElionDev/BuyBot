@@ -159,6 +159,7 @@ class InitialSignalProcessor:
         is_futures = position_type.upper() in ['LONG', 'SHORT']
         trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
 
+        # CRITICAL: Validate symbol early (before trade calculation) to fail fast
         exchange_info = await self.exchange.get_exchange_info()
         if not exchange_info:
             logger.error(f"Could not retrieve exchange info for {trading_pair}")
@@ -250,8 +251,8 @@ class InitialSignalProcessor:
                     required_qty = max(min_qty, min_notional / current_price)
                     required_usdt = required_qty * current_price
 
-                    # Risk limit: Don't auto-adjust if it would exceed 2x the original position size
-                    max_allowed_usdt = usdt_amount * 2.0
+                    # Risk limit: Don't auto-adjust if it would exceed 5x the original position size
+                    max_allowed_usdt = usdt_amount * 5.0
 
                     if required_usdt <= max_allowed_usdt:
                         logger.info(f"Auto-adjusting position size from ${usdt_amount:.2f} to ${required_usdt:.2f} to meet minimum requirements")
@@ -316,43 +317,38 @@ class InitialSignalProcessor:
             if stop_loss is not None:
                 stop_loss_str = str(stop_loss).strip().upper()
                 if stop_loss_str in ['BE', 'BREAK_EVEN', 'BREAK-EVEN', 'BREAKEVEN']:
-                    logger.warning(f"Break-even stop loss not valid for initial signals: {stop_loss}")
-                    return False, {"error": "Break-even stop loss only valid for follow-up signals, not initial entry"}
+                    # Allow BE stop loss if entry_prices are available
+                    if entry_prices and len(entry_prices) > 0:
+                        normalized_sl = float(entry_prices[0])
+                        logger.info(f"Using entry price {normalized_sl} as break-even stop loss")
+                        stop_loss = normalized_sl
+                    else:
+                        logger.warning(f"Break-even stop loss requires entry price(s) to be specified")
+                        return False, {"error": "Break-even stop loss requires entry price(s) to be specified"}
 
-                normalized_sl = self._normalize_stop_loss_value(stop_loss)
-                if normalized_sl is None or normalized_sl <= 0:
-                    logger.warning(f"Parsed stop loss is invalid from value: {stop_loss}")
-                else:
-                    stop_loss = normalized_sl
+                if normalized_sl is None:
+                    normalized_sl = self._normalize_stop_loss_value(stop_loss)
+                    if normalized_sl is None or normalized_sl <= 0:
+                        logger.warning(f"Parsed stop loss is invalid from value: {stop_loss}")
+                    else:
+                        stop_loss = normalized_sl
         except Exception as e:
             logger.warning(f"Failed to normalize stop loss '{stop_loss}': {e}")
 
         # --- Calculate Trade Amount ---
+        # Use signal_price (limit price) for LIMIT orders, current_price for MARKET orders
+        price_for_calculation = signal_price if order_type.upper() == 'LIMIT' else current_price
         trade_amount = await self._calculate_trade_amount(
-            coin_symbol, current_price, quantity_multiplier, is_futures, position_size_override
+            coin_symbol, price_for_calculation, quantity_multiplier, is_futures, position_size_override
         )
         if trade_amount <= 0:
             return False, "Calculated trade amount is zero or negative."
 
-        # --- Risk-based position cap if SL is far (>3%) ---
-        try:
-            effective_entry = float(signal_price or current_price)
-            sl_val = float(stop_loss) if stop_loss is not None else None
-            if sl_val and effective_entry > 0:
-                pct_risk = abs(effective_entry - sl_val) / effective_entry
-                max_pct = 0.03
-                if pct_risk > max_pct:
-                    scale = max_pct / pct_risk
-                    if scale < 1.0:
-                        old_amount = trade_amount
-                        trade_amount = trade_amount * scale
-                        logger.info(f"Capping position due to risk {pct_risk*100:.2f}% > {max_pct*100:.2f}%, amount {old_amount} -> {trade_amount}")
-        except Exception as e:
-            logger.warning(f"Risk cap calculation failed: {e}")
-
         # --- Validate Trade Amount ---
+        # Use signal_price (limit price) for LIMIT orders, current_price for MARKET orders
+        price_for_validation = signal_price if order_type.upper() == 'LIMIT' else current_price
         validation_result = await self._validate_trade_amount(
-            trading_pair, trade_amount, current_price, min_qty, max_qty, min_notional, is_futures
+            trading_pair, trade_amount, price_for_validation, min_qty, max_qty, min_notional, is_futures
         )
         if not validation_result[0]:
             return False, validation_result[1] or "Validation failed"
@@ -427,7 +423,38 @@ class InitialSignalProcessor:
                 trade_amount *= quantity_multiplier
                 logger.info(f"Applied quantity multiplier {quantity_multiplier}: {trade_amount} {coin_symbol}")
 
-            # Do NOT auto-bump to minQty here; allow validator to reject below-min orders
+            # Auto-bump to meet minimum requirements if needed
+            if is_futures:
+                try:
+                    trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
+                    filters = await self.exchange.get_futures_symbol_filters(trading_pair)
+                    if filters:
+                        lot_size_filter = filters.get('LOT_SIZE', {})
+                        min_qty = float(lot_size_filter.get('minQty', 0))
+                        min_notional_filter = filters.get('MIN_NOTIONAL', {}) if 'MIN_NOTIONAL' in filters else {}
+                        min_notional_val = min_notional_filter.get('minNotional', min_notional_filter.get('notional', 0))
+                        min_notional = float(min_notional_val or 0)
+
+                        # Check if trade_amount meets minimums
+                        if min_qty > 0 and min_notional > 0:
+                            if trade_amount < min_qty or trade_amount * current_price < min_notional:
+                                # Calculate required minimum
+                                required_qty = max(min_qty, min_notional / current_price)
+                                required_usdt = required_qty * current_price
+
+                                # Risk limit: Don't auto-adjust if it would exceed 5x the original position size
+                                max_allowed_usdt = usdt_amount * 5.0
+
+                                if required_usdt <= max_allowed_usdt:
+                                    logger.info(f"Auto-adjusting trade amount from {trade_amount:.8f} to {required_qty:.8f} to meet minimum requirements (${required_usdt:.2f} notional)")
+                                    trade_amount = required_qty
+                                else:
+                                    # Exceeds risk limit, return 0.0 to trigger validation error
+                                    logger.warning(f"Auto-adjustment would exceed 5x limit (${required_usdt:.2f} > ${max_allowed_usdt:.2f}), returning 0.0")
+                                    return 0.0
+                except Exception as e:
+                    logger.warning(f"Auto-bump check failed, proceeding with calculated amount: {e}")
+
             return float(trade_amount)
 
         except Exception as e:

@@ -262,11 +262,22 @@ class KucoinExchange(ExchangeBase):
                 max_qty = float(lot_size_filter.get('maxQty', float('inf')))
                 min_notional = float(filters.get('MIN_NOTIONAL', {}).get('minNotional', 0))
 
-                # Validate quantity bounds
-                if amount < min_qty:
-                    return {'error': f'Quantity {amount} below minimum {min_qty} for {pair}', 'code': -4005}
-                if amount > max_qty:
-                    return {'error': f'Quantity {amount} above maximum {max_qty} for {pair}', 'code': -4006}
+                # Get contract multiplier - min_qty/max_qty are in contracts, amount is in assets
+                contract_multiplier = 1.0
+                if 'multiplier' in filters:
+                    try:
+                        contract_multiplier = float(filters['multiplier'])
+                    except (TypeError, ValueError):
+                        contract_multiplier = 1.0
+
+                # Convert amount (assets) to contracts for validation
+                contracts = amount / contract_multiplier if contract_multiplier > 0 else amount
+
+                # Validate quantity bounds (in contracts)
+                if contracts < min_qty:
+                    return {'error': f'Quantity {contracts:.8f} contracts (from {amount:.8f} assets) below minimum {min_qty} contracts for {pair}', 'code': -4005}
+                if contracts > max_qty:
+                    return {'error': f'Quantity {contracts:.8f} contracts (from {amount:.8f} assets) above maximum {max_qty} contracts for {pair}', 'code': -4006}
 
                 # Format quantity and price with proper precision
                 if step_size:

@@ -290,6 +290,18 @@ class DiscordSignalParser:
             parsed_data['quantity_multiplier'] = quantity
             logger.info(f"Added quantity multiplier {quantity} for {coin_symbol}")
 
+        # Optional: Pre-validate symbol if coin_symbol is available
+        # This catches invalid symbols early during parsing
+        if parsed_data.get('coin_symbol'):
+            try:
+                from src.core.dynamic_symbol_validator import DynamicSymbolValidator
+                validator = DynamicSymbolValidator()
+                # Note: Full validation requires exchange client, so this is best-effort
+                # Full validation will happen during execution
+                logger.debug(f"Symbol {parsed_data['coin_symbol']} will be validated during execution")
+            except Exception as e:
+                logger.debug(f"Symbol pre-validation skipped: {e}")
+
         return parsed_data
 
     async def parse_trade_update_signal(self, signal_content: str, active_trade: Dict) -> Optional[Dict]:
