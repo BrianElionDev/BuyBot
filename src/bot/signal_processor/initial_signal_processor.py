@@ -351,7 +351,12 @@ class InitialSignalProcessor:
             trading_pair, trade_amount, price_for_validation, min_qty, max_qty, min_notional, is_futures
         )
         if not validation_result[0]:
-            return False, validation_result[1] or "Validation failed"
+            error_msg = validation_result[1]
+            # If error is a dict with retry suggestions, return it as-is
+            if isinstance(error_msg, dict):
+                return False, error_msg
+            # Otherwise, return as string
+            return False, error_msg or "Validation failed"
 
         # --- Position/Leverage Validation ---
         if is_futures:
@@ -390,23 +395,34 @@ class InitialSignalProcessor:
                 usdt_amount = float(position_size_override)
                 logger.info(f"Using position_size override (final notional): ${usdt_amount}")
             else:
-                # Get position_size from database instead of hardcoded config
-                usdt_amount = self.trading_engine.config.TRADE_AMOUNT  # Fallback to config
+                # Get position_size from database - REQUIRED, no fallback
                 try:
                     from src.services.trader_config_service import trader_config_service
                     trader_id = getattr(self.trading_engine, 'trader_id', None) or ''
+                    if not trader_id:
+                        logger.error("trader_id not set on trading engine, cannot retrieve position_size")
+                        return 0.0
+
                     exch_name = self.exchange.__class__.__name__.lower()
                     exchange_key = 'binance' if 'binance' in exch_name else ('kucoin' if 'kucoin' in exch_name else 'binance')
 
                     config = await trader_config_service.get_trader_config(trader_id)
-                    if not config or config.exchange.value != exchange_key:
-                        msg = f"Missing or mismatched trader config for trader={trader_id}, exchange={exchange_key}; refusing to fallback for position_size"
-                        logger.error(msg)
+                    if not config:
+                        logger.error(f"No trader config found for trader={trader_id} (normalized). Cannot proceed without position_size from trader_exchange_config table.")
                         return 0.0
+
+                    if config.exchange.value != exchange_key:
+                        logger.error(f"Trader config exchange mismatch: trader={trader_id} configured for {config.exchange.value}, but order is for {exchange_key}")
+                        return 0.0
+
                     usdt_amount = float(config.position_size)
-                    logger.info(f"Using database position_size (final notional): ${usdt_amount} for trader {trader_id}")
+                    if usdt_amount <= 0:
+                        logger.error(f"Invalid position_size from database: {usdt_amount} for trader {trader_id}")
+                        return 0.0
+
+                    logger.info(f"Using position_size from trader_exchange_config: ${usdt_amount} for trader {trader_id} on {exchange_key}")
                 except Exception as e:
-                    logger.error(f"Failed to get position_size from TraderConfigService: {e}")
+                    logger.error(f"Failed to get position_size from TraderConfigService: {e}", exc_info=True)
                     return 0.0
 
             # Calculate trade amount based on USDT value and current price
@@ -488,8 +504,16 @@ class InitialSignalProcessor:
                 # Check notional value
                 notional_value = trade_amount * current_price
                 if notional_value < min_notional:
-                    logger.warning(f"Order notional {notional_value} below minimum {min_notional} for {trading_pair}. Skipping order.")
-                    return False, f"Notional {notional_value} below minimum {min_notional} for {trading_pair}, order skipped."
+                    logger.warning(f"Order notional {notional_value:.2f} below minimum {min_notional:.2f} for {trading_pair}. Skipping order.")
+                    # Calculate required minimum trade amount for retry suggestion
+                    required_trade_amount = min_notional / current_price if current_price > 0 else min_qty
+                    required_notional = required_trade_amount * current_price
+                    return False, {
+                        "error": f"Notional {notional_value:.2f} below minimum {min_notional:.2f} for {trading_pair}, order skipped.",
+                        "retry_suggested": True,
+                        "suggested_size": required_notional,
+                        "code": -4164
+                    }
 
                 logger.info(f"Quantity validation passed for {trading_pair}: {trade_amount} (min: {min_qty}, max: {max_qty}, notional: {notional_value:.2f})")
             else:

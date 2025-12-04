@@ -57,6 +57,98 @@ class SignalValidator:
         logger.warning(f"No coin symbol found in content: {content}")
         return None
 
+    def fix_malformed_entry_prices(self, entry_prices: List[float], coin_symbol: str) -> List[float]:
+        """
+        Detect and fix malformed concatenated entry prices.
+
+        Examples:
+        - [9340093800] -> [93400, 93800] (BTC prices concatenated)
+        - [9057290312] -> [90572, 90312] (BTC prices concatenated)
+
+        Args:
+            entry_prices: List of entry prices (potentially malformed)
+            coin_symbol: Coin symbol for context
+
+        Returns:
+            Fixed list of entry prices
+        """
+        if not entry_prices or len(entry_prices) == 0:
+            return entry_prices
+
+        fixed_prices = []
+
+        for price in entry_prices:
+            price_str = str(int(price)) if isinstance(price, float) and price.is_integer() else str(price)
+
+            # Detect concatenated prices (very long numbers that look like two prices)
+            # Common patterns: BTC prices are usually 4-6 digits, ETH 3-4 digits
+            # If we see a number with 8+ digits, it might be concatenated
+
+            if len(price_str) >= 8 and '.' not in price_str:
+                # Try to split into two reasonable prices
+                # For BTC: usually 4-6 digits each
+                # For ETH: usually 3-4 digits each
+                # For altcoins: varies
+
+                coin_upper = coin_symbol.upper()
+                if coin_upper == 'BTC':
+                    # BTC prices are typically 4-6 digits
+                    # Try splitting at positions 4, 5, or 6
+                    for split_pos in [4, 5, 6]:
+                        if len(price_str) >= split_pos * 2:
+                            try:
+                                price1 = float(price_str[:split_pos])
+                                price2 = float(price_str[split_pos:])
+                                # Validate reasonable BTC prices (between 1000 and 200000)
+                                if 1000 <= price1 <= 200000 and 1000 <= price2 <= 200000:
+                                    logger.info(f"Fixed concatenated BTC prices: {price} -> [{price1}, {price2}]")
+                                    fixed_prices.extend([price1, price2])
+                                    break
+                            except ValueError:
+                                continue
+                    else:
+                        # Couldn't split, keep original
+                        fixed_prices.append(price)
+                elif coin_upper == 'ETH':
+                    # ETH prices are typically 3-4 digits
+                    for split_pos in [3, 4]:
+                        if len(price_str) >= split_pos * 2:
+                            try:
+                                price1 = float(price_str[:split_pos])
+                                price2 = float(price_str[split_pos:])
+                                # Validate reasonable ETH prices (between 100 and 10000)
+                                if 100 <= price1 <= 10000 and 100 <= price2 <= 10000:
+                                    logger.info(f"Fixed concatenated ETH prices: {price} -> [{price1}, {price2}]")
+                                    fixed_prices.extend([price1, price2])
+                                    break
+                            except ValueError:
+                                continue
+                    else:
+                        fixed_prices.append(price)
+                else:
+                    # For other coins, try common split patterns
+                    # Try splitting in half or at common positions
+                    mid_point = len(price_str) // 2
+                    for split_pos in [mid_point - 1, mid_point, mid_point + 1]:
+                        if split_pos > 0 and split_pos < len(price_str):
+                            try:
+                                price1 = float(price_str[:split_pos])
+                                price2 = float(price_str[split_pos:])
+                                # Basic validation: both should be positive and reasonable
+                                if price1 > 0 and price2 > 0 and price1 < price * 10 and price2 < price * 10:
+                                    logger.info(f"Fixed concatenated {coin_symbol} prices: {price} -> [{price1}, {price2}]")
+                                    fixed_prices.extend([price1, price2])
+                                    break
+                            except ValueError:
+                                continue
+                    else:
+                        fixed_prices.append(price)
+            else:
+                # Price looks normal, keep as-is
+                fixed_prices.append(price)
+
+        return fixed_prices if fixed_prices else entry_prices
+
     def validate_parsed_signal(self, parsed_signal: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """
         Validate a parsed signal structure.
@@ -86,10 +178,14 @@ class SignalValidator:
         if position_type not in self.supported_position_types:
             return False, f"Invalid position type: {position_type}"
 
-        # Validate entry prices
+        # Validate and fix entry prices
         entry_prices = parsed_signal.get('entry_prices')
         if not entry_prices or not isinstance(entry_prices, list):
             return False, "Entry prices must be a non-empty list"
+
+        # Fix malformed concatenated prices
+        entry_prices = self.fix_malformed_entry_prices(entry_prices, coin_symbol)
+        parsed_signal['entry_prices'] = entry_prices
 
         for price in entry_prices:
             if not isinstance(price, (int, float)) or price <= 0:

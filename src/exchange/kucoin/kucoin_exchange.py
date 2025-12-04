@@ -273,7 +273,15 @@ class KucoinExchange(ExchangeBase):
                 # Convert amount (assets) to contracts for validation
                 contracts = amount / contract_multiplier if contract_multiplier > 0 else amount
 
-                # Validate quantity bounds (in contracts)
+                # CRITICAL: Enforce minimum 1.0 contracts BEFORE validation (KuCoin requirement)
+                # This prevents validation failures when we know we'll enforce the minimum anyway
+                if contracts < 1.0:
+                    logger.info(f"Enforcing minimum 1.0 contracts before validation (was {contracts:.8f} contracts)")
+                    contracts = 1.0
+                    # Recalculate amount from enforced contracts
+                    amount = contracts * contract_multiplier
+
+                # Validate quantity bounds (in contracts) - now that minimum is enforced
                 if contracts < min_qty:
                     return {'error': f'Quantity {contracts:.8f} contracts (from {amount:.8f} assets) below minimum {min_qty} contracts for {pair}', 'code': -4005}
                 if contracts > max_qty:

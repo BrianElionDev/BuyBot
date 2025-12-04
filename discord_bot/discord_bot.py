@@ -222,6 +222,28 @@ class DiscordBot:
 
                 logger.info(f"Successfully parsed signal for trade {trade_row['id']}: {parsed_signal['coin_symbol']}")
 
+                # Fix malformed entry prices (concatenated prices)
+                from discord_bot.signal_processing.signal_validator import SignalValidator
+                validator = SignalValidator()
+                coin_symbol = parsed_signal.get('coin_symbol', '')
+                if parsed_signal.get('entry_prices'):
+                    fixed_prices = validator.fix_malformed_entry_prices(parsed_signal['entry_prices'], coin_symbol)
+                    if fixed_prices != parsed_signal['entry_prices']:
+                        logger.info(f"Fixed malformed entry prices for {coin_symbol}: {parsed_signal['entry_prices']} -> {fixed_prices}")
+                        parsed_signal['entry_prices'] = fixed_prices
+
+                # Validate break-even stop loss (not allowed on initial entries)
+                stop_loss = parsed_signal.get('stop_loss')
+                if stop_loss and isinstance(stop_loss, str) and stop_loss.upper() in ['BE', 'BREAK_EVEN', 'BREAK-EVEN', 'BREAKEVEN']:
+                    logger.error(f"Break-even stop loss not allowed on initial entry for trade {trade_row['id']}")
+                    await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
+                        'status': 'FAILED',
+                        'sync_error_count': 1,
+                        'exchange_response': ['Break-even stop loss only valid for follow-up signals, not initial entry'],
+                        'manual_verification_needed': True
+                    })
+                    return {"status": "error", "message": "Break-even stop loss only valid for follow-up signals, not initial entry"}
+
                 # Update trade with parsed signal data
                 trade_updates = {
                     'parsed_signal': json.dumps(parsed_signal) if isinstance(parsed_signal, dict) else str(parsed_signal),
