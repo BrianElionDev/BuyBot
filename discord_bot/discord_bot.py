@@ -206,6 +206,17 @@ class DiscordBot:
             else:
                 logger.info(f"Found existing trade for discord_id {signal.discord_id}: ID {trade_row['id']}")
 
+                # Prevent re-execution if trade has already been executed
+                trade_status = trade_row.get('status', '').upper()
+                exchange_order_id = trade_row.get('exchange_order_id')
+                if exchange_order_id or trade_status in ['FILLED', 'PARTIALLY_FILLED', 'EXECUTED', 'ACTIVE']:
+                    logger.info(f"Trade {trade_row['id']} already executed (status: {trade_status}, order_id: {exchange_order_id}). Skipping re-execution.")
+                    return {
+                        "status": "skipped",
+                        "message": f"Trade already executed (status: {trade_status})",
+                        "trade_id": trade_row['id']
+                    }
+
             # Parse signal with AI
             try:
                 parsed_signal = await self.signal_parser.parse_new_trade_signal(signal.structured)

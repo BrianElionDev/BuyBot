@@ -1046,11 +1046,14 @@ async def cleanup_closed_positions_enhanced(bot: DiscordBot, supabase: Client, b
         # Get symbol with fallback logic
         symbol = extract_symbol_from_trade(trade)
 
-        # Close trade if: symbol not in active positions AND (status is ACTIVE/OPEN/PENDING OR closed_at is set but status isn't CLOSED)
+        # Close trade if:
+        # 1. Symbol not in active positions AND status is ACTIVE/OPEN/PENDING, OR
+        # 2. closed_at is set but status isn't CLOSED/CANCELLED/FAILED (regardless of active positions)
         should_close = (
-            symbol and symbol not in active_symbols and
-            (status in ['ACTIVE', 'OPEN', 'PENDING'] or
-             (closed_at is not None and status not in ['CLOSED', 'CANCELLED', 'FAILED']))
+            symbol and (
+                (symbol not in active_symbols and status in ['ACTIVE', 'OPEN', 'PENDING']) or
+                (closed_at is not None and status not in ['CLOSED', 'CANCELLED', 'FAILED'])
+            )
         )
 
         if should_close:
@@ -1943,12 +1946,22 @@ async def cleanup_closed_kucoin_positions_enhanced(bot, supabase: Client, kucoin
     from src.core.data_enrichment import enrich_trade_data_before_close
 
     # Get all symbols with active positions on KuCoin
+    # Convert KuCoin position symbols (e.g., XBTUSDTM) to bot symbols (e.g., BTC)
     active_symbols = set()
     for pos in kucoin_positions:
-        symbol = pos.get('symbol', '').replace('USDTM', '')
+        kucoin_symbol = pos.get('symbol', '')
         position_size = float(pos.get('size', 0))
-        if symbol and position_size != 0:
-            active_symbols.add(symbol)
+        if kucoin_symbol and position_size != 0:
+            # Convert KuCoin symbol to bot symbol format (XBTUSDTM -> BTC)
+            bot_symbol = _symbol_converter.convert_kucoin_to_bot(kucoin_symbol)
+            # Extract base symbol (BTCUSDT -> BTC)
+            if bot_symbol.endswith('USDT'):
+                bot_symbol = bot_symbol[:-4]
+            if bot_symbol:
+                active_symbols.add(bot_symbol)
+                logging.debug(f"Active position: {kucoin_symbol} -> {bot_symbol}")
+
+    logging.info(f"Active symbols on KuCoin: {active_symbols}")
 
     # Find database trades that should be marked as closed
     trades_to_close = []
@@ -1957,15 +1970,21 @@ async def cleanup_closed_kucoin_positions_enhanced(bot, supabase: Client, kucoin
         closed_at = trade.get('closed_at')
         symbol = extract_symbol_from_trade(trade)
 
-        # Close trade if: symbol not in active positions AND (status is ACTIVE/OPEN/PENDING OR closed_at is set but status isn't CLOSED)
+        # Close trade if:
+        # 1. Symbol not in active positions AND status is ACTIVE/OPEN/PENDING, OR
+        # 2. closed_at is set but status isn't CLOSED/CANCELLED/FAILED (regardless of active positions)
         should_close = (
-            symbol and symbol not in active_symbols and
-            (status in ['ACTIVE', 'OPEN', 'PENDING'] or
-             (closed_at is not None and status not in ['CLOSED', 'CANCELLED', 'FAILED']))
+            symbol and (
+                (symbol not in active_symbols and status in ['ACTIVE', 'OPEN', 'PENDING']) or
+                (closed_at is not None and status not in ['CLOSED', 'CANCELLED', 'FAILED'])
+            )
         )
 
         if should_close:
             trades_to_close.append(trade)
+            logging.debug(f"Trade {trade.get('id')} ({symbol}) should be closed: status={status}, closed_at={closed_at}, in_active_symbols={symbol in active_symbols if symbol else False}")
+
+    logging.info(f"Found {len(trades_to_close)} trades to close out of {len(db_trades)} total trades")
 
     updates_made = 0
 
