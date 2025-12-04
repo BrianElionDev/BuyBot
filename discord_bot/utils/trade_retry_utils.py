@@ -860,10 +860,18 @@ async def sync_kucoin_positions_to_database_enhanced(bot: DiscordBot, supabase: 
                     if not trade.get('position_size') and asset_quantity > 0:
                         update_data['position_size'] = str(asset_quantity)
 
-                    # If trade is not ACTIVE/OPEN, mark ACTIVE when we see a live position
+                    # Only mark ACTIVE if there's a live position AND trade isn't already closed
                     status = str(trade.get('status', '')).upper()
-                    if status not in ['ACTIVE', 'OPEN'] and abs(float(position.get('size', 0))) > 0:
+                    closed_at = trade.get('closed_at')
+                    has_position = abs(float(position.get('size', 0))) > 0
+
+                    # Don't mark as ACTIVE if trade is already closed (has closed_at timestamp)
+                    if has_position and status not in ['ACTIVE', 'OPEN'] and closed_at is None:
                         update_data['status'] = 'ACTIVE'
+                        update_data['is_active'] = True
+                    elif has_position and closed_at is not None:
+                        # Position exists but trade is marked closed - this shouldn't happen, log warning
+                        logging.warning(f"Trade {trade['id']} has closed_at={closed_at} but position still exists on exchange. Not changing status.")
 
                     supabase.table("trades").update(update_data).eq("id", trade['id']).execute()
                     updates_made += 1
