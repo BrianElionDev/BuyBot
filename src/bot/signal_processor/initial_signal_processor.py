@@ -403,6 +403,7 @@ class InitialSignalProcessor:
         Calculate the trade amount based on live database position_size and current price.
 
         Args:
+            current_price: For LIMIT orders, this is signal_price (limit price). For MARKET orders, this is current market price.
             position_size_override: Optional override for position size (for retries with adjusted size)
         """
         try:
@@ -443,6 +444,8 @@ class InitialSignalProcessor:
 
             # Calculate trade amount based on USDT value and current price
             # IMPORTANT: position_size is FINAL NOTIONAL (no leverage amplification here)
+            # For LIMIT orders: current_price is signal_price (limit price)
+            # For MARKET orders: current_price is current market price
             trade_amount = usdt_amount / current_price
             logger.info(f"Calculated trade amount (no leverage amplification): {trade_amount} {coin_symbol} (${usdt_amount:.2f} / ${current_price:.8f})")
 
@@ -463,27 +466,87 @@ class InitialSignalProcessor:
                     if filters:
                         lot_size_filter = filters.get('LOT_SIZE', {})
                         min_qty = float(lot_size_filter.get('minQty', 0))
+                        step_size = float(lot_size_filter.get('stepSize', 0))
                         min_notional_filter = filters.get('MIN_NOTIONAL', {}) if 'MIN_NOTIONAL' in filters else {}
                         min_notional_val = min_notional_filter.get('minNotional', min_notional_filter.get('notional', 0))
                         min_notional = float(min_notional_val or 0)
 
                         # Check if trade_amount meets minimums
+                        # IMPORTANT: Use current_price for notional check (this is signal_price for LIMIT, market price for MARKET)
                         if min_qty > 0 and min_notional > 0:
-                            if trade_amount < min_qty or trade_amount * current_price < min_notional:
-                                # Calculate required minimum
-                                required_qty = max(min_qty, min_notional / current_price)
-                                required_usdt = required_qty * current_price
+                            # Calculate notional using the same price that will be used for validation
+                            notional_value = trade_amount * current_price
+                            
+                            # Account for step_size rounding DOWN - we need to ensure notional still meets minimum after rounding
+                            if step_size > 0:
+                                # Round down to nearest step (matching format_value behavior)
+                                from decimal import Decimal
+                                trade_amount_dec = Decimal(str(trade_amount))
+                                step_size_dec = Decimal(str(step_size))
+                                rounded_down_amount = float((trade_amount_dec // step_size_dec) * step_size_dec)
+                                
+                                # Check notional after rounding down
+                                rounded_notional = rounded_down_amount * current_price
+                                
+                                if rounded_notional < min_notional:
+                                    # Need to bump up to next step_size increment
+                                    # Calculate minimum quantity needed for notional
+                                    required_qty_for_notional = min_notional / current_price
+                                    
+                                    # Round UP to next step_size increment
+                                    required_qty_dec = Decimal(str(required_qty_for_notional))
+                                    steps_needed = (required_qty_dec / step_size_dec).quantize(Decimal('1'), rounding='ROUND_UP')
+                                    required_qty = float(steps_needed * step_size_dec)
+                                    
+                                    # Ensure it's at least min_qty
+                                    required_qty = max(required_qty, min_qty)
+                                    
+                                    # Re-apply step_size rounding to ensure valid quantity
+                                    required_qty_dec = Decimal(str(required_qty))
+                                    required_qty = float((required_qty_dec // step_size_dec) * step_size_dec)
+                                    if required_qty < min_qty:
+                                        # Bump up by one step
+                                        required_qty = float((Decimal(str(min_qty)) // step_size_dec + Decimal('1')) * step_size_dec)
+                                    
+                                    # Recalculate notional after step size adjustment
+                                    required_usdt = required_qty * current_price
+                                    
+                                    # Risk limit: Don't auto-adjust if it would exceed 5x the original position size
+                                    max_allowed_usdt = usdt_amount * 5.0
 
-                                # Risk limit: Don't auto-adjust if it would exceed 5x the original position size
-                                max_allowed_usdt = usdt_amount * 5.0
-
-                                if required_usdt <= max_allowed_usdt:
-                                    logger.info(f"Auto-adjusting trade amount from {trade_amount:.8f} to {required_qty:.8f} to meet minimum requirements (${required_usdt:.2f} notional)")
-                                    trade_amount = required_qty
-                                else:
-                                    # Exceeds risk limit, return 0.0 to trigger validation error
-                                    logger.warning(f"Auto-adjustment would exceed 5x limit (${required_usdt:.2f} > ${max_allowed_usdt:.2f}), returning 0.0")
-                                    return 0.0
+                                    if required_usdt <= max_allowed_usdt:
+                                        logger.info(f"Auto-adjusting trade amount from {trade_amount:.8f} to {required_qty:.8f} to meet minimum requirements after step_size rounding (${required_usdt:.2f} notional, step_size={step_size})")
+                                        trade_amount = required_qty
+                                    else:
+                                        # Exceeds risk limit, return 0.0 to trigger validation error
+                                        logger.warning(f"Auto-adjustment would exceed 5x limit (${required_usdt:.2f} > ${max_allowed_usdt:.2f}), returning 0.0")
+                                        return 0.0
+                                elif trade_amount < min_qty:
+                                    # Quantity too small, bump to min_qty
+                                    required_qty = max(min_qty, ((Decimal(str(min_qty)) // step_size_dec) + Decimal('1')) * step_size_dec)
+                                    required_usdt = float(required_qty) * current_price
+                                    
+                                    max_allowed_usdt = usdt_amount * 5.0
+                                    if required_usdt <= max_allowed_usdt:
+                                        logger.info(f"Auto-adjusting trade amount from {trade_amount:.8f} to {required_qty:.8f} to meet min_qty (${required_usdt:.2f} notional)")
+                                        trade_amount = float(required_qty)
+                                    else:
+                                        logger.warning(f"Auto-adjustment would exceed 5x limit, returning 0.0")
+                                        return 0.0
+                            else:
+                                # No step_size, use original logic
+                                if trade_amount < min_qty or notional_value < min_notional:
+                                    required_qty_for_notional = min_notional / current_price
+                                    required_qty = max(min_qty, required_qty_for_notional)
+                                    required_usdt = required_qty * current_price
+                                    
+                                    max_allowed_usdt = usdt_amount * 5.0
+                                    if required_usdt <= max_allowed_usdt:
+                                        logger.info(f"Auto-adjusting trade amount from {trade_amount:.8f} to {required_qty:.8f} to meet minimum requirements (${required_usdt:.2f} notional)")
+                                        trade_amount = required_qty
+                                    else:
+                                        logger.warning(f"Auto-adjustment would exceed 5x limit (${required_usdt:.2f} > ${max_allowed_usdt:.2f}), returning 0.0")
+                                        return 0.0
                 except Exception as e:
                     logger.warning(f"Auto-bump check failed, proceeding with calculated amount: {e}")
 
