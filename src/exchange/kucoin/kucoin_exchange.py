@@ -251,6 +251,11 @@ class KucoinExchange(ExchangeBase):
 
             logger.info(f"Creating KuCoin futures order: {pair} {side} {order_type} {amount} (asset quantity)")
 
+            # Pre-validation: Ensure base amount > 0 before any processing
+            if amount <= 0:
+                logger.error(f"Invalid amount {amount} for {pair} - amount must be > 0")
+                return {'error': f'Notional value 0.0 below minimum 1e-05 for {pair}', 'code': -4007}
+
             # Enhanced Precision Handling and Validation
             filters = await self.get_futures_symbol_filters(pair)
             if filters:
@@ -270,16 +275,65 @@ class KucoinExchange(ExchangeBase):
                     except (TypeError, ValueError):
                         contract_multiplier = 1.0
 
+                # CRITICAL: Validate notional BEFORE contract conversion and rounding
+                # This prevents issues where amount becomes 0 after conversion
+                validation_price = None
+                if order_type.upper() == 'MARKET':
+                    # Fetch mark price for MARKET orders with retry logic
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            validation_price = await self.get_mark_price(pair)
+                            if validation_price and validation_price > 0:
+                                break
+                        except Exception as e:
+                            logger.warning(f"Mark price fetch attempt {attempt + 1} failed: {e}")
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(0.5)
+
+                    if not validation_price or validation_price <= 0:
+                        logger.error(f"Failed to fetch mark price for MARKET order validation on {pair} after {max_retries} attempts")
+                        return {'error': f'Cannot validate notional value: mark price unavailable for {pair}. Please retry.', 'code': -4008}
+                elif price:
+                    # Use LIMIT price for LIMIT orders
+                    validation_price = price
+
+                # Validate notional BEFORE any amount modifications
+                if validation_price and min_notional > 0:
+                    original_notional = amount * validation_price
+                    if original_notional < min_notional:
+                        logger.warning(f"Original notional {original_notional} below minimum {min_notional} for {pair}")
+                        # Calculate required amount to meet minimum
+                        required_amount = min_notional / validation_price if validation_price > 0 else amount
+                        # Ensure we don't exceed max_qty after conversion
+                        required_contracts = required_amount / contract_multiplier if contract_multiplier > 0 else required_amount
+                        if required_contracts > max_qty:
+                            return {'error': f'Notional value {original_notional} below minimum {min_notional} for {pair}, and required amount exceeds maximum', 'code': -4007}
+                        logger.info(f"Auto-adjusting amount from {amount} to {required_amount} to meet minimum notional {min_notional}")
+                        amount = required_amount
+
                 # Convert amount (assets) to contracts for validation
                 contracts = amount / contract_multiplier if contract_multiplier > 0 else amount
 
-                # CRITICAL: Enforce minimum 1.0 contracts BEFORE validation (KuCoin requirement)
+                # CRITICAL: Enforce minimum 1.0 contracts AFTER notional validation
                 # This prevents validation failures when we know we'll enforce the minimum anyway
                 if contracts < 1.0:
                     logger.info(f"Enforcing minimum 1.0 contracts before validation (was {contracts:.8f} contracts)")
                     contracts = 1.0
                     # Recalculate amount from enforced contracts
                     amount = contracts * contract_multiplier
+                    # Re-validate notional after enforcing minimum contracts
+                    if validation_price and min_notional > 0:
+                        new_notional = amount * validation_price
+                        if new_notional < min_notional:
+                            logger.warning(f"Notional {new_notional} still below minimum {min_notional} after enforcing 1 contract")
+                            # Try to increase to meet notional
+                            required_amount_for_notional = min_notional / validation_price if validation_price > 0 else amount
+                            required_contracts_for_notional = required_amount_for_notional / contract_multiplier if contract_multiplier > 0 else required_amount_for_notional
+                            if required_contracts_for_notional <= max_qty:
+                                contracts = max(1.0, required_contracts_for_notional)
+                                amount = contracts * contract_multiplier
+                                logger.info(f"Adjusted to {contracts} contracts ({amount} assets) to meet notional requirement")
 
                 # Validate quantity bounds (in contracts) - now that minimum is enforced
                 if contracts < min_qty:
@@ -295,25 +349,13 @@ class KucoinExchange(ExchangeBase):
                 if stop_price and tick_size:
                     stop_price = round(stop_price / tick_size) * tick_size
 
-                # Validate minimum notional
-                # For LIMIT orders: use provided price
-                # For MARKET orders: fetch mark price
-                validation_price = None
-                if order_type.upper() == 'MARKET':
-                    # Fetch mark price for MARKET orders
-                    validation_price = await self.get_mark_price(pair)
-                    if not validation_price or validation_price <= 0:
-                        logger.error(f"Failed to fetch mark price for MARKET order validation on {pair}")
-                        return {'error': f'Cannot validate notional value: mark price unavailable for {pair}. Please retry.', 'code': -4008}
-                elif price:
-                    # Use LIMIT price for LIMIT orders
-                    validation_price = price
-
-                # Validate notional if we have a valid price
+                # Final notional validation after all formatting
                 if validation_price and min_notional > 0:
-                    notional = amount * validation_price
-                    if notional < min_notional:
-                        return {'error': f'Notional value {notional} below minimum {min_notional} for {pair}', 'code': -4007}
+                    final_notional = amount * validation_price
+                    if final_notional < min_notional:
+                        logger.error(f"Final notional {final_notional} below minimum {min_notional} for {pair} after formatting")
+                        return {'error': f'Notional value {final_notional} below minimum {min_notional} for {pair}', 'code': -4007}
+                    logger.info(f"Notional validation passed: {final_notional} >= {min_notional} for {pair}")
 
             # Convert to KuCoin format
             kucoin_side = "buy" if side.upper() == "BUY" else "sell"

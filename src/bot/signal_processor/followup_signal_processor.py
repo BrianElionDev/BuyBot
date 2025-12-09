@@ -166,15 +166,94 @@ class FollowupSignalProcessor:
 
             position_requiring_actions = ['stop_loss_hit', 'take_profit_1', 'stops_to_be', 'tp1and_sl_to_be', 'position_closed']
             if action in position_requiring_actions:
-                if 'error' in binance_status:
-                    logger.warning(f"Could not get live position data from Binance for {coin_symbol}: {binance_status['error']}. Using stored position_size.")
-                    position_size = float(active_trade.get('position_size') or 0.0)
-                else:
-                    position_size = binance_status.get('position_size', 0.0)
-                    logger.info(f"Using live Binance position size: {position_size} for {coin_symbol}")
+                position_size = 0.0
+                position_size_source = None
 
+                # Try multiple fallbacks to get position size
+                # 1. Try live exchange position query (most accurate)
+                if 'error' not in binance_status:
+                    position_size = binance_status.get('position_size', 0.0)
+                    if position_size > 0:
+                        position_size_source = 'live_exchange'
+                        logger.info(f"Using live Binance position size: {position_size} for {coin_symbol}")
+
+                # 2. Try database position_size if live query failed or returned 0
                 if position_size <= 0:
-                    return False, active_trade, f"Trade {trade_id} has zero position size - cannot execute {action}"
+                    db_position_size = float(active_trade.get('position_size') or 0.0)
+                    if db_position_size > 0:
+                        position_size = db_position_size
+                        position_size_source = 'database'
+                        logger.info(f"Using database position size: {position_size} for {coin_symbol}")
+
+                # 3. Try parsing from order responses if still 0
+                if position_size <= 0:
+                    try:
+                        binance_response = active_trade.get('binance_response', '')
+                        exchange_response = active_trade.get('exchange_response', '')
+                        kucoin_response = active_trade.get('kucoin_response', '')
+
+                        import json
+                        for response_field in [binance_response, exchange_response, kucoin_response]:
+                            if not response_field:
+                                continue
+                            try:
+                                if isinstance(response_field, str):
+                                    response_data = json.loads(response_field)
+                                else:
+                                    response_data = response_field
+
+                                # Try different response field names
+                                parsed_size = (
+                                    float(response_data.get('executedQty', 0)) or
+                                    float(response_data.get('origQty', 0)) or
+                                    float(response_data.get('filledSize', 0)) or
+                                    float(response_data.get('size', 0)) or
+                                    0.0
+                                )
+
+                                if parsed_size > 0:
+                                    position_size = parsed_size
+                                    position_size_source = 'order_response'
+                                    logger.info(f"Using position size from order response: {position_size} for {coin_symbol}")
+                                    break
+                            except (json.JSONDecodeError, ValueError, TypeError):
+                                continue
+                    except Exception as e:
+                        logger.warning(f"Could not parse position size from order responses: {e}")
+
+                # 4. For TP1 specifically: check if position was already partially closed
+                if position_size <= 0 and action == 'take_profit_1':
+                    try:
+                        # Check if there's a small remainder position (may have been partially closed)
+                        positions = await self.exchange.get_futures_position_information()
+                        trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
+                        for pos in positions:
+                            pos_symbol = pos.get('symbol', '')
+                            if pos_symbol == trading_pair or pos_symbol.replace('USDT', '') == coin_symbol:
+                                pos_amt = float(pos.get('positionAmt', 0))
+                                if abs(pos_amt) > 0:
+                                    position_size = abs(pos_amt)
+                                    position_size_source = 'partial_position_remainder'
+                                    logger.info(f"Found partial position remainder: {position_size} for {coin_symbol} (TP1 may have been partially executed)")
+                                    break
+                    except Exception as e:
+                        logger.warning(f"Could not check for partial position: {e}")
+
+                # Final validation with detailed error message
+                if position_size <= 0:
+                    error_details = f"Trade {trade_id} has zero position size - cannot execute {action}"
+                    if position_size_source:
+                        error_details += f" (tried: {position_size_source})"
+                    else:
+                        error_details += " (tried: live_exchange, database, order_response"
+                        if action == 'take_profit_1':
+                            error_details += ", partial_position_remainder"
+                        error_details += ")"
+                    return False, active_trade, error_details
+
+                # Store the resolved position size for use downstream
+                active_trade['resolved_position_size'] = position_size
+                active_trade['position_size_source'] = position_size_source
 
             if 'error' in binance_status:
                 logger.warning(f"Could not validate trade {trade_id} against Binance: {binance_status['error']}")
@@ -286,7 +365,8 @@ class FollowupSignalProcessor:
             return False, {"error": f"Missing coin_symbol or position_type for trade {trade_id}"}
         trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
 
-        position_size = float(active_trade.get('position_size') or 0.0)
+        # Use resolved position size from validation if available, otherwise try to fetch
+        position_size = float(active_trade.get('resolved_position_size') or active_trade.get('position_size') or 0.0)
         if position_size <= 0:
             try:
                 positions = await self.exchange.get_futures_position_information()
@@ -450,7 +530,7 @@ class FollowupSignalProcessor:
         try:
             logger.info(f"Closing position for {coin_symbol} at market. Reason: {action}")
 
-            # Fetch live position size if not available
+            # Fetch live position size if not available (with multiple fallbacks)
             if position_size <= 0:
                 try:
                     positions = await self.exchange.get_futures_position_information()
@@ -464,6 +544,10 @@ class FollowupSignalProcessor:
                                 break
                 except Exception as e:
                     logger.warning(f"Could not fetch live position size: {e}")
+
+                # If still 0, this is expected for already-closed positions
+                if position_size <= 0:
+                    logger.info(f"Position size is 0 - position may already be closed for {coin_symbol}")
 
             if position_size <= 0:
                 logger.error(f"No valid position size found for {coin_symbol}")
@@ -561,14 +645,27 @@ class FollowupSignalProcessor:
                 await self.exchange.cancel_futures_order(trading_pair, stop_loss_order_id)
 
             new_sl_side = 'SELL' if position_type and position_type.upper() == 'LONG' else 'BUY'
-            new_sl_order = await self.exchange.create_futures_order(
-                pair=trading_pair,
-                side=new_sl_side,
-                order_type='STOP_MARKET',
-                stop_price=new_stop_price,
-                amount=position_size,
-                reduce_only=True
-            )
+
+            # Binance requires STOP_MARKET orders to use Algo Order API endpoint
+            is_binance = hasattr(self.exchange, '__class__') and 'binance' in self.exchange.__class__.__name__.lower()
+            if is_binance and hasattr(self.exchange, 'create_algo_order'):
+                new_sl_order = await self.exchange.create_algo_order(
+                    pair=trading_pair,
+                    side=new_sl_side,
+                    order_type='STOP_MARKET',
+                    quantity=position_size,
+                    stop_price=new_stop_price,
+                    reduce_only=True
+                )
+            else:
+                new_sl_order = await self.exchange.create_futures_order(
+                    pair=trading_pair,
+                    side=new_sl_side,
+                    order_type='STOP_MARKET',
+                    stop_price=new_stop_price,
+                    amount=position_size,
+                    reduce_only=True
+                )
 
             if new_sl_order and 'orderId' in new_sl_order:
                 logger.info(f"Stop loss updated: {new_sl_order['orderId']}")

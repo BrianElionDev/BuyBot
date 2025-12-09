@@ -583,6 +583,24 @@ class KucoinTradingEngine:
 
             logger.info(f"Closing {close_percentage}% of position: {quantity} {coin_symbol} (total: {position_size})")
 
+            # Check if position exists before attempting to close (idempotency)
+            try:
+                positions = await self.kucoin_exchange.get_futures_position_information()
+                target_symbol = f"{coin_symbol.upper()}USDTM"
+                position_exists = False
+                for pos in positions:
+                    if pos.get('symbol') == target_symbol:
+                        pos_size = float(pos.get('size', 0))
+                        if pos_size != 0:
+                            position_exists = True
+                            break
+
+                if not position_exists:
+                    logger.info(f"Position for {coin_symbol} does not exist on exchange - already closed")
+                    return True, {"message": "Position already closed, no action needed"}
+            except Exception as e:
+                logger.warning(f"Could not check position existence before close: {e}")
+
             # Create market order to close position using direct API call
             logger.info(f"Executing KuCoin close order: {trading_pair} {side} {ORDER_TYPE_MARKET} amount={quantity}")
             success, result = await self.kucoin_exchange.close_position(
@@ -592,6 +610,19 @@ class KucoinTradingEngine:
             )
 
             if not success:
+                # Check if error indicates position already closed
+                error_msg = str(result) if isinstance(result, (str, dict)) else ''
+                if isinstance(result, dict):
+                    error_msg = result.get('error', '') or result.get('message', '') or str(result)
+
+                # KuCoin error codes for "no position" scenarios
+                if any(indicator in error_msg.lower() for indicator in [
+                    'no open positions', 'position already closed', 'no position',
+                    '300009', 'position not found', 'position does not exist'
+                ]):
+                    logger.info(f"Position already closed on KuCoin: {error_msg}")
+                    return True, {"message": "Position already closed, no action needed"}
+
                 logger.error(f"KuCoin close order failed: {result}")
                 return False, result
 

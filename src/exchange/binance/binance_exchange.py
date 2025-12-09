@@ -237,6 +237,10 @@ class BinanceExchange(ExchangeBase):
             if order_type.upper() == 'LIMIT':
                 post_only = bool(getattr(cfg, 'BINANCE_POST_ONLY', False))
                 order_params['timeInForce'] = 'GTX' if post_only else 'GTC'
+            elif order_type.upper() in ('STOP_MARKET', 'TAKE_PROFIT_MARKET', 'STOP', 'TAKE_PROFIT'):
+                # STOP_MARKET and TAKE_PROFIT_MARKET orders should use GTC, not GTX
+                # GTX (post-only) causes EXPIRE_MAKER errors for trigger orders
+                order_params['timeInForce'] = 'GTC'
 
             if price:
                 # Robust maker-side pricing using N tick offset and optional post-only
@@ -321,6 +325,97 @@ class BinanceExchange(ExchangeBase):
             return {'error': error_msg, 'code': e.code}
         except Exception as e:
             error_msg = f"Error creating futures order: {e}"
+            logger.error(error_msg)
+            return {'error': error_msg, 'code': -1}
+
+    async def create_algo_order(
+        self,
+        pair: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        stop_price: float,
+        reduce_only: bool = False,
+        client_order_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Create an algo order (STOP_MARKET, TAKE_PROFIT_MARKET) using Binance Algo Order API.
+
+        Binance requires STOP_MARKET and TAKE_PROFIT_MARKET orders to use the algo order endpoint
+        instead of the regular order endpoint.
+
+        Args:
+            pair: Trading pair symbol
+            side: Order side (BUY/SELL)
+            order_type: Order type (STOP_MARKET, TAKE_PROFIT_MARKET)
+            quantity: Order quantity
+            stop_price: Stop price (trigger price)
+            reduce_only: Whether order should only reduce position
+            client_order_id: Custom order ID
+
+        Returns:
+            Dict containing order response or error information
+        """
+        await self._init_client()
+        assert self.client is not None
+
+        logger.info(f"Creating algo order: {pair} {side} {order_type} {quantity} @ {stop_price}")
+
+        try:
+            filters = await self.get_futures_symbol_filters(pair)
+            if filters:
+                lot_size_filter = filters.get('LOT_SIZE', {})
+                price_filter = filters.get('PRICE_FILTER', {})
+                step_size = lot_size_filter.get('stepSize')
+                tick_size = price_filter.get('tickSize')
+                min_qty = float(lot_size_filter.get('minQty', 0))
+                max_qty = float(lot_size_filter.get('maxQty', float('inf')))
+
+                if quantity < min_qty:
+                    return {'error': f'Quantity {quantity} below minimum {min_qty} for {pair}', 'code': -4005}
+                if quantity > max_qty:
+                    return {'error': f'Quantity {quantity} above maximum {max_qty} for {pair}', 'code': -4006}
+
+                if step_size:
+                    quantity = float(format_value(quantity, step_size))
+                if stop_price and tick_size:
+                    stop_price = float(format_value(stop_price, tick_size))
+
+            algo_params = {
+                'symbol': pair,
+                'side': side,
+                'type': order_type,
+                'quantity': quantity,
+                'stopPrice': stop_price,
+                'reduceOnly': reduce_only,
+                'workingType': 'MARK_PRICE',
+                'timeInForce': 'GTC'  # GTC for STOP_MARKET orders to avoid EXPIRE_MAKER errors
+            }
+
+            if client_order_id:
+                algo_params['newClientOrderId'] = client_order_id
+
+            result = await self.client.futures_create_order(**algo_params)
+
+            try:
+                logger.info(f"Raw Binance algo order response: {json.dumps(result)}")
+            except Exception:
+                logger.info(f"Raw Binance algo order response (non-JSON-serializable): {result}")
+
+            if 'orderId' not in result:
+                raise ValueError(f"Missing orderId in response: {result}")
+
+            logger.info(f"Algo order created successfully: {result.get('orderId')}")
+            return result
+
+        except BinanceAPIException as e:
+            if e.code == -4120:
+                logger.warning(f"Binance returned -4120 (algo endpoint required), but we're already using algo parameters. Error: {e.message}")
+            error_msg = f"Binance API error creating algo order: {e.message}"
+            logger.error(error_msg)
+            return {'error': error_msg, 'code': e.code}
+        except Exception as e:
+            error_msg = f"Error creating algo order: {e}"
             logger.error(error_msg)
             return {'error': error_msg, 'code': -1}
 

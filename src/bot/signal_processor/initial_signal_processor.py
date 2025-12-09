@@ -476,7 +476,7 @@ class InitialSignalProcessor:
                         if min_qty > 0 and min_notional > 0:
                             # Calculate notional using the same price that will be used for validation
                             notional_value = trade_amount * current_price
-                            
+
                             # Account for step_size rounding DOWN - we need to ensure notional still meets minimum after rounding
                             if step_size > 0:
                                 # Round down to nearest step (matching format_value behavior)
@@ -484,33 +484,33 @@ class InitialSignalProcessor:
                                 trade_amount_dec = Decimal(str(trade_amount))
                                 step_size_dec = Decimal(str(step_size))
                                 rounded_down_amount = float((trade_amount_dec // step_size_dec) * step_size_dec)
-                                
+
                                 # Check notional after rounding down
                                 rounded_notional = rounded_down_amount * current_price
-                                
+
                                 if rounded_notional < min_notional:
                                     # Need to bump up to next step_size increment
                                     # Calculate minimum quantity needed for notional
                                     required_qty_for_notional = min_notional / current_price
-                                    
+
                                     # Round UP to next step_size increment
                                     required_qty_dec = Decimal(str(required_qty_for_notional))
                                     steps_needed = (required_qty_dec / step_size_dec).quantize(Decimal('1'), rounding='ROUND_UP')
                                     required_qty = float(steps_needed * step_size_dec)
-                                    
+
                                     # Ensure it's at least min_qty
                                     required_qty = max(required_qty, min_qty)
-                                    
+
                                     # Re-apply step_size rounding to ensure valid quantity
                                     required_qty_dec = Decimal(str(required_qty))
                                     required_qty = float((required_qty_dec // step_size_dec) * step_size_dec)
                                     if required_qty < min_qty:
                                         # Bump up by one step
                                         required_qty = float((Decimal(str(min_qty)) // step_size_dec + Decimal('1')) * step_size_dec)
-                                    
+
                                     # Recalculate notional after step size adjustment
                                     required_usdt = required_qty * current_price
-                                    
+
                                     # Risk limit: Don't auto-adjust if it would exceed 5x the original position size
                                     max_allowed_usdt = usdt_amount * 5.0
 
@@ -525,7 +525,7 @@ class InitialSignalProcessor:
                                     # Quantity too small, bump to min_qty
                                     required_qty = max(min_qty, ((Decimal(str(min_qty)) // step_size_dec) + Decimal('1')) * step_size_dec)
                                     required_usdt = float(required_qty) * current_price
-                                    
+
                                     max_allowed_usdt = usdt_amount * 5.0
                                     if required_usdt <= max_allowed_usdt:
                                         logger.info(f"Auto-adjusting trade amount from {trade_amount:.8f} to {required_qty:.8f} to meet min_qty (${required_usdt:.2f} notional)")
@@ -539,7 +539,7 @@ class InitialSignalProcessor:
                                     required_qty_for_notional = min_notional / current_price
                                     required_qty = max(min_qty, required_qty_for_notional)
                                     required_usdt = required_qty * current_price
-                                    
+
                                     max_allowed_usdt = usdt_amount * 5.0
                                     if required_usdt <= max_allowed_usdt:
                                         logger.info(f"Auto-adjusting trade amount from {trade_amount:.8f} to {required_qty:.8f} to meet minimum requirements (${required_usdt:.2f} notional)")
@@ -758,26 +758,73 @@ class InitialSignalProcessor:
                         amount=trade_amount
                     )
             else:  # LIMIT
-                if is_kucoin:
-                    order = await self.exchange.create_futures_order(
-                        pair=trading_pair,
-                        side=order_side,
-                        order_type='LIMIT',
-                        amount=trade_amount,
-                        price=signal_price,
-                        leverage=leverage_value
-                    )
-                else:
-                    order = await self.exchange.create_futures_order(
-                        pair=trading_pair,
-                        side=order_side,
-                        order_type='LIMIT',
-                        amount=trade_amount,
-                        price=signal_price
-                    )
+                max_retries = 2
+                retry_count = 0
+                order = None
+
+                while retry_count <= max_retries and (not order or 'orderId' not in order):
+                    if is_kucoin:
+                        order = await self.exchange.create_futures_order(
+                            pair=trading_pair,
+                            side=order_side,
+                            order_type='LIMIT',
+                            amount=trade_amount,
+                            price=signal_price,
+                            leverage=leverage_value
+                        )
+                    else:
+                        order = await self.exchange.create_futures_order(
+                            pair=trading_pair,
+                            side=order_side,
+                            order_type='LIMIT',
+                            amount=trade_amount,
+                            price=signal_price
+                        )
+
+                    # Check if order failed with EXPIRE_MAKER (post-only would take liquidity)
+                    if not order or 'orderId' not in order:
+                        error_msg = str(order.get('error', '')) if isinstance(order, dict) else str(order)
+                        expire_reason = order.get('expire_reason', '') if isinstance(order, dict) else ''
+
+                        # If EXPIRE_MAKER and we have retries left, try converting to MARKET
+                        if ('EXPIRE_MAKER' in error_msg.upper() or 'EXPIRE_MAKER' in str(expire_reason).upper()) and retry_count < max_retries:
+                            logger.warning(f"LIMIT order got EXPIRE_MAKER error, converting to MARKET order for {trading_pair}")
+                            # Convert to MARKET order
+                            if is_kucoin:
+                                order = await self.exchange.create_futures_order(
+                                    pair=trading_pair,
+                                    side=order_side,
+                                    order_type='MARKET',
+                                    amount=trade_amount,
+                                    leverage=leverage_value
+                                )
+                            else:
+                                order = await self.exchange.create_futures_order(
+                                    pair=trading_pair,
+                                    side=order_side,
+                                    order_type='MARKET',
+                                    amount=trade_amount
+                                )
+                            if order and 'orderId' in order:
+                                logger.info(f"Successfully converted LIMIT to MARKET order for {trading_pair}")
+                                break
+                        elif retry_count < max_retries:
+                            # For other errors, try once more with adjusted price
+                            logger.warning(f"LIMIT order failed, retrying with adjusted price (attempt {retry_count + 1}/{max_retries})")
+                            # Adjust price slightly away from market to avoid taking liquidity
+                            if order_side.upper() == 'BUY':
+                                signal_price = signal_price * 0.999  # Lower buy price
+                            else:
+                                signal_price = signal_price * 1.001  # Higher sell price
+                            retry_count += 1
+                            await asyncio.sleep(0.5)  # Brief delay before retry
+                        else:
+                            break
+                    else:
+                        break
 
             if not order or 'orderId' not in order:
-                logger.error(f"Failed to create order for {trading_pair}: {order}")
+                logger.error(f"Failed to create order for {trading_pair} after retries: {order}")
                 return False, f"Failed to create order: {order}"
 
             logger.info(f"Successfully created {order_type} order: {order['orderId']} for {trading_pair}")

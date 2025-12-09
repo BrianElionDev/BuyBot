@@ -93,14 +93,26 @@ class StopLossManager:
             # Create new stop loss order
             sl_side = SIDE_SELL if position_type.upper() == 'LONG' else SIDE_BUY
 
-            sl_order = await self.exchange.create_futures_order(
-                pair=trading_pair,
-                side=sl_side,
-                order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                amount=position_size,
-                stop_price=sl_price,
-                reduce_only=True
-            )
+            # Binance requires STOP_MARKET orders to use Algo Order API endpoint
+            is_binance = hasattr(self.exchange, '__class__') and 'binance' in self.exchange.__class__.__name__.lower()
+            if is_binance and hasattr(self.exchange, 'create_algo_order'):
+                sl_order = await self.exchange.create_algo_order(
+                    pair=trading_pair,
+                    side=sl_side,
+                    order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                    quantity=position_size,
+                    stop_price=sl_price,
+                    reduce_only=True
+                )
+            else:
+                sl_order = await self.exchange.create_futures_order(
+                    pair=trading_pair,
+                    side=sl_side,
+                    order_type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                    amount=position_size,
+                    stop_price=sl_price,
+                    reduce_only=True
+                )
 
             if sl_order and 'orderId' in sl_order:
                 stop_loss_order_id = str(sl_order['orderId'])
