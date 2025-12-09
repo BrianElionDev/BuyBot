@@ -296,8 +296,22 @@ class KucoinExchange(ExchangeBase):
                     stop_price = round(stop_price / tick_size) * tick_size
 
                 # Validate minimum notional
-                if price:
-                    notional = amount * price
+                # For LIMIT orders: use provided price
+                # For MARKET orders: fetch mark price
+                validation_price = None
+                if order_type.upper() == 'MARKET':
+                    # Fetch mark price for MARKET orders
+                    validation_price = await self.get_mark_price(pair)
+                    if not validation_price or validation_price <= 0:
+                        logger.error(f"Failed to fetch mark price for MARKET order validation on {pair}")
+                        return {'error': f'Cannot validate notional value: mark price unavailable for {pair}. Please retry.', 'code': -4008}
+                elif price:
+                    # Use LIMIT price for LIMIT orders
+                    validation_price = price
+
+                # Validate notional if we have a valid price
+                if validation_price and min_notional > 0:
+                    notional = amount * validation_price
                     if notional < min_notional:
                         return {'error': f'Notional value {notional} below minimum {min_notional} for {pair}', 'code': -4007}
 

@@ -203,17 +203,26 @@ class BinanceExchange(ExchangeBase):
                     stop_price = float(format_value(stop_price, tick_size))
 
                 # Validate minimum notional using a reference price
-                try:
-                    ref_price = None
-                    if order_type.upper() == 'MARKET':
+                ref_price = None
+                if order_type.upper() == 'MARKET':
+                    # For MARKET orders: mark price fetch is mandatory
+                    try:
                         ref_price = await self.get_futures_mark_price(pair)
-                    if not ref_price:
-                        ref_price = price or 0.0
-                    if min_notional and ref_price and float(amount) * float(ref_price) < min_notional:
+                        if not ref_price or ref_price <= 0:
+                            logger.error(f"Failed to fetch mark price for MARKET order validation on {pair}")
+                            return {'error': f"Cannot validate notional value: mark price unavailable for {pair}. Please retry.", 'code': -4165}
+                    except Exception as e:
+                        logger.error(f"Exception while fetching mark price for MARKET order on {pair}: {e}")
+                        return {'error': f"Cannot validate notional value: failed to fetch mark price for {pair}. Please retry.", 'code': -4165}
+                elif price:
+                    # For LIMIT orders: use provided price
+                    ref_price = price
+
+                # Validate notional if we have a valid price and minimum notional requirement
+                if min_notional and min_notional > 0 and ref_price and ref_price > 0:
+                    notional_value = float(amount) * float(ref_price)
+                    if notional_value < min_notional:
                         return {'error': f"Order's notional must be no smaller than {min_notional}", 'code': -4164}
-                except Exception:
-                    # Best-effort; if price lookup fails, proceed
-                    pass
             # Prepare order parameters
             order_params = {
                 'symbol': pair,

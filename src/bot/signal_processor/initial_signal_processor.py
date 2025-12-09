@@ -358,6 +358,22 @@ class InitialSignalProcessor:
             # Otherwise, return as string
             return False, error_msg or "Validation failed"
 
+        # --- Final Notional Check Before Execution ---
+        # Double-check notional value with correct price (signal_price for LIMIT, current_price for MARKET)
+        if is_futures and min_notional > 0:
+            final_notional = trade_amount * price_for_validation
+            if final_notional < min_notional:
+                required_notional = min_notional
+                error_msg = f"Final notional check failed: {final_notional:.2f} below minimum {min_notional:.2f} for {trading_pair}"
+                logger.warning(error_msg)
+                return False, {
+                    "error": error_msg,
+                    "retry_suggested": True,
+                    "suggested_size": required_notional,
+                    "code": -4164
+                }
+            logger.info(f"Final notional check passed: {final_notional:.2f} >= {min_notional:.2f} for {trading_pair}")
+
         # --- Position/Leverage Validation ---
         if is_futures:
             position_validation = await self._validate_position_limits(
