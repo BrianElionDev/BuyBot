@@ -364,7 +364,7 @@ class KucoinExchange(ExchangeBase):
             if price and kucoin_type in ["limit", "stop_limit"]:
                 order_params["price"] = str(price)
 
-            if stop_price and kucoin_type in ["stop", "stop_limit"]:
+            if stop_price:
                 order_params["stopPrice"] = str(stop_price)
 
             if reduce_only:
@@ -1713,7 +1713,8 @@ class KucoinExchange(ExchangeBase):
         type_mapping = {
             "MARKET": "market",
             "LIMIT": "limit",
-            "STOP": "stop",
+            "STOP": "market",
+            "STOP_MARKET": "market",
             "STOP_LIMIT": "stop_limit"
         }
         return type_mapping.get(order_type.upper(), "limit")

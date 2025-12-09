@@ -741,7 +741,7 @@ class KucoinTradingEngine:
                 new_sl_order = await self.kucoin_exchange.create_futures_order(
                     pair=trading_pair,
                     side=SIDE_SELL,
-                    order_type='STOP',
+                    order_type='MARKET',
                     stop_price=stop_price,
                     amount=position_size,
                     reduce_only=True

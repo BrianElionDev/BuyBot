@@ -135,10 +135,14 @@ async def reconcile_trade(
     # Filter to the symbol if the API returned mixed symbols
     records = [r for r in records if str(r.get('symbol') or '') == kucoin_symbol]
     if not records:
+        logger.info(f"Trade {trade.get('id')} ({symbol}): No position history records found for {kucoin_symbol} in time window")
         return None
 
+    logger.info(f"Trade {trade.get('id')} ({symbol}): Found {len(records)} position history records")
+
     # Strict candidate filtering to avoid overlap across near-consecutive trades
-    created_pad_ms = 5 * 60 * 1000  # 5 minutes pad
+    created_pad_ms = 2 * 60 * 1000  # 2 minutes pad (tightened from 5 minutes)
+    close_pad_ms = 15 * 60 * 1000  # 15 minutes pad for close time
     def get_ms(val: Any) -> int:
         try:
             return int(val or 0)
@@ -149,45 +153,127 @@ async def reconcile_trade(
     expected_close_type = 'CLOSE_LONG' if position_type == 'LONG' else ('CLOSE_SHORT' if position_type == 'SHORT' else None)
     expected_side = 'LONG' if position_type == 'LONG' else ('SHORT' if position_type == 'SHORT' else None)
 
+    # Get position size from trade if available
+    position_size = None
+    try:
+        pos_size_str = trade.get('position_size')
+        if pos_size_str:
+            position_size = float(pos_size_str)
+    except (ValueError, TypeError):
+        pass
+
     strict_candidates: List[Dict[str, Any]] = []
+    filtered_reasons = {'used_closeId': 0, 'openTime_too_far': 0, 'closeTime_too_far': 0, 'type_mismatch': 0, 'side_mismatch': 0}
+
     for r in records:
         # exclude already used closeIds
         cid = str(r.get('closeId') or '')
         if cid and cid in used_close_ids:
+            filtered_reasons['used_closeId'] += 1
             continue
         o_ms = get_ms(r.get('openTime'))
         c_ms = get_ms(r.get('closeTime'))
-        # time containment: open after created-ε, close before closed+ε
-        if o_ms and o_ms < max(0, created_ms - created_pad_ms):
-            continue
-        if c_ms and c_ms > end_ms:
-            continue
+        # Stricter time containment: openTime must be within ±2 minutes of created_at
+        if o_ms:
+            open_time_diff = abs(o_ms - created_ms)
+            if open_time_diff > created_pad_ms:
+                filtered_reasons['openTime_too_far'] += 1
+                continue
+        # closeTime must be within ±15 minutes of closed_at
+        if c_ms:
+            close_time_diff = abs(c_ms - closed_ms)
+            if close_time_diff > close_pad_ms:
+                filtered_reasons['closeTime_too_far'] += 1
+                continue
         # side/type match when provided
         r_type = str(r.get('type') or '').upper()
         r_side = str(r.get('side') or '').upper()
         if expected_close_type and r_type not in (expected_close_type, ''):
             # allow empty type but prefer matching types
             if expected_close_type not in r_type:
+                filtered_reasons['type_mismatch'] += 1
                 continue
         if expected_side and r_side not in (expected_side, ''):
+            filtered_reasons['side_mismatch'] += 1
             continue
         strict_candidates.append(r)
 
     if not strict_candidates:
-        # fall back to closest by time, still respecting used_close_ids
-        strict_candidates = [r for r in records if str(r.get('closeId') or '') not in used_close_ids]
+        logger.info(
+            f"Trade {trade.get('id')} ({symbol}): No strict candidates. "
+            f"Filtered: {filtered_reasons}, total records: {len(records)}"
+        )
+        # fall back to closest by time, still respecting used_close_ids and time windows
+        fallback_candidates = []
+        for r in records:
+            cid = str(r.get('closeId') or '')
+            if cid and cid in used_close_ids:
+                continue
+            o_ms = get_ms(r.get('openTime'))
+            c_ms = get_ms(r.get('closeTime'))
+            # Still require reasonable time windows even in fallback
+            if o_ms and abs(o_ms - created_ms) > created_pad_ms * 2:  # Allow 4 minutes in fallback
+                continue
+            if c_ms and abs(c_ms - closed_ms) > close_pad_ms:
+                continue
+            fallback_candidates.append(r)
+        strict_candidates = fallback_candidates
         if not strict_candidates:
+            logger.warning(
+                f"Trade {trade.get('id')} ({symbol}): No position history candidates found after filtering. "
+                f"Created: {datetime.fromtimestamp(created_ms/1000, tz=timezone.utc).isoformat()}, "
+                f"Closed: {datetime.fromtimestamp(closed_ms/1000, tz=timezone.utc).isoformat()}"
+            )
             return None
+        logger.info(f"Trade {trade.get('id')} ({symbol}): Using {len(fallback_candidates)} fallback candidates")
 
-    # choose the record with closest closeTime to closed_ms, tie-breaker closest openTime to created_ms
-    def score(r: Dict[str, Any]) -> Tuple[int, int]:
+    # Enhanced scoring function: considers close time, open time, and position size match
+    def score(r: Dict[str, Any]) -> Tuple[int, int, int]:
         c_ms = get_ms(r.get('closeTime'))
         o_ms = get_ms(r.get('openTime'))
-        return (abs(c_ms - closed_ms) if c_ms else 1_000_000_000, abs(o_ms - created_ms) if o_ms else 1_000_000_000)
+        # Primary: close time proximity
+        close_score = abs(c_ms - closed_ms) if c_ms else 1_000_000_000
+        # Secondary: open time proximity
+        open_score = abs(o_ms - created_ms) if o_ms else 1_000_000_000
+        # Tertiary: position size match penalty (if both available)
+        size_penalty = 0
+        if position_size is not None:
+            try:
+                rec_size = float(r.get('size', 0))
+                if rec_size > 0:
+                    size_diff = abs(position_size - rec_size)
+                    # Penalize if size difference is more than 1% of trade size
+                    if size_diff > max(0.01, position_size * 0.01):
+                        size_penalty = 1_000_000
+            except (ValueError, TypeError):
+                pass
+        return (close_score, open_score, size_penalty)
 
     rec = min(strict_candidates, key=score)
     if not rec:
+        logger.warning(f"Trade {trade.get('id')}: No record selected after scoring")
         return None
+
+    # Log matching details for debugging
+    c_ms = get_ms(rec.get('closeTime'))
+    o_ms = get_ms(rec.get('openTime'))
+    close_diff_min = abs(c_ms - closed_ms) / (60 * 1000) if c_ms else None
+    open_diff_min = abs(o_ms - created_ms) / (60 * 1000) if o_ms else None
+    rec_size = rec.get('size')
+    size_match = "N/A"
+    if position_size is not None and rec_size:
+        try:
+            size_diff = abs(position_size - float(rec_size))
+            size_match = f"diff={size_diff:.4f}" if size_diff > 0.01 else "match"
+        except (ValueError, TypeError):
+            size_match = "N/A"
+
+    logger.info(
+        f"Trade {trade.get('id')} ({symbol}): Matched position record "
+        f"(closeId={rec.get('closeId')}, closeTime_diff={close_diff_min:.2f}min, "
+        f"openTime_diff={open_diff_min:.2f}min, size_match={size_match}, "
+        f"candidates={len(strict_candidates)})"
+    )
 
     # Extract realized PnL and fees robustly
     realized_candidates = [
@@ -233,7 +319,12 @@ async def reconcile_trade(
 
     # Compare and patch if mismatched
     db_pnl = float(trade.get('pnl_usd') or trade.get('net_pnl') or 0)
-    if abs(db_pnl - final_realized) <= 0.01:
+    pnl_diff = abs(db_pnl - final_realized)
+    if pnl_diff <= 0.01:
+        logger.info(
+            f"Trade {trade.get('id')} ({symbol}): PNL already matches "
+            f"(db={db_pnl:.8f}, record={final_realized:.8f}, diff={pnl_diff:.8f})"
+        )
         return None
 
     # Prepare a concise text payload to avoid array/JSON type issues in DB
