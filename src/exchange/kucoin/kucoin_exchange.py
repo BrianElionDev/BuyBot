@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Tuple, Any, cast
 from decimal import Decimal
 
 from ..core.exchange_base import ExchangeBase
-from ..core.exchange_config import ExchangeConfig
+from ..core.exchange_config import ExchangeConfig, format_value
 from .kucoin_models import (
     KucoinOrder, KucoinPosition, KucoinBalance,
     KucoinTrade, KucoinIncome, KucoinOrderStatus,
@@ -343,11 +343,30 @@ class KucoinExchange(ExchangeBase):
 
                 # Format quantity and price with proper precision
                 if step_size:
-                    amount = round(amount / step_size) * step_size
+                    # Use format_value (floor division) instead of round() to avoid rounding to 0
+                    formatted_amount = float(format_value(amount, step_size))
+                    # If formatting results in 0 but original amount was > 0, use step_size as minimum
+                    if formatted_amount == 0 and amount > 0:
+                        formatted_amount = float(step_size)
+                        logger.warning(f"Step size formatting would result in 0 for {pair}, using step_size {step_size} as minimum (original amount: {amount})")
+                        # Re-validate notional after this adjustment
+                        if validation_price and min_notional > 0:
+                            adjusted_notional = formatted_amount * validation_price
+                            if adjusted_notional < min_notional:
+                                # Calculate required amount to meet notional
+                                required_amount = min_notional / validation_price if validation_price > 0 else formatted_amount
+                                # Round UP to next step_size increment
+                                from decimal import Decimal
+                                required_amount_dec = Decimal(str(required_amount))
+                                step_size_dec = Decimal(str(step_size))
+                                steps_needed = (required_amount_dec / step_size_dec).quantize(Decimal('1'), rounding='ROUND_UP')
+                                formatted_amount = float(steps_needed * step_size_dec)
+                                logger.info(f"Adjusted amount to {formatted_amount} to meet notional requirement after step_size minimum")
+                    amount = formatted_amount
                 if price and tick_size:
-                    price = round(price / tick_size) * tick_size
+                    price = float(format_value(price, tick_size))
                 if stop_price and tick_size:
-                    stop_price = round(stop_price / tick_size) * tick_size
+                    stop_price = float(format_value(stop_price, tick_size))
 
                 # Final notional validation after all formatting
                 if validation_price and min_notional > 0:
