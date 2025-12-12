@@ -1816,19 +1816,43 @@ class KucoinExchange(ExchangeBase):
                 # KuCoin responses typically wrap with code/data
                 if data.get('code') == '200000':
                     payload = data.get('data')
+
+                    # Handle paginated responses with items array
+                    if isinstance(payload, dict):
+                        # Check for paginated structure: {items: [...], currentPage: N, pageSize: N, totalNum: N}
+                        if 'items' in payload:
+                            items = payload.get('items', [])
+                            if isinstance(items, list):
+                                logger.debug(
+                                    f"KuCoin paginated response for {endpoint}: "
+                                    f"page {payload.get('currentPage', '?')}/{payload.get('totalPage', '?')}, "
+                                    f"{len(items)} items"
+                                )
+                                return items
+                        # Check for data.items structure
+                        if 'data' in payload and isinstance(payload.get('data'), dict):
+                            nested_data = payload.get('data')
+                            if 'items' in nested_data:
+                                items = nested_data.get('items', [])
+                                if isinstance(items, list):
+                                    return items
+                        # Single dict response - normalize to list
+                        return [payload]
+
                     # Some endpoints use list at root of data
                     if isinstance(payload, list):
                         return payload
-                    if isinstance(payload, dict):
-                        # Normalize to list-of-dicts to satisfy return type
-                        return [payload]
-                    # Some endpoints return paginated objects {items: [...]} or {data: [...]}
+
+                    # Check root level for items (some endpoints return differently)
                     if 'items' in data:
-                        items = data.get('items') or []
-                        return items
+                        items = data.get('items', [])
+                        if isinstance(items, list):
+                            return items
+
                     return []
                 else:
-                    logger.error(f"KuCoin API error for {endpoint}: {data}")
+                    error_msg = data.get('msg') or str(data)
+                    logger.error(f"KuCoin API error for {endpoint}: code={data.get('code')}, msg={error_msg}")
                     return []
 
             except Exception as e:

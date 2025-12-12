@@ -803,11 +803,12 @@ async def backfill_pnl_data(bot, supabase):
         # Backfill PnL data for last 7 days
         await pnl_backfiller.backfill_trades_with_income_history(days=7, symbol="")
 
-        # KuCoin: reconcile last 7 days using position history (after Binance)
+        # KuCoin: reconcile last 32 hours (1.33 days) using position history (after Binance)
+        # Run more frequently to ensure accurate data for recent trades
         try:
             from scripts.maintenance.kucoin_pnl_reconcile_7d import main as kucoin_pnl_reconcile_main
-            await kucoin_pnl_reconcile_main()
-            logger.info("[Scheduler] KuCoin PnL reconciliation completed")
+            await kucoin_pnl_reconcile_main(days=2, missing_pnl_only=True)
+            logger.info("[Scheduler] KuCoin PnL reconciliation completed (last 2 days, missing PnL only)")
         except Exception as e:
             logger.error(f"[Scheduler] Error in KuCoin PnL reconciliation: {e}")
 
