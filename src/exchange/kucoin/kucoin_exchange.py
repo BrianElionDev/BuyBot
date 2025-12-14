@@ -315,15 +315,18 @@ class KucoinExchange(ExchangeBase):
                 # Convert amount (assets) to contracts for validation
                 contracts = amount / contract_multiplier if contract_multiplier > 0 else amount
 
-                # CRITICAL: Enforce minimum 1.0 contracts AFTER notional validation
-                # This prevents validation failures when we know we'll enforce the minimum anyway
+                # CRITICAL: Only enforce minimum 1.0 contracts if notional is below minimum
+                # If notional already meets minimum, allow fractional contracts
+                # Check notional value first before enforcing minimum contracts
+                original_notional = amount * validation_price if validation_price else 0
+
                 if contracts < 1.0:
-                    logger.info(f"Enforcing minimum 1.0 contracts before validation (was {contracts:.8f} contracts)")
-                    contracts = 1.0
-                    # Recalculate amount from enforced contracts
-                    amount = contracts * contract_multiplier
-                    # Re-validate notional after enforcing minimum contracts
-                    if validation_price and min_notional > 0:
+                    if validation_price and min_notional > 0 and original_notional < min_notional:
+                        logger.info(f"Enforcing minimum 1.0 contracts because notional {original_notional:.2f} below minimum {min_notional:.2f} (was {contracts:.8f} contracts)")
+                        contracts = 1.0
+                        # Recalculate amount from enforced contracts
+                        amount = contracts * contract_multiplier
+                        # Re-validate notional after enforcing minimum contracts
                         new_notional = amount * validation_price
                         if new_notional < min_notional:
                             logger.warning(f"Notional {new_notional} still below minimum {min_notional} after enforcing 1 contract")
@@ -334,6 +337,8 @@ class KucoinExchange(ExchangeBase):
                                 contracts = max(1.0, required_contracts_for_notional)
                                 amount = contracts * contract_multiplier
                                 logger.info(f"Adjusted to {contracts} contracts ({amount} assets) to meet notional requirement")
+                    else:
+                        logger.info(f"Allowing fractional contract {contracts:.8f} because notional {original_notional:.2f} meets minimum {min_notional:.2f}")
 
                 # Validate quantity bounds (in contracts) - now that minimum is enforced
                 if contracts < min_qty:

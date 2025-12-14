@@ -205,12 +205,22 @@ class InitialSignalProcessor:
         if take_profits:
             logger.info(f"Take Profits: {', '.join([f'${tp:.8f}' for tp in take_profits])}")
 
-        # Get current market price
-        current_price = await self.exchange.get_futures_mark_price(f'{coin_symbol.upper()}USDT')
-        if not current_price:
-            reason = f"Failed to get price for {coin_symbol}"
+        # Get mark price (always needed for proximity checks and MARKET orders)
+        mark_price = await self.exchange.get_futures_mark_price(f'{coin_symbol.upper()}USDT')
+        if not mark_price:
+            reason = f"Failed to get mark price for {coin_symbol}"
             logger.error(reason)
             return False, reason
+
+        # Set current_price based on order type:
+        # - For LIMIT orders: use signal_price (limit price) for calculations
+        # - For MARKET orders: use mark_price (market price) for calculations
+        if order_type.upper() == "MARKET":
+            current_price = mark_price
+            logger.info(f"Using mark price ${current_price:.8f} for MARKET order")
+        else:
+            current_price = signal_price
+            logger.info(f"Using signal_price ${signal_price:.8f} as current_price for LIMIT order (mark price: ${mark_price:.8f})")
 
         # --- CRITICAL FIX: Pre-validate minimum quantity BEFORE calculating trade amount ---
         # This prevents wasting time calculating and then failing validation
@@ -231,7 +241,8 @@ class InitialSignalProcessor:
                 except Exception as e:
                     logger.warning(f"Failed to get position_size from TraderConfigService, using config default: {e}")
 
-                # Calculate what the trade_amount would be
+                # Calculate what the trade_amount would be using the correct price
+                # For LIMIT orders, this uses signal_price; for MARKET, it uses mark price
                 estimated_trade_amount = usdt_amount / current_price
 
                 # Apply quantity multiplier if enabled
@@ -273,32 +284,38 @@ class InitialSignalProcessor:
 
         # --- Proximity Check for LIMIT Orders ---
         # Apply platform price-range logic: decide MARKET vs LIMIT and optimal limit price
+        # Use mark_price for proximity checks (not current_price which is signal_price for LIMIT orders)
         try:
             if entry_prices and isinstance(entry_prices, list) and len(entry_prices) > 0:
                 upper_bound = max(entry_prices)
                 lower_bound = min(entry_prices)
                 pos_upper = position_type.upper() == "LONG"
-                # Market execution if current within acceptable side bound, else place limit at optimal bound
+                # Market execution if mark price within acceptable side bound, else place limit at optimal bound
                 if position_type.upper() == "LONG":
-                    if current_price <= upper_bound:
+                    if mark_price <= upper_bound:
                         order_type = "MARKET"
+                        current_price = mark_price  # Update current_price for MARKET order
                     else:
                         order_type = "LIMIT"
                         signal_price = upper_bound
+                        current_price = signal_price  # Update current_price for LIMIT order
                 elif position_type.upper() == "SHORT":
-                    if current_price >= lower_bound:
+                    if mark_price >= lower_bound:
                         order_type = "MARKET"
+                        current_price = mark_price  # Update current_price for MARKET order
                     else:
                         order_type = "LIMIT"
                         signal_price = lower_bound
+                        current_price = signal_price  # Update current_price for LIMIT order
             else:
                 # Keep existing LIMIT sanity check if no range provided
                 if order_type.upper() == "LIMIT":
                     threshold = 0.2
-                    price_diff_pct = abs(signal_price - current_price) / current_price if current_price > 0 else 0
-                    if current_price and price_diff_pct > threshold:
-                        logger.warning(f"LIMIT order price {signal_price} is too far from market price {current_price} ({price_diff_pct*100:.2f}% > {threshold*100}%). Converting to MARKET order.")
+                    price_diff_pct = abs(signal_price - mark_price) / mark_price if mark_price > 0 else 0
+                    if mark_price and price_diff_pct > threshold:
+                        logger.warning(f"LIMIT order price {signal_price} is too far from market price {mark_price} ({price_diff_pct*100:.2f}% > {threshold*100}%). Converting to MARKET order.")
                         order_type = "MARKET"
+                        current_price = mark_price  # Update current_price for MARKET order
                         logger.info(f"Converted LIMIT order to MARKET order for {coin_symbol} due to price distance")
         except Exception as e:
             logger.warning(f"Price-range decision failed, keeping provided order_type {order_type}: {e}")
@@ -336,17 +353,18 @@ class InitialSignalProcessor:
             logger.warning(f"Failed to normalize stop loss '{stop_loss}': {e}")
 
         # --- Calculate Trade Amount ---
-        # Use signal_price (limit price) for LIMIT orders, current_price for MARKET orders
-        price_for_calculation = signal_price if order_type.upper() == 'LIMIT' else current_price
+        # current_price is already set correctly:
+        # - For LIMIT orders: current_price = signal_price (limit price)
+        # - For MARKET orders: current_price = mark_price (market price)
         trade_amount = await self._calculate_trade_amount(
-            coin_symbol, price_for_calculation, quantity_multiplier, is_futures, position_size_override
+            coin_symbol, current_price, quantity_multiplier, is_futures, position_size_override
         )
         if trade_amount <= 0:
             return False, "Calculated trade amount is zero or negative."
 
         # --- Validate Trade Amount ---
-        # Use signal_price (limit price) for LIMIT orders, current_price for MARKET orders
-        price_for_validation = signal_price if order_type.upper() == 'LIMIT' else current_price
+        # current_price is already set correctly for validation
+        price_for_validation = current_price
         validation_result = await self._validate_trade_amount(
             trading_pair, trade_amount, price_for_validation, min_qty, max_qty, min_notional, is_futures
         )

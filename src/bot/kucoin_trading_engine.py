@@ -191,16 +191,30 @@ class KucoinTradingEngine:
                 except (TypeError, ValueError):
                     max_contracts = 1000000.0
 
-                # CRITICAL FIX: Kucoin requires minimum 1.0 contracts
-                # Convert asset quantity to contracts, enforce minimum, then convert back
+                # CRITICAL FIX: Only enforce minimum 1.0 contracts if notional is below minimum
+                # If notional already meets minimum, allow fractional contracts
+                # Convert asset quantity to contracts, check notional, then enforce minimum if needed
                 original_assets = trade_amount
                 contracts = trade_amount / mult if mult > 0 else trade_amount
                 logger.info(f"Kucoin contract conversion - Original: {original_assets:.8f} assets, contracts before min: {contracts:.8f}")
 
-                # Enforce minimum 1.0 contracts (Kucoin requirement)
+                # Check notional value first
+                notional_value = trade_amount * current_price
+                min_notional = 0.0
+                min_notional_filter = filters.get('MIN_NOTIONAL', {}) if 'MIN_NOTIONAL' in filters else {}
+                min_notional_val = min_notional_filter.get('minNotional', min_notional_filter.get('notional', 0))
+                try:
+                    min_notional = float(min_notional_val or 0)
+                except (TypeError, ValueError):
+                    min_notional = 0.0
+
+                # Only enforce 1.0 contract if notional is below minimum
                 if contracts < 1.0:
-                    logger.info(f"Enforcing minimum 1.0 contracts (was {contracts:.8f})")
-                    contracts = 1.0
+                    if min_notional > 0 and notional_value < min_notional:
+                        logger.info(f"Enforcing minimum 1.0 contracts because notional {notional_value:.2f} below minimum {min_notional:.2f} (was {contracts:.8f} contracts)")
+                        contracts = 1.0
+                    else:
+                        logger.info(f"Allowing fractional contract {contracts:.8f} because notional {notional_value:.2f} meets minimum {min_notional:.2f}")
 
                 # Round to nearest step
                 if step_contracts > 0:
