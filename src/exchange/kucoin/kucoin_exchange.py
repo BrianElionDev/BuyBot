@@ -258,6 +258,8 @@ class KucoinExchange(ExchangeBase):
 
             # Enhanced Precision Handling and Validation
             filters = await self.get_futures_symbol_filters(pair)
+            contract_size = None  # Store contract size calculated in validation block
+            validation_price = None  # Initialize validation_price for use later
             if filters:
                 lot_size_filter = filters.get('LOT_SIZE', {})
                 price_filter = filters.get('PRICE_FILTER', {})
@@ -277,7 +279,7 @@ class KucoinExchange(ExchangeBase):
 
                 # CRITICAL: Validate notional BEFORE contract conversion and rounding
                 # This prevents issues where amount becomes 0 after conversion
-                validation_price = None
+                # validation_price is already initialized above
                 if order_type.upper() == 'MARKET':
                     # Fetch mark price for MARKET orders with retry logic
                     max_retries = 3
@@ -315,18 +317,14 @@ class KucoinExchange(ExchangeBase):
                 # Convert amount (assets) to contracts for validation
                 contracts = amount / contract_multiplier if contract_multiplier > 0 else amount
 
-                # CRITICAL: Only enforce minimum 1.0 contracts if notional is below minimum
-                # If notional already meets minimum, allow fractional contracts
-                # Check notional value first before enforcing minimum contracts
-                original_notional = amount * validation_price if validation_price else 0
-
+                # CRITICAL: Always enforce minimum 1.0 contracts (KuCoin requirement)
                 if contracts < 1.0:
-                    if validation_price and min_notional > 0 and original_notional < min_notional:
-                        logger.info(f"Enforcing minimum 1.0 contracts because notional {original_notional:.2f} below minimum {min_notional:.2f} (was {contracts:.8f} contracts)")
-                        contracts = 1.0
-                        # Recalculate amount from enforced contracts
-                        amount = contracts * contract_multiplier
-                        # Re-validate notional after enforcing minimum contracts
+                    logger.info(f"Enforcing minimum 1.0 contracts before validation (was {contracts:.8f} contracts)")
+                    contracts = 1.0
+                    # Recalculate amount from enforced contracts
+                    amount = contracts * contract_multiplier
+                    # Re-validate notional after enforcing minimum contracts
+                    if validation_price and min_notional > 0:
                         new_notional = amount * validation_price
                         if new_notional < min_notional:
                             logger.warning(f"Notional {new_notional} still below minimum {min_notional} after enforcing 1 contract")
@@ -337,8 +335,6 @@ class KucoinExchange(ExchangeBase):
                                 contracts = max(1.0, required_contracts_for_notional)
                                 amount = contracts * contract_multiplier
                                 logger.info(f"Adjusted to {contracts} contracts ({amount} assets) to meet notional requirement")
-                    else:
-                        logger.info(f"Allowing fractional contract {contracts:.8f} because notional {original_notional:.2f} meets minimum {min_notional:.2f}")
 
                 # Validate quantity bounds (in contracts) - now that minimum is enforced
                 if contracts < min_qty:
@@ -346,10 +342,14 @@ class KucoinExchange(ExchangeBase):
                 if contracts > max_qty:
                     return {'error': f'Quantity {contracts:.8f} contracts (from {amount:.8f} assets) above maximum {max_qty} contracts for {pair}', 'code': -4006}
 
+                # Store contract size for use in order creation (before step_size formatting)
+                contract_size = contracts
+
                 # Format quantity and price with proper precision
                 if step_size:
                     # Use format_value (floor division) instead of round() to avoid rounding to 0
-                    formatted_amount = float(format_value(amount, step_size))
+                    # format_value expects step_size as string
+                    formatted_amount = float(format_value(amount, str(step_size)))
                     # If formatting results in 0 but original amount was > 0, use step_size as minimum
                     if formatted_amount == 0 and amount > 0:
                         formatted_amount = float(step_size)
@@ -368,10 +368,23 @@ class KucoinExchange(ExchangeBase):
                                 formatted_amount = float(steps_needed * step_size_dec)
                                 logger.info(f"Adjusted amount to {formatted_amount} to meet notional requirement after step_size minimum")
                     amount = formatted_amount
+                    # Recalculate contract size from formatted amount to ensure consistency
+                    if contract_size is not None and contract_multiplier > 0:
+                        # Recalculate contracts from formatted amount to ensure consistency
+                        formatted_contracts = formatted_amount / contract_multiplier
+                        # Round to nearest step if available (step_size is for assets, convert to contracts)
+                        if step_size > 0:
+                            # step_size is in asset units, convert to contract step
+                            contract_step = step_size / contract_multiplier if contract_multiplier > 0 else step_size
+                            if contract_step > 0:
+                                formatted_contracts = round(formatted_contracts / contract_step) * contract_step
+                        # Ensure minimum 1.0 contract
+                        contract_size = max(1.0, formatted_contracts)
+                        logger.info(f"Recalculated contract size from formatted amount: {contract_size} contracts (from {formatted_amount} assets)")
                 if price and tick_size:
-                    price = float(format_value(price, tick_size))
+                    price = float(format_value(price, str(tick_size)))
                 if stop_price and tick_size:
-                    stop_price = float(format_value(stop_price, tick_size))
+                    stop_price = float(format_value(stop_price, str(tick_size)))
 
                 # Final notional validation after all formatting
                 if validation_price and min_notional > 0:
@@ -388,43 +401,63 @@ class KucoinExchange(ExchangeBase):
             # Convert pair to KuCoin futures symbol format using proper converter
             kucoin_symbol = symbol_converter.convert_bot_to_kucoin_futures(pair)
 
-            # Get contract multiplier for proper size calculation
-            contract_multiplier = 2.0
+            # Use contract size from validation block if available, otherwise calculate it
+            if contract_size is None:
+                # Fallback: calculate contract size if filters were not available or validation didn't run
+                logger.warning(f"No contract size from validation block for {pair}, calculating from amount")
+                contract_multiplier = 1.0
+                if filters and 'multiplier' in filters:
+                    try:
+                        contract_multiplier = float(filters['multiplier'])
+                    except (TypeError, ValueError):
+                        contract_multiplier = 1.0
+
+                lot_step = 1.0
+                if filters and filters.get('LOT_SIZE', {}).get('stepSize') is not None:
+                    try:
+                        lot_step = float(filters['LOT_SIZE']['stepSize'])
+                    except (TypeError, ValueError):
+                        lot_step = 1.0
+
+                raw_contracts = (amount / contract_multiplier) if contract_multiplier > 0 else amount
+                try:
+                    rounded_contracts = int(round(raw_contracts / lot_step) * lot_step)
+                except Exception:
+                    rounded_contracts = int(raw_contracts)
+                contract_size = max(1, rounded_contracts)
+                logger.info(f"Fallback contract size calculation: {amount} assets ÷ {contract_multiplier} multiplier ≈ {contract_size} contracts")
+
+            # HARD RULE: KuCoin should ALWAYS use exactly 1 contract for futures orders
+            # Keep original value for diagnostics, but force contract_size = 1.0 before sending request
+            original_contract_size = contract_size
+            if original_contract_size is None or original_contract_size <= 0:
+                logger.warning(f"Contract size from validation was {original_contract_size}; forcing to 1 contract for KuCoin futures")
+                contract_size = 1.0
+            elif original_contract_size != 1:
+                logger.info(f"Forcing KuCoin futures contract_size from {original_contract_size} to 1.0 as per global 1-contract policy")
+                contract_size = 1.0
+
+            # Calculate actual asset quantity from contract size (for storage in origQty)
+            # Get contract multiplier for this calculation
+            contract_multiplier = 1.0
             if filters and 'multiplier' in filters:
                 try:
                     contract_multiplier = float(filters['multiplier'])
                 except (TypeError, ValueError):
                     contract_multiplier = 1.0
-                logger.info(f"Using contract multiplier: {contract_multiplier} for {kucoin_symbol}")
 
-            # Calculate proper contract size (contracts = asset_qty / multiplier)
-            lot_step = 1.0
-            if filters and filters.get('LOT_SIZE', {}).get('stepSize') is not None:
-                try:
-                    lot_step = float(filters['LOT_SIZE']['stepSize'])
-                except (TypeError, ValueError):
-                    lot_step = 1.0
-            raw_contracts = (amount / contract_multiplier) if contract_multiplier > 0 else amount
-            # Round to nearest multiple of lot_step (contracts), enforce minimum 1 contract
-            try:
-                rounded_contracts = int(round(raw_contracts / lot_step) * lot_step)
-            except Exception:
-                rounded_contracts = int(raw_contracts)
-            contract_size = max(1, rounded_contracts)
-            logger.info(f"Contract size calculation: {amount} assets ÷ {contract_multiplier} multiplier ≈ {contract_size} contracts (lot_step={lot_step})")
-
-            # Calculate actual asset quantity from contract size (for storage in origQty)
-            # This ensures we store asset quantity, not contract count
             actual_asset_quantity = contract_size * contract_multiplier
-            logger.info(f"Actual asset quantity for storage: {actual_asset_quantity} (from {contract_size} contracts × {contract_multiplier})")
+            logger.info(f"Final contract size: {contract_size} contracts = {actual_asset_quantity} assets (multiplier: {contract_multiplier})")
 
             # Prepare order parameters
+            # CRITICAL: size must be the NUMBER OF CONTRACTS for classic futures; we always send 1 contract
             order_params = {
                 "clientOid": client_order_id or f"kucoin_{int(asyncio.get_event_loop().time() * 1000)}",
                 "side": kucoin_side,
                 "symbol": kucoin_symbol,  # Use converted symbol
                 "type": kucoin_type,
-                "size": contract_size  # KuCoin futures expects contract count, not asset quantity
+                # Ensure we send an integer contract count, e.g. 1 not 1.0
+                "size": int(contract_size)  # Always 1 contract for futures
             }
 
             if price and kucoin_type in ["limit", "stop_limit"]:
@@ -432,9 +465,6 @@ class KucoinExchange(ExchangeBase):
 
             if stop_price:
                 order_params["stopPrice"] = str(stop_price)
-
-            if reduce_only:
-                order_params["reduceOnly"] = True
 
             # Create order using KuCoin SDK - Use FUTURES service for futures orders
             if not self.client:
@@ -458,14 +488,39 @@ class KucoinExchange(ExchangeBase):
 
             logger.info(f"Using leverage: {leverage_int}x for {order_params['symbol']}")
 
+            # CRITICAL: Calculate expected margin requirement before sending order
+            # KuCoin calculates margin as: (contract_size * price * contract_multiplier) / leverage
+            # Since we always send 1 contract, this simplifies to: (1 * price * multiplier) / leverage
+            order_price = 0.0
+            if price:
+                order_price = float(price)
+            elif validation_price and validation_price > 0:
+                order_price = float(validation_price)
+            if order_price > 0:
+                # Margin calculation for 1 contract
+                position_size_assets = contract_size * contract_multiplier  # Always 1 * multiplier
+                notional_value = position_size_assets * order_price
+                expected_margin = notional_value / leverage_int if leverage_int > 0 else notional_value
+                logger.info(f"Pre-order margin check (1 contract):")
+                logger.info(f"  Position size: {position_size_assets} assets (1 contract × {contract_multiplier} multiplier)")
+                logger.info(f"  Notional value: ${notional_value:.2f} ({position_size_assets} assets × ${order_price:.2f})")
+                logger.info(f"  Expected margin: ${notional_value:.2f} / {leverage_int}x = ${expected_margin:.2f}")
+            else:
+                logger.warning("Cannot calculate expected margin: no price available (MARKET order)")
+
             # SDK expects enums; cast to Any to satisfy type checker while passing valid values
+            # CRITICAL: size must be integer contract count for classic futures (we enforce 1)
+            # sizeUnit defaults to "UNIT" (contracts) for Futures, but we ensure size is correct format
             order_request = (AddOrderReqBuilder()
                 .set_client_oid(order_params["clientOid"])
                 .set_side(cast(Any, order_params["side"]))
                 .set_symbol(order_params["symbol"])
                 .set_type(cast(Any, order_params["type"]))
-                .set_size(order_params["size"])
+                .set_size(order_params["size"])  # Integer 1 for 1 contract
                 .set_leverage(leverage_int))
+
+            # Log the exact parameters being sent
+            logger.info(f"KuCoin order request: symbol={order_params['symbol']}, side={order_params['side']}, type={order_params['type']}, size={order_params['size']}, leverage={leverage_int}x")
 
             if "price" in order_params:
                 order_request.set_price(order_params["price"])
@@ -1294,7 +1349,7 @@ class KucoinExchange(ExchangeBase):
 
     async def get_mark_price(self, symbol: str) -> Optional[float]:
         """
-        Get mark price for a symbol using futures API.
+        Get mark price for a symbol using futures API with exponential backoff retry.
 
         Args:
             symbol: Trading pair symbol
@@ -1302,25 +1357,91 @@ class KucoinExchange(ExchangeBase):
         Returns:
             Mark price or None if not available
         """
+        max_retries = 5
+        base_delay = 0.5
+
+        for attempt in range(max_retries):
+            try:
+                all_symbols = await self.get_futures_symbols()
+                symbol_mapper.available_symbols = all_symbols
+                mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
+
+                if not mapped_symbol:
+                    logger.warning(f"Could not map {symbol} to futures symbol for mark price")
+                    return None
+
+                url = f"{self._futures_base_url()}/api/v1/mark-price/{mapped_symbol}/current"
+                timeout = aiohttp.ClientTimeout(total=10 + (attempt * 2))
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=timeout) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            td = data.get("data") or {}
+                            mark_price = td.get('value', 0.0)
+                            if mark_price and float(mark_price) > 0:
+                                return float(mark_price)
+
+                        if attempt < max_retries - 1:
+                            delay = base_delay * (2 ** attempt)
+                            logger.warning(f"Mark price fetch attempt {attempt + 1} failed (status {resp.status}), retrying in {delay}s...")
+                            await asyncio.sleep(delay)
+                            continue
+
+            except asyncio.TimeoutError:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Mark price fetch timeout on attempt {attempt + 1}, retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+                    continue
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Mark price fetch attempt {attempt + 1} failed: {e}, retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"Failed to get KuCoin mark price for {symbol} after {max_retries} attempts: {e}")
+
+        logger.warning(f"All {max_retries} attempts to fetch mark price for {symbol} failed, trying index price fallback...")
+        return await self._get_index_price_fallback(symbol)
+
+    async def _get_index_price_fallback(self, symbol: str) -> Optional[float]:
+        """
+        Fallback method to get index price when mark price is unavailable.
+
+        Args:
+            symbol: Trading pair symbol
+
+        Returns:
+            Index price or None if not available
+        """
         try:
-            # Get mapped symbol for futures
             all_symbols = await self.get_futures_symbols()
             symbol_mapper.available_symbols = all_symbols
             mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
 
             if not mapped_symbol:
-                logger.warning(f"Could not map {symbol} to futures symbol for mark price")
+                logger.warning(f"Could not map {symbol} to futures symbol for index price fallback")
                 return None
 
-            url = f"{self._futures_base_url()}/api/v1/mark-price/{mapped_symbol}/current"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    data = await resp.json()
-                    td = data.get("data") or {}
-                    return float(td.get('value', 0.0))  # 'value' is mark price
+            url = f"{self._futures_base_url()}/api/v1/index/query"
+            params = {'symbol': mapped_symbol}
 
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        index_data = data.get("data") or {}
+                        index_price = index_data.get('indexPrice') or index_data.get('price', 0.0)
+                        if index_price and float(index_price) > 0:
+                            logger.info(f"Using index price {index_price} as fallback for {symbol}")
+                            return float(index_price)
+
+            logger.warning(f"Index price fallback also failed for {symbol}")
+            return None
         except Exception as e:
-            logger.error(f"Failed to get KuCoin mark price for {symbol}: {e}")
+            logger.error(f"Failed to get KuCoin index price fallback for {symbol}: {e}")
             return None
 
     async def get_futures_account_info(self) -> Optional[Dict[str, Any]]:
@@ -1838,7 +1959,7 @@ class KucoinExchange(ExchangeBase):
                     return []
 
                 # KuCoin responses typically wrap with code/data
-                if data.get('code') == '200000':
+                if isinstance(data, dict) and data.get('code') == '200000':
                     payload = data.get('data')
 
                     # Handle paginated responses with items array
@@ -1853,13 +1974,12 @@ class KucoinExchange(ExchangeBase):
                                     f"{len(items)} items"
                                 )
                                 return items
-                        # Check for data.items structure
-                        if 'data' in payload and isinstance(payload.get('data'), dict):
-                            nested_data = payload.get('data')
-                            if 'items' in nested_data:
-                                items = nested_data.get('items', [])
-                                if isinstance(items, list):
-                                    return items
+                        # Check for nested data.items structure
+                        nested_data = payload.get('data') if isinstance(payload, dict) else None
+                        if isinstance(nested_data, dict):
+                            items = nested_data.get('items')
+                            if isinstance(items, list):
+                                return items
                         # Single dict response - normalize to list
                         return [payload]
 
@@ -1868,7 +1988,7 @@ class KucoinExchange(ExchangeBase):
                         return payload
 
                     # Check root level for items (some endpoints return differently)
-                    if 'items' in data:
+                    if isinstance(data, dict) and 'items' in data:
                         items = data.get('items', [])
                         if isinstance(items, list):
                             return items

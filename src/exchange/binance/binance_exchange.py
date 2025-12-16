@@ -8,11 +8,15 @@ Following Clean Code principles with clear separation of concerns.
 import asyncio
 import json
 import logging
+import time
+import hmac
+import hashlib
 from typing import Dict, List, Optional, Tuple, Any
 from binance.async_client import AsyncClient
 from binance.exceptions import BinanceAPIException
 from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET, ORDER_TYPE_LIMIT
 from config import settings as cfg
+import aiohttp
 
 from ..core.exchange_base import ExchangeBase
 from ..core.exchange_config import ExchangeConfig, format_value
@@ -389,23 +393,61 @@ class BinanceExchange(ExchangeBase):
                 'stopPrice': stop_price,
                 'reduceOnly': reduce_only,
                 'workingType': 'MARK_PRICE',
-                'timeInForce': 'GTC'  # GTC for STOP_MARKET orders to avoid EXPIRE_MAKER errors
+                'timeInForce': 'GTC'
             }
 
             if client_order_id:
                 algo_params['newClientOrderId'] = client_order_id
 
-            result = await self.client.futures_create_order(**algo_params)
+            base_url = 'https://testnet.binancefuture.com' if self.is_testnet else 'https://fapi.binance.com'
+            endpoint = '/fapi/v1/algoOrder'
+            url = f"{base_url}{endpoint}"
+
+            timestamp = int(time.time() * 1000)
+            algo_params['timestamp'] = timestamp
+
+            query_string = '&'.join([f"{k}={v}" for k, v in sorted(algo_params.items())])
+            signature = hmac.new(
+                self.api_secret.encode('utf-8'),
+                query_string.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+
+            headers = {
+                'X-MBX-APIKEY': self.api_key,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+
+            payload = f"{query_string}&signature={signature}"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, data=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        try:
+                            error_data = await resp.json()
+                            error_msg = error_data.get('msg', error_text)
+                            error_code = error_data.get('code', -1)
+                        except:
+                            error_msg = error_text
+                            error_code = -1
+                        raise BinanceAPIException(response=None, status_code=resp.status, message=error_msg, code=error_code)
+
+                    result = await resp.json()
 
             try:
                 logger.info(f"Raw Binance algo order response: {json.dumps(result)}")
             except Exception:
                 logger.info(f"Raw Binance algo order response (non-JSON-serializable): {result}")
 
-            if 'orderId' not in result:
-                raise ValueError(f"Missing orderId in response: {result}")
+            if 'algoId' in result:
+                result['orderId'] = result['algoId']
+                logger.info(f"Algo order created successfully: {result.get('algoId')}")
+            elif 'orderId' in result:
+                logger.info(f"Algo order created successfully: {result.get('orderId')}")
+            else:
+                raise ValueError(f"Missing algoId/orderId in response: {result}")
 
-            logger.info(f"Algo order created successfully: {result.get('orderId')}")
             return result
 
         except BinanceAPIException as e:

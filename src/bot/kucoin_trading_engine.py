@@ -191,40 +191,26 @@ class KucoinTradingEngine:
                 except (TypeError, ValueError):
                     max_contracts = 1000000.0
 
-                # CRITICAL FIX: Only enforce minimum 1.0 contracts if notional is below minimum
-                # If notional already meets minimum, allow fractional contracts
-                # Convert asset quantity to contracts, check notional, then enforce minimum if needed
+                # CRITICAL: KuCoin ALWAYS uses exactly 1 contract regardless of position_size
+                # Calculate ideal contracts for logging/diagnostics, but hard-clamp to 1.0
                 original_assets = trade_amount
-                contracts = trade_amount / mult if mult > 0 else trade_amount
-                logger.info(f"Kucoin contract conversion - Original: {original_assets:.8f} assets, contracts before min: {contracts:.8f}")
+                ideal_contracts = trade_amount / mult if mult > 0 else trade_amount
+                logger.info(f"KuCoin contract calculation - Ideal: {ideal_contracts:.8f} contracts from {original_assets:.8f} assets (mult={mult})")
 
-                # Check notional value first
-                notional_value = trade_amount * current_price
-                min_notional = 0.0
-                min_notional_filter = filters.get('MIN_NOTIONAL', {}) if 'MIN_NOTIONAL' in filters else {}
-                min_notional_val = min_notional_filter.get('minNotional', min_notional_filter.get('notional', 0))
-                try:
-                    min_notional = float(min_notional_val or 0)
-                except (TypeError, ValueError):
-                    min_notional = 0.0
+                # ALWAYS use 1 contract for KuCoin - this is a hard requirement
+                contracts = 1.0
 
-                # Only enforce 1.0 contract if notional is below minimum
-                if contracts < 1.0:
-                    if min_notional > 0 and notional_value < min_notional:
-                        logger.info(f"Enforcing minimum 1.0 contracts because notional {notional_value:.2f} below minimum {min_notional:.2f} (was {contracts:.8f} contracts)")
-                        contracts = 1.0
-                    else:
-                        logger.info(f"Allowing fractional contract {contracts:.8f} because notional {notional_value:.2f} meets minimum {min_notional:.2f}")
+                # Calculate what 1 contract represents in assets and notional for logging
+                one_contract_assets = contracts * mult
+                one_contract_notional = one_contract_assets * current_price
+                ideal_notional = original_assets * current_price
 
-                # Round to nearest step
-                if step_contracts > 0:
-                    contracts = round(contracts / step_contracts) * step_contracts
-                # Clamp to min/max contracts
-                contracts = max(min_contracts, min(max_contracts, contracts))
-                # Convert back to asset units
-                trade_amount = contracts * mult
+                logger.info(f"KuCoin contract override: ideal={ideal_contracts:.8f} contracts -> using fixed 1.0 contract")
+                logger.info(f"  Ideal position: {original_assets:.8f} assets = ${ideal_notional:.2f} notional")
+                logger.info(f"  Actual position: {one_contract_assets:.8f} assets = ${one_contract_notional:.2f} notional (1 contract × {mult} multiplier)")
 
-                logger.info(f"Kucoin contract conversion: {original_assets:.8f} assets -> {contracts:.8f} contracts -> {trade_amount:.8f} assets (min_contracts: {min_contracts}, mult: {mult})")
+                # Convert back to asset units for return value (purely for logging/consistency)
+                trade_amount = one_contract_assets
             else:
                 logger.warning(f"No filters found for {trading_pair}, skipping contract conversion - this may cause validation errors")
 
@@ -375,6 +361,47 @@ class KucoinTradingEngine:
             if trade_amount <= 0:
                 logger.error(f"Invalid trade amount calculated: {trade_amount}")
                 return False, f"Invalid trade amount calculated: {trade_amount}"
+
+            # CRITICAL: Validate final position size using the ORDER PRICE (not current price)
+            # For LIMIT orders, KuCoin calculates margin based on limit price, not mark price
+            order_price_for_validation = final_price if (order_type.upper() == 'LIMIT' and final_price) else current_price
+            if not order_price_for_validation or order_price_for_validation <= 0:
+                logger.warning("Cannot validate position size: no valid price available")
+                order_price_for_validation = current_price
+            final_position_notional = trade_amount * order_price_for_validation
+
+            # Get original position_size to compare
+            try:
+                from src.services.trader_config_service import trader_config_service
+                trader_id = (getattr(self, 'trader_id', None) or '').strip().lower()
+                exchange_key = 'kucoin'
+                config = await trader_config_service.get_trader_config(trader_id)
+                original_position_size = float(config.position_size) if config and config.exchange.value == exchange_key else 0.0
+            except Exception:
+                original_position_size = 0.0
+
+            if original_position_size > 0:
+                # Calculate expected margin (notional / leverage)
+                leverage_value_temp = 3.0  # Will be fetched below, but use default for now
+                try:
+                    from src.services.trader_config_service import trader_config_service
+                    trader_id_temp = (getattr(self, 'trader_id', None) or '').strip().lower()
+                    exchange_key_temp = 'kucoin'
+                    config_temp = await trader_config_service.get_trader_config(trader_id_temp)
+                    if config_temp and config_temp.exchange.value == exchange_key_temp:
+                        leverage_value_temp = float(config_temp.leverage)
+                except Exception:
+                    pass
+
+                expected_margin = final_position_notional / leverage_value_temp if leverage_value_temp > 0 else final_position_notional
+                tolerance_factor = 1.5  # Allow 50% tolerance for margin calculation differences
+
+                logger.info(f"Position size validation: Final notional ${final_position_notional:.2f} at ${order_price_for_validation:.2f}, expected margin ${expected_margin:.2f} (intended position_size: ${original_position_size:.2f})")
+
+                if expected_margin > original_position_size * tolerance_factor:
+                    error_msg = f"Position size validation failed: Expected margin ${expected_margin:.2f} exceeds intended position_size ${original_position_size:.2f} by more than {tolerance_factor*100:.0f}%. Final notional: ${final_position_notional:.2f} at ${order_price_for_validation:.2f}. Please increase position_size in trader_exchange_config."
+                    logger.error(error_msg)
+                    return False, error_msg
 
             # Get leverage from database
             leverage_value = 1.0  # Default leverage
