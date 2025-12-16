@@ -333,6 +333,15 @@ class DatabaseSync:
             expire_reason = execution_data.get('V', '')
             if expire_reason == 'EXPIRE_MAKER' or (order_id and str(order_id) == str(trade.get('stop_loss_order_id', ''))):
                 is_stop_loss_order = True
+                # Enhanced logging for EXPIRE_MAKER cancellations
+                order_price = execution_data.get('p', execution_data.get('price', 'N/A'))
+                avg_price = execution_data.get('ap', execution_data.get('avgPrice', 'N/A'))
+                logger.warning(
+                    f"EXPIRE_MAKER cancellation detected for order {order_id} (trade {trade_id}): "
+                    f"order_price={order_price}, avg_price={avg_price}, "
+                    f"original_entry_price={trade.get('entry_price')}, "
+                    f"is_stop_loss={is_stop_loss_order}"
+                )
                 logger.info(f"Stop loss order {order_id} cancelled (EXPIRE_MAKER: {expire_reason == 'EXPIRE_MAKER'}), main trade {trade_id} unaffected")
 
             # Ensure terminal-cancel defaults for unfilled orders to avoid nulls

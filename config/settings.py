@@ -32,6 +32,9 @@ def reload_env():
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
     TELEGRAM_NOTIFICATION_CHAT_ID = os.getenv("TELEGRAM_NOTIFICATION_CHAT_ID", "")
 
+    # DEPRECATED: BINANCE_POST_ONLY is kept for backward compatibility but no longer used for GTX
+    # Maker status is now enforced via price adjustment logic, not GTX timeInForce
+    # GTX caused EXPIRE_MAKER cancellations when orders would take liquidity
     BINANCE_POST_ONLY=os.getenv("BINANCE_POST_ONLY", "True").lower() == "true"
     BINANCE_MAKER_TICK_OFFSET=os.getenv("BINANCE_MAKER_TICK_OFFSET", "3")
 
@@ -83,6 +86,9 @@ LIMIT_ORDER_PRICE_THRESHOLD = float(os.getenv("LIMIT_ORDER_PRICE_THRESHOLD", "10
 DEFAULT_TP_PERCENTAGE = float(os.getenv("DEFAULT_TP_PERCENTAGE", "5.0").replace('%', ''))
 SIGNAL_TP_POSITION_PERCENTAGE = float(os.getenv("SIGNAL_TP_POSITION_PERCENTAGE", "50.0").replace('%', ''))
 TP_AUDIT_INTERVAL = int(os.getenv("TP_AUDIT_INTERVAL", "30"))
+# DEPRECATED: BINANCE_POST_ONLY is kept for backward compatibility but no longer used for GTX
+# Maker status is now enforced via price adjustment logic, not GTX timeInForce
+# GTX caused EXPIRE_MAKER cancellations when orders would take liquidity
 BINANCE_POST_ONLY=os.getenv("BINANCE_POST_ONLY", "True").lower() == "true"
 BINANCE_MAKER_TICK_OFFSET=os.getenv("BINANCE_MAKER_TICK_OFFSET", "3")
 

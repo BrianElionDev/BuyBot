@@ -449,6 +449,62 @@ class KucoinExchange(ExchangeBase):
             actual_asset_quantity = contract_size * contract_multiplier
             logger.info(f"Final contract size: {contract_size} contracts = {actual_asset_quantity} assets (multiplier: {contract_multiplier})")
 
+            # Price adjustment for limit orders to ensure maker status
+            adjusted_price = price
+            if kucoin_type == "limit" and price and not reduce_only:
+                try:
+                    # Get order book to check current market prices
+                    order_book = await self.get_order_book(kucoin_symbol, limit=5)
+                    if order_book:
+                        bids = order_book.get('bids', [])
+                        asks = order_book.get('asks', [])
+                        best_bid = float(bids[0][0]) if bids and len(bids) > 0 else 0.0
+                        best_ask = float(asks[0][0]) if asks and len(asks) > 0 else 0.0
+
+                        # Get tick size for offset calculation
+                        if filters:
+                            price_filter = filters.get('PRICE_FILTER', {})
+                            tick_size = float(price_filter.get('tickSize', 0)) if price_filter else 0.0
+                        else:
+                            tick_size = 0.0
+
+                        if tick_size <= 0:
+                            tick_size = max(1e-8, price * 1e-8)
+
+                        tick_offset = 3  # Match Binance default
+                        offset = tick_size * tick_offset
+
+                        # Adjust price to ensure maker status
+                        if kucoin_side == "buy" and best_bid > 0 and price and price >= best_bid:
+                            # BUY order must be below best_bid to add liquidity
+                            candidate = best_bid - offset
+                            adjusted_price = max(candidate, 0) if candidate > 0 else (price - offset) if price else price
+                        elif kucoin_side == "sell" and best_ask > 0 and price and price <= best_ask:
+                            # SELL order must be above best_ask to add liquidity
+                            adjusted_price = best_ask + offset
+
+                        # Validate price difference - reject if >2%
+                        if price and price > 0 and adjusted_price is not None:
+                            price_diff_pct = abs(adjusted_price - price) / price
+                        else:
+                            price_diff_pct = 0
+                        if price_diff_pct > 0.02:
+                            error_msg = (
+                                f"KuCoin price adjustment too large ({price_diff_pct*100:.2f}%): "
+                                f"original={price}, adjusted={adjusted_price}, "
+                                f"best_bid={best_bid}, best_ask={best_ask}"
+                            )
+                            logger.warning(error_msg)
+                            return {'error': error_msg, 'code': -4001}
+
+                        if adjusted_price != price:
+                            logger.info(
+                                f"KuCoin price adjusted: {price} -> {adjusted_price} "
+                                f"(best_bid={best_bid}, best_ask={best_ask}, diff={price_diff_pct*100:.2f}%)"
+                            )
+                except Exception as e:
+                    logger.warning(f"KuCoin price adjustment failed, using original price: {e}")
+
             # Prepare order parameters
             # CRITICAL: size must be the NUMBER OF CONTRACTS for classic futures; we always send 1 contract
             order_params = {
@@ -460,8 +516,8 @@ class KucoinExchange(ExchangeBase):
                 "size": int(contract_size)  # Always 1 contract for futures
             }
 
-            if price and kucoin_type in ["limit", "stop_limit"]:
-                order_params["price"] = str(price)
+            if adjusted_price and kucoin_type in ["limit", "stop_limit"]:
+                order_params["price"] = str(adjusted_price)
 
             if stop_price:
                 order_params["stopPrice"] = str(stop_price)
@@ -526,6 +582,20 @@ class KucoinExchange(ExchangeBase):
                 order_request.set_price(order_params["price"])
             if "stopPrice" in order_params:
                 order_request.set_stop_price(order_params["stopPrice"])
+
+            # Set post-only for limit orders to ensure maker status
+            if kucoin_type == "limit":
+                try:
+                    order_request.set_post_only(True)
+                    logger.info("Set postOnly=True for KuCoin limit order")
+                except AttributeError:
+                    # Try alternative method names
+                    try:
+                        # Type ignore: trying alternative method name that may not exist
+                        order_request.set_postOnly(True)  # type: ignore[attr-defined]  # camelCase variant
+                        logger.info("Set postOnly=True for KuCoin limit order (camelCase method)")
+                    except AttributeError:
+                        logger.warning("postOnly method not found in KuCoin SDK - verify SDK version")
 
             request = order_request.build()
             response = order_api.add_order(request)

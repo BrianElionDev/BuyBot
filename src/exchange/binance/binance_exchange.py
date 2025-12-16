@@ -237,10 +237,11 @@ class BinanceExchange(ExchangeBase):
                 'closePosition': close_position
             }
 
-            # Add timeInForce for LIMIT orders (GTC by default; allow GTX post-only via config)
+            # Add timeInForce for LIMIT orders (always GTC - maker status enforced via price adjustment)
             if order_type.upper() == 'LIMIT':
-                post_only = bool(getattr(cfg, 'BINANCE_POST_ONLY', False))
-                order_params['timeInForce'] = 'GTX' if post_only else 'GTC'
+                # Use GTC - maker status enforced via price adjustment, not GTX
+                # GTX causes EXPIRE_MAKER cancellations when order would take liquidity
+                order_params['timeInForce'] = 'GTC'
             elif order_type.upper() in ('STOP_MARKET', 'TAKE_PROFIT_MARKET', 'STOP', 'TAKE_PROFIT'):
                 # STOP_MARKET and TAKE_PROFIT_MARKET orders should use GTC, not GTX
                 # GTX (post-only) causes EXPIRE_MAKER errors for trigger orders
@@ -276,24 +277,41 @@ class BinanceExchange(ExchangeBase):
                         offset = tick_size * max(1, tick_offset)
 
                         if side.upper() == 'BUY':
-                            # Ensure strictly below best bid by offset when crossing or through the book
-                            if (best_ask > 0 and price >= best_ask) or (best_bid > 0 and price > best_bid):
-                                candidate = best_bid - offset if best_bid > 0 else price - offset
-                                safe_price = candidate if candidate > 0 else price
+                            # For maker: price MUST be below best_bid (not best_ask)
+                            # If price >= best_bid, it would take liquidity
+                            if best_bid > 0 and price >= best_bid:
+                                candidate = best_bid - offset
+                                safe_price = max(candidate, 0) if candidate > 0 else price - offset
+                                logger.info(f"BUY order adjusted: {price} -> {safe_price} (best_bid: {best_bid})")
                         elif side.upper() == 'SELL':
-                            # Ensure strictly above best ask by offset when crossing or through the book
-                            if (best_bid > 0 and price <= best_bid) or (best_ask > 0 and price < best_ask):
-                                candidate = best_ask + offset if best_ask > 0 else price + offset
-                                safe_price = candidate if candidate > 0 else price
+                            # For maker: price MUST be above best_ask (not best_bid)
+                            # If price <= best_ask, it would take liquidity
+                            if best_ask > 0 and price <= best_ask:
+                                candidate = best_ask + offset
+                                safe_price = candidate if candidate > 0 else price + offset
+                                logger.info(f"SELL order adjusted: {price} -> {safe_price} (best_ask: {best_ask})")
 
                         # Respect tick formatting when known
                         if filters and filters.get('PRICE_FILTER', {}).get('tickSize'):
                             safe_price = float(format_value(safe_price, filters['PRICE_FILTER']['tickSize']))
 
+                        # Validate price adjustment - reject if difference >2%
+                        if order_type.upper() == 'LIMIT' and not reduce_only:
+                            price_diff_pct = abs(safe_price - price) / price if price > 0 else 0
+                            if price_diff_pct > 0.02:  # >2% difference
+                                error_msg = (
+                                    f"Price adjustment too large ({price_diff_pct*100:.2f}%): "
+                                    f"original={price}, adjusted={safe_price}, "
+                                    f"best_bid={best_bid}, best_ask={best_ask}"
+                                )
+                                logger.warning(error_msg)
+                                return {'error': error_msg, 'code': -4001}
+
                         try:
                             logger.info(
                                 f"Maker-preflight {pair}: side={side} orig={price} safe={safe_price} "
-                                f"bid={best_bid} ask={best_ask} tick={tick_size} ticks={tick_offset}"
+                                f"bid={best_bid} ask={best_ask} tick={tick_size} ticks={tick_offset} "
+                                f"diff={abs(safe_price - price) / price * 100 if price > 0 else 0:.2f}%"
                             )
                         except Exception:
                             pass
