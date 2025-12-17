@@ -9,6 +9,8 @@ import asyncio
 import json
 import aiohttp
 import logging
+import random
+import time as _time
 from typing import Dict, List, Optional, Tuple, Any, cast
 from decimal import Decimal
 
@@ -51,6 +53,7 @@ class KucoinExchange(ExchangeBase):
         self.client: Optional[KucoinClient] = None
         self._spot_symbols: List[str] = []
         self._futures_symbols: List[str] = []
+        self._price_cache: Dict[str, Tuple[float, float, str]] = {}
 
         logger.info(f"KucoinExchange initialized for testnet: {self.is_testnet}")
 
@@ -227,7 +230,8 @@ class KucoinExchange(ExchangeBase):
                                  client_order_id: Optional[str] = None,
                                  reduce_only: bool = False,
                                  close_position: bool = False,
-                                 leverage: Optional[float] = None) -> Dict[str, Any]:
+                                 leverage: Optional[float] = None,
+                                 validation_price_override: Optional[float] = None) -> Dict[str, Any]:
         """
         Create a futures order with comprehensive validation.
 
@@ -281,21 +285,23 @@ class KucoinExchange(ExchangeBase):
                 # This prevents issues where amount becomes 0 after conversion
                 # validation_price is already initialized above
                 if order_type.upper() == 'MARKET':
-                    # Fetch mark price for MARKET orders with retry logic
-                    max_retries = 3
-                    for attempt in range(max_retries):
-                        try:
-                            validation_price = await self.get_mark_price(pair)
-                            if validation_price and validation_price > 0:
-                                break
-                        except Exception as e:
-                            logger.warning(f"Mark price fetch attempt {attempt + 1} failed: {e}")
-                            if attempt < max_retries - 1:
-                                await asyncio.sleep(0.5)
+                    if validation_price_override and validation_price_override > 0:
+                        validation_price = validation_price_override
+                    else:
+                        max_retries = 3
+                        for attempt in range(max_retries):
+                            try:
+                                validation_price = await self.get_mark_price(pair)
+                                if validation_price and validation_price > 0:
+                                    break
+                            except Exception as e:
+                                logger.warning(f"Mark price fetch attempt {attempt + 1} failed: {e}")
+                                if attempt < max_retries - 1:
+                                    await asyncio.sleep(0.5)
 
-                    if not validation_price or validation_price <= 0:
-                        logger.error(f"Failed to fetch mark price for MARKET order validation on {pair} after {max_retries} attempts")
-                        return {'error': f'Cannot validate notional value: mark price unavailable for {pair}. Please retry.', 'code': -4008}
+                        if not validation_price or validation_price <= 0:
+                            logger.error(f"Failed to fetch mark price for MARKET order validation on {pair} after {max_retries} attempts")
+                            return {'error': f'Cannot validate notional value: mark price unavailable for {pair}. Please retry.', 'code': -4008}
                 elif price:
                     # Use LIMIT price for LIMIT orders
                     validation_price = price
@@ -629,6 +635,66 @@ class KucoinExchange(ExchangeBase):
         except Exception as e:
             logger.error(f"Failed to create KuCoin futures order: {e}")
             return {"success": False, "error": str(e)}
+
+    async def place_stop_loss_with_retry(
+        self,
+        pair: str,
+        side: str,
+        stop_price: float,
+        amount: float,
+        reduce_only: bool = False,
+        max_attempts: int = 3,
+        base_delay: float = 0.5,
+        use_last_price_on_final: bool = True
+    ) -> Dict[str, Any]:
+        attempt = 0
+        last_error: Optional[Dict[str, Any]] = None
+
+        while attempt < max_attempts:
+            attempt += 1
+
+            validation_price = await self.get_mark_price(pair)
+            if not validation_price or validation_price <= 0:
+                validation_price = await self._get_index_price_fallback(pair)
+
+            if not validation_price and attempt == max_attempts and use_last_price_on_final:
+                validation_price = await self._get_last_traded_price(pair)
+
+            if not validation_price or validation_price <= 0:
+                jitter = 1 + random.uniform(0, 0.25)
+                delay = base_delay * (2 ** (attempt - 1)) * jitter
+                logger.warning(f"No price available for stop update {pair} on attempt {attempt}/{max_attempts}, retrying in {delay:.2f}s")
+                if attempt >= max_attempts:
+                    return {"success": False, "error": "Failed to fetch price for stop update", "code": -4008}
+                await asyncio.sleep(delay)
+                continue
+
+            resp = await self.create_futures_order(
+                pair=pair,
+                side=side,
+                order_type='MARKET',
+                stop_price=stop_price,
+                amount=amount,
+                reduce_only=reduce_only,
+                validation_price_override=validation_price
+            )
+
+            if isinstance(resp, dict) and resp.get('error') and resp.get('code') == -4008 and attempt < max_attempts:
+                last_error = resp
+                jitter = 1 + random.uniform(0, 0.25)
+                delay = base_delay * (2 ** (attempt - 1)) * jitter
+                logger.warning(f"KuCoin stop update hit -4008 on attempt {attempt}/{max_attempts}, retrying in {delay:.2f}s (price used: {validation_price})")
+                await asyncio.sleep(delay)
+                continue
+
+            if resp and 'orderId' in resp:
+                logger.info(f"KuCoin stop update succeeded on attempt {attempt} with validation price {validation_price}")
+                return resp
+
+            last_error = resp if isinstance(resp, dict) else {"success": False, "error": str(resp)}
+            break
+
+        return last_error or {"success": False, "error": "Unknown stop update failure"}
 
     async def cancel_futures_order(self, pair: str, order_id: str) -> Tuple[bool, Dict[str, Any]]:
         """
@@ -1418,18 +1484,17 @@ class KucoinExchange(ExchangeBase):
             return None
 
     async def get_mark_price(self, symbol: str) -> Optional[float]:
-        """
-        Get mark price for a symbol using futures API with exponential backoff retry.
-
-        Args:
-            symbol: Trading pair symbol
-
-        Returns:
-            Mark price or None if not available
-        """
         max_retries = 5
         base_delay = 0.5
+        cache_ttl = 15.0
 
+        cache_key = symbol.upper()
+        now = _time.time()
+        cached = self._price_cache.get(cache_key)
+        if cached and now - cached[1] <= cache_ttl and cached[0] > 0:
+            return cached[0]
+
+        mapped_symbol = None
         for attempt in range(max_retries):
             try:
                 all_symbols = await self.get_futures_symbols()
@@ -1450,46 +1515,52 @@ class KucoinExchange(ExchangeBase):
                             td = data.get("data") or {}
                             mark_price = td.get('value', 0.0)
                             if mark_price and float(mark_price) > 0:
-                                return float(mark_price)
+                                price_val = float(mark_price)
+                                self._price_cache[cache_key] = (price_val, _time.time(), "mark")
+                                return price_val
 
                         if attempt < max_retries - 1:
-                            delay = base_delay * (2 ** attempt)
-                            logger.warning(f"Mark price fetch attempt {attempt + 1} failed (status {resp.status}), retrying in {delay}s...")
+                            jitter = 1 + random.uniform(0, 0.25)
+                            delay = base_delay * (2 ** attempt) * jitter
+                            logger.warning(f"Mark price fetch attempt {attempt + 1} failed (status {resp.status}), retrying in {delay:.2f}s...")
                             await asyncio.sleep(delay)
                             continue
 
             except asyncio.TimeoutError:
                 if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    logger.warning(f"Mark price fetch timeout on attempt {attempt + 1}, retrying in {delay}s...")
+                    jitter = 1 + random.uniform(0, 0.25)
+                    delay = base_delay * (2 ** attempt) * jitter
+                    logger.warning(f"Mark price fetch timeout on attempt {attempt + 1}, retrying in {delay:.2f}s...")
                     await asyncio.sleep(delay)
                     continue
             except Exception as e:
                 if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    logger.warning(f"Mark price fetch attempt {attempt + 1} failed: {e}, retrying in {delay}s...")
+                    jitter = 1 + random.uniform(0, 0.25)
+                    delay = base_delay * (2 ** attempt) * jitter
+                    logger.warning(f"Mark price fetch attempt {attempt + 1} failed: {e}, retrying in {delay:.2f}s...")
                     await asyncio.sleep(delay)
                     continue
                 else:
                     logger.error(f"Failed to get KuCoin mark price for {symbol} after {max_retries} attempts: {e}")
 
         logger.warning(f"All {max_retries} attempts to fetch mark price for {symbol} failed, trying index price fallback...")
-        return await self._get_index_price_fallback(symbol)
+        fallback_price = await self._get_index_price_fallback(symbol, mapped_symbol)
+        if fallback_price and fallback_price > 0:
+            self._price_cache[cache_key] = (fallback_price, _time.time(), "index")
+            return fallback_price
 
-    async def _get_index_price_fallback(self, symbol: str) -> Optional[float]:
-        """
-        Fallback method to get index price when mark price is unavailable.
+        if cached and cached[0] > 0:
+            logger.warning(f"Using stale cached price for {symbol}: {cached[0]}")
+            return cached[0]
 
-        Args:
-            symbol: Trading pair symbol
+        return None
 
-        Returns:
-            Index price or None if not available
-        """
+    async def _get_index_price_fallback(self, symbol: str, mapped_symbol: Optional[str] = None) -> Optional[float]:
         try:
-            all_symbols = await self.get_futures_symbols()
-            symbol_mapper.available_symbols = all_symbols
-            mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
+            if not mapped_symbol:
+                all_symbols = await self.get_futures_symbols()
+                symbol_mapper.available_symbols = all_symbols
+                mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
 
             if not mapped_symbol:
                 logger.warning(f"Could not map {symbol} to futures symbol for index price fallback")
@@ -1505,13 +1576,33 @@ class KucoinExchange(ExchangeBase):
                         index_data = data.get("data") or {}
                         index_price = index_data.get('indexPrice') or index_data.get('price', 0.0)
                         if index_price and float(index_price) > 0:
+                            price_val = float(index_price)
                             logger.info(f"Using index price {index_price} as fallback for {symbol}")
-                            return float(index_price)
+                            return price_val
 
             logger.warning(f"Index price fallback also failed for {symbol}")
             return None
         except Exception as e:
             logger.error(f"Failed to get KuCoin index price fallback for {symbol}: {e}")
+            return None
+
+    async def _get_last_traded_price(self, symbol: str) -> Optional[float]:
+        try:
+            all_symbols = await self.get_futures_symbols()
+            symbol_mapper.available_symbols = all_symbols
+            mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
+            if not mapped_symbol:
+                return None
+
+            ticker = await self.get_futures_ticker(mapped_symbol)
+            if not ticker:
+                return None
+            raw_price = ticker.get('price') or ticker.get('last') or ticker.get('bestAsk') or ticker.get('bestBid')
+            if raw_price:
+                return float(raw_price)
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get last traded price for {symbol}: {e}")
             return None
 
     async def get_futures_account_info(self) -> Optional[Dict[str, Any]]:

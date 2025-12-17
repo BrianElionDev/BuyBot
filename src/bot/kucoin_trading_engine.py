@@ -809,11 +809,9 @@ class KucoinTradingEngine:
                 except Exception as e:
                     logger.warning(f"Could not cancel existing stop loss orders: {e}")
 
-                # Create new stop loss order
-                new_sl_order = await self.kucoin_exchange.create_futures_order(
+                new_sl_order = await self.kucoin_exchange.place_stop_loss_with_retry(
                     pair=trading_pair,
                     side=SIDE_SELL,
-                    order_type='MARKET',
                     stop_price=stop_price,
                     amount=position_size,
                     reduce_only=True
