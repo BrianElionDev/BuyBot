@@ -362,7 +362,7 @@ class SignalRouter:
 
             logger.info(f"Routing follow-up signal to Binance: {content}")
 
-            trade_row = await self._find_trade_by_discord_id(trade_reference)
+            trade_row = await self._find_trade_by_discord_id(trade_reference, signal_data)
             if not trade_row:
                 return {"status": "error", "message": f"No trade found for trade reference: {trade_reference}"}
 
@@ -406,7 +406,7 @@ class SignalRouter:
 
             logger.info(f"Routing follow-up signal to KuCoin: {content}")
 
-            trade_row = await self._find_trade_by_discord_id(trade_reference)
+            trade_row = await self._find_trade_by_discord_id(trade_reference, signal_data)
             if not trade_row:
                 return {"status": "error", "message": f"No trade found for trade reference: {trade_reference}"}
 
@@ -704,12 +704,13 @@ class SignalRouter:
                 'total_orders_affected': 0
             }
 
-    async def _find_trade_by_discord_id(self, discord_id: str) -> Optional[Dict[str, Any]]:
+    async def _find_trade_by_discord_id(self, discord_id: str, signal_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
         Find trade by discord_id.
 
         Args:
             discord_id: The discord ID to search for
+            signal_data: Optional signal data for fallback matching
 
         Returns:
             Dict[str, Any]: Trade data or None if not found
@@ -753,8 +754,66 @@ class SignalRouter:
             except Exception:
                 pass
 
+            # Fallback 3: If signal_data provided, try trader + coin symbol matching
+            if signal_data and not trade and self.runtime_config and getattr(self.runtime_config, 'supabase', None):
+                trader = signal_data.get('trader', '').strip()
+                content = signal_data.get('content', '')
+
+                if trader and content:
+                    coin_symbol = self._extract_coin_symbol(content)
+
+                    if coin_symbol:
+                        try:
+                            # Try to find active trade by trader + coin symbol
+                            query = self.runtime_config.supabase.table("trades").select("*")
+                            query = query.eq("trader", trader).eq("coin_symbol", coin_symbol).eq("status", "OPEN").eq("is_active", True)
+                            query = query.order("created_at", desc=True).limit(1)
+                            resp = query.execute()
+
+                            if resp.data and len(resp.data) > 0:
+                                logger.info(f"Found trade by fallback: trader={trader}, coin={coin_symbol}")
+                                return resp.data[0]
+                        except Exception as e:
+                            logger.warning(f"Fallback trade lookup failed: {e}")
+
+                    # Last resort: find most recent active trade by trader
+                    try:
+                        query = self.runtime_config.supabase.table("trades").select("*")
+                        query = query.eq("trader", trader).eq("status", "OPEN").eq("is_active", True)
+                        query = query.order("created_at", desc=True).limit(1)
+                        resp = query.execute()
+
+                        if resp.data and len(resp.data) > 0:
+                            logger.info(f"Found trade by trader-only fallback: trader={trader}")
+                            return resp.data[0]
+                    except Exception as e:
+                        logger.warning(f"Trader-only fallback lookup failed: {e}")
+
             logger.info(f"No trade found by reference after fallbacks: {ref}")
             return None
         except Exception as e:
             logger.error(f"Error finding trade by discord_id {discord_id}: {e}")
             return None
+
+    def _extract_coin_symbol(self, content: str) -> Optional[str]:
+        """Extract coin symbol from alert content."""
+        import re
+        if not content:
+            return None
+
+        # Patterns to match coin symbols like "ETH 🚀|", "BTC |", "SOL stops"
+        patterns = [
+            r'\b([A-Z]{2,10})\s*[🚀|]',  # "ETH 🚀|" or "BTC |"
+            r'^([A-Z]{2,10})\s+',         # "ETH stops" or "BTC closed"
+            r'[|🚀]\s*([A-Z]{2,10})\s',   # Symbol after separator
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, content.upper())
+            if match:
+                symbol = match.group(1)
+                # Filter out common false positives
+                if symbol not in ['BE', 'TP', 'SL', 'STOPS', 'MOVED', 'CLOSED', 'IN', 'TO', 'AT', 'ON', 'OF', 'FOR', 'WITH']:
+                    return symbol
+
+        return None
