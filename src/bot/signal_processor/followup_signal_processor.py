@@ -241,6 +241,13 @@ class FollowupSignalProcessor:
 
                 # Final validation with detailed error message
                 if position_size <= 0:
+                    if action in ('position_closed', 'stop_loss_hit'):
+                        logger.info(
+                            f"Trade {trade_id} has zero position size for action {action}; "
+                            "treating as already closed / acknowledged"
+                        )
+                        return True, active_trade, "Position already closed, no action needed"
+
                     error_details = f"Trade {trade_id} has zero position size - cannot execute {action}"
                     if position_size_source:
                         error_details += f" (tried: {position_size_source})"

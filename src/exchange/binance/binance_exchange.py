@@ -439,17 +439,24 @@ class BinanceExchange(ExchangeBase):
             payload = f"{query_string}&signature={signature}"
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, data=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                async with session.post(
+                    url,
+                    headers=headers,
+                    data=payload,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
                     if resp.status != 200:
                         error_text = await resp.text()
                         try:
                             error_data = await resp.json()
                             error_msg = error_data.get('msg', error_text)
                             error_code = error_data.get('code', -1)
-                        except:
+                        except Exception:
                             error_msg = error_text
                             error_code = -1
-                        raise BinanceAPIException(response=None, status_code=resp.status, message=error_msg, code=error_code)
+
+                        logger.error(f"Binance algo order HTTP {resp.status}: {error_msg}")
+                        return {'error': f'HTTP {resp.status}: {error_msg}', 'code': error_code}
 
                     result = await resp.json()
 
@@ -468,12 +475,6 @@ class BinanceExchange(ExchangeBase):
 
             return result
 
-        except BinanceAPIException as e:
-            if e.code == -4120:
-                logger.warning(f"Binance returned -4120 (algo endpoint required), but we're already using algo parameters. Error: {e.message}")
-            error_msg = f"Binance API error creating algo order: {e.message}"
-            logger.error(error_msg)
-            return {'error': error_msg, 'code': e.code}
         except Exception as e:
             error_msg = f"Error creating algo order: {e}"
             logger.error(error_msg)
