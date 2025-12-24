@@ -581,8 +581,11 @@ class KucoinExchange(ExchangeBase):
                 .set_size(order_params["size"])  # Integer 1 for 1 contract
                 .set_leverage(leverage_int))
 
+            if reduce_only:
+                order_request.set_reduce_only(True)
+
             # Log the exact parameters being sent
-            logger.info(f"KuCoin order request: symbol={order_params['symbol']}, side={order_params['side']}, type={order_params['type']}, size={order_params['size']}, leverage={leverage_int}x")
+            logger.info(f"KuCoin order request: symbol={order_params['symbol']}, side={order_params['side']}, type={order_params['type']}, size={order_params['size']}, leverage={leverage_int}x, reduceOnly={reduce_only}")
 
             if "price" in order_params:
                 order_request.set_price(order_params["price"])
@@ -672,7 +675,7 @@ class KucoinExchange(ExchangeBase):
             resp = await self.create_futures_order(
                 pair=pair,
                 side=side,
-                order_type='MARKET',
+                order_type='STOP_MARKET',
                 stop_price=stop_price,
                 amount=amount,
                 reduce_only=reduce_only,
@@ -1499,7 +1502,10 @@ class KucoinExchange(ExchangeBase):
             try:
                 all_symbols = await self.get_futures_symbols()
                 symbol_mapper.available_symbols = all_symbols
-                mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
+                normalized_symbol = symbol.upper()
+                if normalized_symbol.startswith('BTC') and normalized_symbol.endswith('USDTM'):
+                    normalized_symbol = normalized_symbol.replace('BTC', 'XBT', 1)
+                mapped_symbol = symbol_mapper.map_to_futures_symbol(normalized_symbol, all_symbols)
 
                 if not mapped_symbol:
                     logger.warning(f"Could not map {symbol} to futures symbol for mark price")
@@ -1560,7 +1566,10 @@ class KucoinExchange(ExchangeBase):
             if not mapped_symbol:
                 all_symbols = await self.get_futures_symbols()
                 symbol_mapper.available_symbols = all_symbols
-                mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
+                normalized_symbol = symbol.upper()
+                if normalized_symbol.startswith('BTC') and normalized_symbol.endswith('USDTM'):
+                    normalized_symbol = normalized_symbol.replace('BTC', 'XBT', 1)
+                mapped_symbol = symbol_mapper.map_to_futures_symbol(normalized_symbol, all_symbols)
 
             if not mapped_symbol:
                 logger.warning(f"Could not map {symbol} to futures symbol for index price fallback")
@@ -1590,7 +1599,10 @@ class KucoinExchange(ExchangeBase):
         try:
             all_symbols = await self.get_futures_symbols()
             symbol_mapper.available_symbols = all_symbols
-            mapped_symbol = symbol_mapper.map_to_futures_symbol(symbol, all_symbols)
+            normalized_symbol = symbol.upper()
+            if normalized_symbol.startswith('BTC') and normalized_symbol.endswith('USDTM'):
+                normalized_symbol = normalized_symbol.replace('BTC', 'XBT', 1)
+            mapped_symbol = symbol_mapper.map_to_futures_symbol(normalized_symbol, all_symbols)
             if not mapped_symbol:
                 return None
 
