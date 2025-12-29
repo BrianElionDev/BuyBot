@@ -752,12 +752,14 @@ class KucoinTradingEngine:
                 if stop_price in (None, 'BE', 'break_even') or str(stop_price).lower() == 'be':
                     if entry_price and entry_price > 0:
                         stop_price = entry_price
+                        logger.info(f"Trade {trade_row.get('id', 'unknown')} ({coin_symbol}): Using entry price {entry_price} from database for break-even")
                     else:
                         # Try to fetch from exchange
                         try:
                             if coin_symbol:
                                 positions = await self.kucoin_exchange.get_futures_position_information()
                                 target_symbol = f"{coin_symbol.upper()}USDTM"
+                                entry_found = False
                                 for pos in positions:
                                     if pos.get('symbol') == target_symbol:
                                         pos_size = float(pos.get('size', 0))
@@ -766,33 +768,61 @@ class KucoinTradingEngine:
                                             if fetched_entry > 0:
                                                 stop_price = fetched_entry
                                                 position_size = abs(pos_size)
-                                                logger.info(f"Fetched entry price {fetched_entry} from exchange for break-even")
+                                                entry_found = True
+                                                logger.info(
+                                                    f"Trade {trade_row.get('id', 'unknown')} ({coin_symbol}): "
+                                                    f"Fetched entry price {fetched_entry} from exchange for break-even"
+                                                )
                                                 break
+
+                                if not entry_found:
+                                    logger.warning(
+                                        f"Trade {trade_row.get('id', 'unknown')} ({coin_symbol}): "
+                                        "Could not find active position on exchange for break-even price"
+                                    )
                         except Exception as e:
-                            logger.warning(f"Could not fetch entry price from exchange: {e}")
+                            logger.error(
+                                f"Trade {trade_row.get('id', 'unknown')} ({coin_symbol}): "
+                                f"Error fetching entry price from exchange: {e}",
+                                exc_info=True
+                            )
 
                     if not isinstance(stop_price, (float, int)) or stop_price <= 0:
+                        error_msg = (
+                            f"Could not determine break-even price for trade {trade_row.get('id', 'unknown')} "
+                            f"({coin_symbol}): entry_price not available in database or exchange"
+                        )
+                        logger.error(error_msg)
                         return {
                             "success": False,
-                            "message": f"Could not determine break-even price: entry_price not available",
+                            "message": error_msg,
                             "parsed_alert": parsed_alert,
-                            "exchange_response": "Could not determine break-even price"
+                            "exchange_response": {"error": "Could not determine break-even price"}
                         }
 
                 if not isinstance(stop_price, (float, int)) or stop_price <= 0:
+                    error_msg = (
+                        f"Invalid stop price for trade {trade_row.get('id', 'unknown')} ({coin_symbol}): {stop_price}"
+                    )
+                    logger.error(error_msg)
                     return {
                         "success": False,
-                        "message": f"Invalid stop price: {stop_price}",
+                        "message": error_msg,
                         "parsed_alert": parsed_alert,
-                        "exchange_response": f"Invalid stop price: {stop_price}"
+                        "exchange_response": {"error": f"Invalid stop price: {stop_price}"}
                     }
 
                 if not coin_symbol or position_size <= 0:
+                    error_msg = (
+                        f"Invalid trade data for stop loss update - trade {trade_row.get('id', 'unknown')}: "
+                        f"coin_symbol={coin_symbol}, position_size={position_size}"
+                    )
+                    logger.error(error_msg)
                     return {
                         "success": False,
-                        "message": f"Invalid trade data for stop loss update: coin_symbol={coin_symbol}, position_size={position_size}",
+                        "message": error_msg,
                         "parsed_alert": parsed_alert,
-                        "exchange_response": "Invalid trade data"
+                        "exchange_response": {"error": "Invalid trade data"}
                     }
 
                 trading_pair = self.kucoin_exchange.get_futures_trading_pair(coin_symbol)
@@ -800,39 +830,78 @@ class KucoinTradingEngine:
                 # Cancel existing stop loss orders
                 try:
                     open_orders = await self.kucoin_exchange.get_all_open_futures_orders()
+                    cancelled_count = 0
                     for order in open_orders:
                         if (order.get('symbol') == trading_pair or
                             order.get('symbol') == f"{coin_symbol.upper()}USDTM") and \
                            order.get('type', '').upper() in ['STOP', 'STOP_MARKET']:
-                            await self.kucoin_exchange.cancel_futures_order(trading_pair, order.get('orderId', ''))
-                            logger.info(f"Cancelled existing stop loss order: {order.get('orderId')}")
+                            try:
+                                await self.kucoin_exchange.cancel_futures_order(trading_pair, order.get('orderId', ''))
+                                cancelled_count += 1
+                                logger.info(
+                                    f"Trade {trade_row.get('id', 'unknown')} ({coin_symbol}): "
+                                    f"Cancelled existing stop loss order: {order.get('orderId')}"
+                                )
+                            except Exception as cancel_error:
+                                logger.warning(
+                                    f"Trade {trade_row.get('id', 'unknown')} ({coin_symbol}): "
+                                    f"Failed to cancel stop loss order {order.get('orderId')}: {cancel_error}"
+                                )
+                    if cancelled_count > 0:
+                        logger.info(
+                            f"Trade {trade_row.get('id', 'unknown')} ({coin_symbol}): "
+                            f"Cancelled {cancelled_count} existing stop loss order(s)"
+                        )
                 except Exception as e:
-                    logger.warning(f"Could not cancel existing stop loss orders: {e}")
+                    logger.warning(
+                        f"Trade {trade_row.get('id', 'unknown')} ({coin_symbol}): "
+                        f"Could not fetch/cancel existing stop loss orders: {e}"
+                    )
 
-                new_sl_order = await self.kucoin_exchange.place_stop_loss_with_retry(
-                    pair=trading_pair,
-                    side=SIDE_SELL,
-                    stop_price=stop_price,
-                    amount=position_size,
-                    reduce_only=True
-                )
+                try:
+                    new_sl_order = await self.kucoin_exchange.place_stop_loss_with_retry(
+                        pair=trading_pair,
+                        side=SIDE_SELL,
+                        stop_price=stop_price,
+                        amount=position_size,
+                        reduce_only=True
+                    )
 
-                if new_sl_order and 'orderId' in new_sl_order:
-                    logger.info(f"Stop loss updated for KuCoin: {stop_price}, order ID: {new_sl_order['orderId']}")
-                    return {
-                        "success": True,
-                        "message": f"Stop loss updated for KuCoin: {stop_price}",
-                        "parsed_alert": parsed_alert,
-                        "exchange_response": new_sl_order
-                    }
-                else:
-                    error_msg = new_sl_order.get('error', str(new_sl_order)) if isinstance(new_sl_order, dict) else str(new_sl_order)
-                    logger.error(f"Failed to update stop loss on KuCoin: {error_msg}")
+                    if new_sl_order and 'orderId' in new_sl_order:
+                        logger.info(
+                            f"Trade {trade_row.get('id', 'unknown')} ({coin_symbol}): "
+                            f"Stop loss updated successfully to {stop_price}, order ID: {new_sl_order['orderId']}"
+                        )
+                        return {
+                            "success": True,
+                            "message": f"Stop loss updated for KuCoin: {stop_price}",
+                            "parsed_alert": parsed_alert,
+                            "exchange_response": new_sl_order
+                        }
+                    else:
+                        error_msg = new_sl_order.get('error', str(new_sl_order)) if isinstance(new_sl_order, dict) else str(new_sl_order)
+                        error_code = new_sl_order.get('code') if isinstance(new_sl_order, dict) else None
+                        full_error = (
+                            f"Failed to update stop loss for trade {trade_row.get('id', 'unknown')} ({coin_symbol}): "
+                            f"{error_msg}" + (f" (code: {error_code})" if error_code else "")
+                        )
+                        logger.error(full_error)
+                        return {
+                            "success": False,
+                            "message": f"Failed to update stop loss: {error_msg}",
+                            "parsed_alert": parsed_alert,
+                            "exchange_response": new_sl_order
+                        }
+                except Exception as e:
+                    error_msg = (
+                        f"Exception while updating stop loss for trade {trade_row.get('id', 'unknown')} ({coin_symbol}): {e}"
+                    )
+                    logger.error(error_msg, exc_info=True)
                     return {
                         "success": False,
-                        "message": f"Failed to update stop loss: {error_msg}",
+                        "message": f"Failed to update stop loss: {str(e)}",
                         "parsed_alert": parsed_alert,
-                        "exchange_response": new_sl_order
+                        "exchange_response": {"error": str(e), "exception": True}
                     }
 
             elif action in ['stop_loss_hit', 'position_closed']:

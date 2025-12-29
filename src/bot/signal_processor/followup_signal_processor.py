@@ -69,9 +69,16 @@ class FollowupSignalProcessor:
                     pass
 
             # Get all open orders for this symbol
-            open_orders = await self.exchange.get_open_orders(symbol=symbol)
-            result['has_open_orders'] = len(open_orders) > 0
-            result['stop_orders'] = [order for order in open_orders if order.get('type') in ['STOP_MARKET', 'TAKE_PROFIT_MARKET']]
+            try:
+                all_open_orders = await self.exchange.get_all_open_futures_orders()
+                open_orders = [order for order in all_open_orders if order.get('symbol') == symbol] if all_open_orders else []
+                result['has_open_orders'] = len(open_orders) > 0
+                result['stop_orders'] = [order for order in open_orders if order.get('type') in ['STOP_MARKET', 'TAKE_PROFIT_MARKET']]
+            except Exception as e:
+                logger.warning(f"Could not fetch open orders for {symbol}: {e}")
+                open_orders = []
+                result['has_open_orders'] = False
+                result['stop_orders'] = []
 
             return result
 
@@ -162,12 +169,38 @@ class FollowupSignalProcessor:
             return True, active_trade, "Trade already closed, no action needed"
 
         try:
+            # Sync position data from exchange before validation to ensure accuracy
             binance_status = await self.check_trade_status_on_binance(coin_symbol, exchange_order_id)
 
             position_requiring_actions = ['stop_loss_hit', 'take_profit_1', 'stops_to_be', 'tp1and_sl_to_be', 'position_closed']
             if action in position_requiring_actions:
                 position_size = 0.0
                 position_size_source = None
+                position_already_closed = False
+
+                # For TP1 specifically: check if position is already closed before attempting
+                if action == 'take_profit_1':
+                    try:
+                        positions = await self.exchange.get_futures_position_information()
+                        trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
+                        has_active_position = False
+                        for pos in positions:
+                            pos_symbol = pos.get('symbol', '')
+                            if pos_symbol == trading_pair or pos_symbol.replace('USDT', '') == coin_symbol:
+                                pos_amt = float(pos.get('positionAmt', 0))
+                                if abs(pos_amt) > 0:
+                                    has_active_position = True
+                                    break
+
+                        if not has_active_position:
+                            logger.info(
+                                f"Trade {trade_id} ({coin_symbol}): Position already closed on exchange before TP1 execution. "
+                                "Treating as already processed."
+                            )
+                            position_already_closed = True
+                            return True, active_trade, "Position already closed on exchange, TP1 may have been executed"
+                    except Exception as e:
+                        logger.warning(f"Could not check position closure status for trade {trade_id}: {e}")
 
                 # Try multiple fallbacks to get position size
                 # 1. Try live exchange position query (most accurate)
@@ -175,7 +208,10 @@ class FollowupSignalProcessor:
                     position_size = binance_status.get('position_size', 0.0)
                     if position_size > 0:
                         position_size_source = 'live_exchange'
-                        logger.info(f"Using live Binance position size: {position_size} for {coin_symbol}")
+                        logger.info(
+                            f"Trade {trade_id} ({coin_symbol}): Using live exchange position size: {position_size} "
+                            f"(source: live_exchange)"
+                        )
 
                 # 2. Try database position_size if live query failed or returned 0
                 if position_size <= 0:
@@ -183,7 +219,10 @@ class FollowupSignalProcessor:
                     if db_position_size > 0:
                         position_size = db_position_size
                         position_size_source = 'database'
-                        logger.info(f"Using database position size: {position_size} for {coin_symbol}")
+                        logger.info(
+                            f"Trade {trade_id} ({coin_symbol}): Using database position size: {position_size} "
+                            f"(source: database)"
+                        )
 
                 # 3. Try parsing from order responses if still 0
                 if position_size <= 0:
@@ -214,7 +253,10 @@ class FollowupSignalProcessor:
                                 if parsed_size > 0:
                                     position_size = parsed_size
                                     position_size_source = 'order_response'
-                                    logger.info(f"Using position size from order response: {position_size} for {coin_symbol}")
+                                    logger.info(
+                                        f"Trade {trade_id} ({coin_symbol}): Using position size from order response: "
+                                        f"{position_size} (source: order_response)"
+                                    )
                                     break
                             except (json.JSONDecodeError, ValueError, TypeError):
                                 continue
@@ -234,28 +276,38 @@ class FollowupSignalProcessor:
                                 if abs(pos_amt) > 0:
                                     position_size = abs(pos_amt)
                                     position_size_source = 'partial_position_remainder'
-                                    logger.info(f"Found partial position remainder: {position_size} for {coin_symbol} (TP1 may have been partially executed)")
+                                    logger.info(
+                                        f"Trade {trade_id} ({coin_symbol}): Found partial position remainder: {position_size} "
+                                        f"(source: partial_position_remainder, TP1 may have been partially executed)"
+                                    )
                                     break
                     except Exception as e:
-                        logger.warning(f"Could not check for partial position: {e}")
+                        logger.warning(f"Trade {trade_id} ({coin_symbol}): Could not check for partial position: {e}")
 
                 # Final validation with detailed error message
                 if position_size <= 0:
                     if action in ('position_closed', 'stop_loss_hit'):
                         logger.info(
-                            f"Trade {trade_id} has zero position size for action {action}; "
+                            f"Trade {trade_id} ({coin_symbol}): Zero position size for action {action}; "
                             "treating as already closed / acknowledged"
                         )
                         return True, active_trade, "Position already closed, no action needed"
 
-                    error_details = f"Trade {trade_id} has zero position size - cannot execute {action}"
-                    if position_size_source:
-                        error_details += f" (tried: {position_size_source})"
-                    else:
-                        error_details += " (tried: live_exchange, database, order_response"
-                        if action == 'take_profit_1':
-                            error_details += ", partial_position_remainder"
-                        error_details += ")"
+                    # Build detailed error message with all attempted sources
+                    attempted_sources = []
+                    if 'error' not in binance_status:
+                        attempted_sources.append('live_exchange')
+                    attempted_sources.append('database')
+                    attempted_sources.append('order_response')
+                    if action == 'take_profit_1':
+                        attempted_sources.append('partial_position_remainder')
+
+                    error_details = (
+                        f"Trade {trade_id} ({coin_symbol}) has zero position size - cannot execute {action}. "
+                        f"Tried sources: {', '.join(attempted_sources)}. "
+                        f"Position may have been closed or trade may not have been executed."
+                    )
+                    logger.error(f"Trade {trade_id} ({coin_symbol}): {error_details}")
                     return False, active_trade, error_details
 
                 # Store the resolved position size for use downstream
