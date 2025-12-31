@@ -591,6 +591,29 @@ class KucoinExchange(ExchangeBase):
                 order_request.set_price(order_params["price"])
             if "stopPrice" in order_params:
                 order_request.set_stop_price(order_params["stopPrice"])
+                # CRITICAL: KuCoin requires 'stop' parameter: 'down' or 'up'
+                # 'down' = triggers when price goes down (for SELL orders closing LONG positions)
+                # 'up' = triggers when price goes up (for BUY orders closing SHORT positions)
+                stop_direction = "down" if side.upper() == "SELL" else "up"
+                try:
+                    order_request.set_stop(stop_direction)
+                    logger.info(f"Set stop={stop_direction} for KuCoin stop order (side={side})")
+                except AttributeError:
+                    try:
+                        order_request.setStop(stop_direction)  # type: ignore[attr-defined]  # camelCase variant
+                        logger.info(f"Set stop={stop_direction} for KuCoin stop order (camelCase method, side={side})")
+                    except AttributeError:
+                        logger.warning("set_stop method not found in KuCoin SDK - verify SDK version")
+                # stopPriceType: MP = Mark Price (most reliable for stop loss orders)
+                try:
+                    order_request.set_stop_price_type("MP")
+                    logger.info("Set stopPriceType=MP for KuCoin stop order")
+                except AttributeError:
+                    try:
+                        order_request.set_stopPriceType("MP")  # type: ignore[attr-defined]  # camelCase variant
+                        logger.info("Set stopPriceType=MP for KuCoin stop order (camelCase method)")
+                    except AttributeError:
+                        logger.warning("stopPriceType method not found in KuCoin SDK - verify SDK version")
 
             # Set post-only for limit orders to ensure maker status
             if kucoin_type == "limit":
@@ -607,6 +630,17 @@ class KucoinExchange(ExchangeBase):
                         logger.warning("postOnly method not found in KuCoin SDK - verify SDK version")
 
             request = order_request.build()
+
+            # Log the complete request object for debugging
+            try:
+                request_dict = getattr(request, '__dict__', {})
+                logger.info(f"KuCoin SDK request object: {request_dict}")
+                # Also try to get all attributes
+                attrs = {k: getattr(request, k, None) for k in dir(request) if not k.startswith('_')}
+                logger.info(f"KuCoin SDK request attributes: {attrs}")
+            except Exception as e:
+                logger.warning(f"Could not log request details: {e}")
+
             response = order_api.add_order(request)
 
             # Format response to match Binance format
@@ -2168,13 +2202,17 @@ class KucoinExchange(ExchangeBase):
 
     # Helper Methods
     def _convert_order_type(self, order_type: str) -> str:
-        """Convert standard order type to KuCoin format."""
+        """Convert standard order type to KuCoin format.
+
+        Note: For stop orders, KuCoin SDK requires type='market' or 'limit',
+        with stop behavior controlled by stop, stopPrice, and stopPriceType parameters.
+        """
         type_mapping = {
             "MARKET": "market",
             "LIMIT": "limit",
-            "STOP": "market",
-            "STOP_MARKET": "market",
-            "STOP_LIMIT": "stop_limit"
+            "STOP": "market",  # Stop market orders use type='market' with stop parameters
+            "STOP_MARKET": "market",  # Stop market orders use type='market' with stop parameters
+            "STOP_LIMIT": "limit"  # Stop limit orders use type='limit' with stop parameters
         }
         return type_mapping.get(order_type.upper(), "limit")
 
