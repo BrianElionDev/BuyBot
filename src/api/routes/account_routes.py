@@ -7,6 +7,8 @@ This module contains API routes for account management.
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 import logging
+import asyncio
+from datetime import datetime, timezone
 
 from src.api.models.request_models import AccountStatusRequest
 from src.api.models.response_models import PositionResponse, OrderResponse, BalanceResponse, APIResponse
@@ -28,15 +30,15 @@ async def get_account_status(
     """
     try:
         account_data = {}
-        
+
         if include_positions:
             positions = await discord_bot.binance_exchange.get_futures_position_information()
             account_data["positions"] = positions
-        
+
         if include_orders:
             orders = await discord_bot.binance_exchange.get_all_open_futures_orders()
             account_data["orders"] = orders
-        
+
         if include_balance:
             balance = await discord_bot.binance_exchange.get_futures_account_balance()
             account_data["balance"] = balance
@@ -58,10 +60,10 @@ async def get_account_positions():
     """
     try:
         positions = await discord_bot.binance_exchange.get_futures_position_information()
-        
+
         # Filter out zero positions
         active_positions = [
-            position for position in positions 
+            position for position in positions
             if float(position.get('positionAmt', 0)) != 0
         ]
 
@@ -175,7 +177,7 @@ async def sync_account_data():
     try:
         # Trigger the sync process
         await discord_bot.sync_trade_statuses_with_binance(
-            discord_bot, 
+            discord_bot,
             discord_bot.supabase
         )
 
@@ -186,4 +188,74 @@ async def sync_account_data():
 
     except Exception as e:
         logger.error(f"Error syncing account data: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/account/refresh-all", summary="Refresh all account data")
+async def refresh_all_account_data():
+    """
+    Trigger comprehensive refresh of all account data:
+    - Account balances (Binance & KuCoin)
+    - Order status checks (both exchanges)
+    - P&L data backfill
+
+    All operations run concurrently and independently of scheduled tasks.
+    """
+    try:
+        from discord_bot.main import sync_exchange_balances, backfill_pnl_data
+        from discord_bot.utils.trade_retry_utils import (
+            sync_trade_statuses_with_binance,
+            sync_trade_statuses_with_kucoin
+        )
+
+        timestamp = datetime.now(timezone.utc).isoformat()
+        operations = [
+            "balance_sync",
+            "binance_order_sync",
+            "kucoin_order_sync",
+            "pnl_backfill"
+        ]
+
+        logger.info("Starting comprehensive account data refresh...")
+
+        tasks = [
+            sync_exchange_balances(discord_bot.supabase),
+            sync_trade_statuses_with_binance(discord_bot, discord_bot.supabase),
+            sync_trade_statuses_with_kucoin(discord_bot, discord_bot.supabase),
+            backfill_pnl_data(discord_bot, discord_bot.supabase)
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        results_dict = {}
+        error_count = 0
+
+        for i, result in enumerate(results):
+            operation_name = operations[i]
+            if isinstance(result, Exception):
+                results_dict[operation_name] = "error"
+                error_count += 1
+                logger.error(f"Error in {operation_name}: {str(result)}")
+            else:
+                results_dict[operation_name] = "success"
+                logger.info(f"{operation_name} completed successfully")
+
+        status = "success" if error_count == 0 else "partial_success"
+        message = (
+            "All account data refreshed successfully" if error_count == 0
+            else f"Account data refresh completed with {error_count} error(s)"
+        )
+
+        return APIResponse(
+            status=status,
+            message=message,
+            data={
+                "operations": operations,
+                "results": results_dict,
+                "errors": error_count,
+                "timestamp": timestamp
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error refreshing account data: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
