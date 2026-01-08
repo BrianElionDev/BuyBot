@@ -1471,6 +1471,25 @@ class KucoinExchange(ExchangeBase):
         except Exception:
             return f"{coin_symbol}USDTM"
 
+    def _normalize_symbol_for_position_history(self, coin_symbol: str) -> str:
+        """
+        Normalize coin symbol to KuCoin futures format for position history queries.
+        Handles BTC -> XBTUSDTM conversion (critical for matching position records).
+
+        Args:
+            coin_symbol: Bot coin symbol (e.g., "BTC", "ETH")
+
+        Returns:
+            KuCoin futures symbol (e.g., "XBTUSDTM", "ETHUSDTM")
+        """
+        try:
+            normalized = str(coin_symbol).upper()
+            if normalized == 'BTC':
+                return 'XBTUSDTM'
+            return f"{normalized}USDTM"
+        except Exception:
+            return f"{coin_symbol}USDTM"
+
     async def validate_trade_amount(self, symbol: str, amount: float, price: float) -> Tuple[bool, Optional[str]]:
         """
         Validate trade amount against symbol filters.
@@ -2004,6 +2023,278 @@ class KucoinExchange(ExchangeBase):
         except Exception as e:
             logger.error(f"Failed to get KuCoin income history: {e}")
             return []
+
+    async def get_position_history(self, symbol: str = "", start_time: int = 0,
+                                   end_time: int = 0, limit: int = 1000) -> List[Dict[str, Any]]:
+        """
+        Get position history (closed positions) from KuCoin.
+        This is the KuCoin equivalent of Binance's income history for realized PnL.
+
+        Args:
+            symbol: Trading pair symbol (e.g., XBTUSDTM)
+            start_time: Start time in milliseconds
+            end_time: End time in milliseconds
+            limit: Maximum number of records
+
+        Returns:
+            List of position history records with PnL data
+        """
+        try:
+            await self._init_client()
+
+            if not self.client:
+                logger.error("KuCoin client not initialized")
+                return []
+
+            all_records: List[Dict[str, Any]] = []
+            current_page = 1
+            page_size = 50
+            max_pages = min((limit // page_size) + 1, 100)
+
+            while current_page <= max_pages:
+                params = {}
+                if symbol:
+                    params['symbol'] = symbol
+                if start_time:
+                    params['startAt'] = start_time
+                if end_time:
+                    params['endAt'] = end_time
+                params['currentPage'] = current_page
+                params['pageSize'] = page_size
+
+                try:
+                    response = await self._make_direct_api_call(
+                        'GET', '/api/v1/history-positions', params
+                    )
+
+                    if not response:
+                        break
+
+                    page_records: List[Dict[str, Any]] = []
+
+                    if isinstance(response, list):
+                        page_records = response
+                    elif isinstance(response, dict):
+                        if 'items' in response:
+                            page_records = response.get('items', [])
+                        elif 'data' in response:
+                            data = response.get('data')
+                            if isinstance(data, list):
+                                page_records = data
+                            elif isinstance(data, dict) and 'items' in data:
+                                page_records = data.get('items', [])
+                        else:
+                            items = response.get('items') or response.get('data') or []
+                            if isinstance(items, list):
+                                page_records = items
+
+                    if not page_records:
+                        if current_page == 1 and symbol:
+                            params_no_symbol = {
+                                'startAt': start_time,
+                                'endAt': end_time,
+                                'currentPage': current_page,
+                                'pageSize': page_size
+                            }
+                            response2 = await self._make_direct_api_call(
+                                'GET', '/api/v1/history-positions', params_no_symbol
+                            )
+
+                            if isinstance(response2, list):
+                                page_records = response2
+                            elif isinstance(response2, dict):
+                                if 'items' in response2:
+                                    page_records = response2.get('items', [])
+                                elif 'data' in response2:
+                                    data2 = response2.get('data')
+                                    if isinstance(data2, list):
+                                        page_records = data2
+                                    elif isinstance(data2, dict) and 'items' in data2:
+                                        page_records = data2.get('items', [])
+
+                            if page_records:
+                                page_records = [
+                                    r for r in page_records
+                                    if str(r.get('symbol') or '') == symbol
+                                ]
+
+                    if not page_records:
+                        break
+
+                    all_records.extend(page_records)
+
+                    if len(page_records) < page_size:
+                        break
+
+                    current_page += 1
+
+                except Exception as e:
+                    logger.error(
+                        f"Error fetching position history page {current_page}: {e}",
+                        exc_info=True
+                    )
+                    break
+
+            logger.info(f"Retrieved {len(all_records)} KuCoin position history records")
+            return all_records
+
+        except Exception as e:
+            logger.error(f"Failed to get KuCoin position history: {e}")
+            return []
+
+    async def get_realized_pnl_from_position_history(
+        self,
+        symbol: str,
+        start_time: int,
+        end_time: int,
+        trade_created_ms: int,
+        trade_closed_ms: int,
+        position_size: Optional[float] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get realized PnL from position history, matching to a specific trade.
+
+        Args:
+            symbol: KuCoin futures symbol (e.g., XBTUSDTM)
+            start_time: Start time window for position history query (milliseconds)
+            end_time: End time window for position history query (milliseconds)
+            trade_created_ms: Trade creation time (milliseconds)
+            trade_closed_ms: Trade close time (milliseconds)
+            position_size: Optional position size for matching
+
+        Returns:
+            Dict with pnl, net_pnl, entry_price, exit_price, fees, or None if not found
+        """
+        try:
+            position_history = await self.get_position_history(
+                symbol=symbol,
+                start_time=start_time,
+                end_time=end_time
+            )
+
+            if not position_history:
+                logger.debug(f"No position history found for {symbol} in time window")
+                return None
+
+            created_pad_ms = 30 * 60 * 1000
+            close_pad_ms = 30 * 60 * 1000
+
+            def get_ms(val: Any) -> int:
+                try:
+                    return int(val or 0)
+                except Exception:
+                    return 0
+
+            candidates: List[Dict[str, Any]] = []
+
+            for record in position_history:
+                open_time = get_ms(record.get('openTime'))
+                close_time = get_ms(record.get('closeTime'))
+
+                if not open_time or not close_time:
+                    continue
+
+                open_time_diff = abs(open_time - trade_created_ms)
+                close_time_diff = abs(close_time - trade_closed_ms)
+
+                if open_time_diff > created_pad_ms or close_time_diff > close_pad_ms:
+                    continue
+
+                if position_size is not None:
+                    try:
+                        rec_size = float(record.get('size', 0))
+                        if rec_size > 0:
+                            size_diff_pct = abs(position_size - rec_size) / position_size if position_size > 0 else 1.0
+                            if size_diff_pct > 0.20:
+                                continue
+                    except (ValueError, TypeError):
+                        pass
+
+                candidates.append(record)
+
+            if not candidates:
+                logger.debug(f"No matching position records found for {symbol}")
+                return None
+
+            def score(record: Dict[str, Any]) -> Tuple[int, int]:
+                o_ms = get_ms(record.get('openTime'))
+                c_ms = get_ms(record.get('closeTime'))
+                close_score = abs(c_ms - trade_closed_ms) if c_ms else 1_000_000_000
+                open_score = abs(o_ms - trade_created_ms) if o_ms else 1_000_000_000
+                return (close_score, open_score)
+
+            best_match = min(candidates, key=score)
+
+            realized_candidates = [
+                best_match.get('pnl'),
+                best_match.get('realisedPnl'),
+                best_match.get('realizedPnl'),
+                best_match.get('realisedPNL'),
+            ]
+            realized_val = 0.0
+            for c in realized_candidates:
+                try:
+                    if c is None:
+                        continue
+                    realized_val = float(c)
+                    break
+                except (ValueError, TypeError):
+                    continue
+
+            fee_candidates = [
+                best_match.get('tradeFee'),
+                best_match.get('fee'),
+                best_match.get('closeFee'),
+            ]
+            total_fees = 0.0
+            for c in fee_candidates:
+                try:
+                    if c is None:
+                        continue
+                    total_fees += float(c)
+                except (ValueError, TypeError):
+                    pass
+
+            try:
+                funding_fee = float(best_match.get('fundingFee') or 0)
+                total_fees += funding_fee
+            except (ValueError, TypeError):
+                pass
+
+            net_pnl = realized_val - total_fees if abs(realized_val) > 0 else -total_fees
+
+            entry_price = None
+            try:
+                entry_price_val = best_match.get('avgEntryPrice') or best_match.get('openPrice')
+                if entry_price_val is not None:
+                    entry_price = float(entry_price_val)
+            except (ValueError, TypeError):
+                pass
+
+            exit_price = None
+            try:
+                exit_price_val = best_match.get('closePrice') or best_match.get('avgExitPrice')
+                if exit_price_val is not None:
+                    exit_price = float(exit_price_val)
+            except (ValueError, TypeError):
+                pass
+
+            logger.info(
+                f"Matched position record for {symbol}: PnL={realized_val:.8f}, "
+                f"Fees={total_fees:.8f}, Net={net_pnl:.8f}"
+            )
+
+            return {
+                'pnl': realized_val,
+                'net_pnl': net_pnl,
+                'entry_price': entry_price,
+                'exit_price': exit_price,
+                'fees': total_fees
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting realized PnL from position history: {e}", exc_info=True)
+            return None
 
     async def get_account_ledgers(self, currency: str = "", biz_type: str = "",
                                 start_time: int = 0, end_time: int = 0,

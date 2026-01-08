@@ -3027,10 +3027,56 @@ async def _sync_pnl(bot: DiscordBot, trade: Dict, exchange: str, existing_update
                 return {'pnl_usd': str(round(pnl, 2)), 'pnl_source': 'calculated'}
 
         elif exchange == 'kucoin' and bot.kucoin_exchange:
-            # Do NOT compute KuCoin PnL here; dedicated KuCoin reconciliation/backfill
-            # scripts use /api/v1/history-positions and are the single source of truth.
-            # Returning None avoids attaching synthetic PnL to KuCoin trades.
-            return None
+            # Try to get from position history (similar to Binance income history)
+            try:
+                from datetime import datetime, timezone
+                created_at = trade.get('created_at')
+                closed_at = trade.get('closed_at') or trade.get('updated_at')
+
+                if created_at and closed_at:
+                    created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    closed_dt = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+                    created_ms = int(created_dt.timestamp() * 1000)
+                    closed_ms = int(closed_dt.timestamp() * 1000)
+
+                    # Normalize symbol (BTC -> XBTUSDTM)
+                    kucoin_symbol = bot.kucoin_exchange._normalize_symbol_for_position_history(coin_symbol)
+
+                    # Get position size if available for better matching
+                    position_size_val = None
+                    try:
+                        pos_size_str = existing_updates.get('position_size') or trade.get('position_size')
+                        if pos_size_str:
+                            position_size_val = float(pos_size_str)
+                    except (ValueError, TypeError):
+                        pass
+
+                    # Get PnL from position history with 30 min buffer
+                    pnl_data = await bot.kucoin_exchange.get_realized_pnl_from_position_history(
+                        symbol=kucoin_symbol,
+                        start_time=created_ms - 30 * 60 * 1000,
+                        end_time=closed_ms + 30 * 60 * 1000,
+                        trade_created_ms=created_ms,
+                        trade_closed_ms=closed_ms,
+                        position_size=position_size_val
+                    )
+
+                    if pnl_data and pnl_data.get('pnl') is not None:
+                        return {
+                            'pnl_usd': str(pnl_data['pnl']),
+                            'net_pnl': str(pnl_data['net_pnl']),
+                            'pnl_source': 'position_history'
+                        }
+            except Exception as e:
+                logging.warning(f"Could not get KuCoin PnL from position history: {e}")
+
+            # Fallback: calculate from entry/exit prices
+            if entry_price > 0 and exit_price > 0 and position_size > 0:
+                if signal_type == 'LONG':
+                    pnl = (exit_price - entry_price) * position_size
+                else:
+                    pnl = (entry_price - exit_price) * position_size
+                return {'pnl_usd': str(round(pnl, 2)), 'pnl_source': 'calculated'}
 
         return None
     except Exception as e:
