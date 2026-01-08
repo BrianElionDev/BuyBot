@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from discord_bot.endpoints.discord_endpoint import router as discord_router
 from discord_bot.endpoints.trader_config_endpoints import router as trader_config_router
+from src.api.routes import account_routes
 from discord_bot.utils.trade_retry_utils import (
     initialize_clients,
     sync_trade_statuses_with_binance,
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
 
     app.include_router(discord_router, prefix="/api/v1", tags=["discord"])
     app.include_router(trader_config_router, prefix="/api/v1", tags=["trader-config"])
+    app.include_router(account_routes.router, prefix="/api/v1", tags=["account"])
 
     @app.get("/")
     async def root():
