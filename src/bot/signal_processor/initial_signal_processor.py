@@ -895,7 +895,14 @@ class InitialSignalProcessor:
                     timestamp=datetime.now(timezone.utc)
                 )
 
-                asyncio.create_task(trade_notification_service.notify_trade_execution_success(notification_data))
+                try:
+                    success = await trade_notification_service.notify_trade_execution_success(notification_data)
+                    if success:
+                        logger.info(f"✅ Trade execution notification sent for {trading_pair} on {exchange_name}")
+                    else:
+                        logger.warning(f"⚠️ Trade execution notification failed for {trading_pair} on {exchange_name}")
+                except Exception as e:
+                    logger.error(f"Failed to send trade execution notification for {trading_pair}: {e}")
 
             except Exception as e:
                 logger.error(f"Failed to send trade execution notification: {e}")

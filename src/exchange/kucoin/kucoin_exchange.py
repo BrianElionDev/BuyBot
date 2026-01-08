@@ -2140,8 +2140,9 @@ class KucoinExchange(ExchangeBase):
                 params['endAt'] = end_time
 
             # Use direct API call approach since SDK structure is unclear
+            # Correct endpoint for futures: /api/v1/transaction-history (not /api/v1/futures/account/ledgers)
             response = await self._make_direct_api_call(
-                'GET', '/api/v1/futures/account/ledgers', params
+                'GET', '/api/v1/transaction-history', params
             )
 
             if not response:

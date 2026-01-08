@@ -390,8 +390,14 @@ class DiscordBot:
                                         timestamp=datetime.now(timezone.utc)
                                     )
 
-                                    asyncio.create_task(trade_notification_service.notify_trade_execution_success(notification_data))
-                                    logger.info(f"Sent trade execution notification for Kucoin trade {trade_row['id']}")
+                                    try:
+                                        success = await trade_notification_service.notify_trade_execution_success(notification_data)
+                                        if success:
+                                            logger.info(f"✅ Trade execution notification sent for Kucoin trade {trade_row['id']}")
+                                        else:
+                                            logger.warning(f"⚠️ Trade execution notification failed for Kucoin trade {trade_row['id']}")
+                                    except Exception as e:
+                                        logger.error(f"Failed to send trade execution notification for Kucoin trade {trade_row['id']}: {e}")
                                 except Exception as e:
                                     logger.error(f"Failed to send trade execution notification for Kucoin: {e}")
                         else:

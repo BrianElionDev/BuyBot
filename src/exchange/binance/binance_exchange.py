@@ -403,10 +403,19 @@ class BinanceExchange(ExchangeBase):
                 if stop_price and tick_size:
                     stop_price = float(format_value(stop_price, tick_size))
 
+            algotype_map = {
+                'STOP_MARKET': 'STOP',
+                'TAKE_PROFIT_MARKET': 'TAKE_PROFIT',
+                'STOP': 'STOP',
+                'TAKE_PROFIT': 'TAKE_PROFIT'
+            }
+            algotype = algotype_map.get(order_type.upper(), 'STOP')
+
             algo_params = {
                 'symbol': pair,
                 'side': side,
                 'type': order_type,
+                'algotype': algotype,
                 'quantity': quantity,
                 'stopPrice': stop_price,
                 'reduceOnly': reduce_only,

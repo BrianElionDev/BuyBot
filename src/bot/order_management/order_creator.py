@@ -140,14 +140,28 @@ class OrderCreator:
                 try:
                     tp_price = float(take_profits[0])
                     tp_amount = float(position_size) * 0.5
-                    tp_order = await self.exchange.create_futures_order(
-                        pair=trading_pair,
-                        side=tp_sl_side,
-                        order_type='TAKE_PROFIT_MARKET',
-                        amount=tp_amount,
-                        stop_price=tp_price,
-                        reduce_only=True  # Only reduce by the partial amount
-                    )
+
+                    is_binance = hasattr(self.exchange, '__class__') and 'binance' in self.exchange.__class__.__name__.lower()
+                    has_algo_order = hasattr(self.exchange, 'create_algo_order')
+
+                    if is_binance and has_algo_order:
+                        tp_order = await self.exchange.create_algo_order(
+                            pair=trading_pair,
+                            side=tp_sl_side,
+                            order_type='TAKE_PROFIT_MARKET',
+                            quantity=tp_amount,
+                            stop_price=tp_price,
+                            reduce_only=True
+                        )
+                    else:
+                        tp_order = await self.exchange.create_futures_order(
+                            pair=trading_pair,
+                            side=tp_sl_side,
+                            order_type='TAKE_PROFIT_MARKET',
+                            amount=tp_amount,
+                            stop_price=tp_price,
+                            reduce_only=True
+                        )
 
                     if tp_order and 'orderId' in tp_order:
                         tp_order['order_type'] = 'TAKE_PROFIT'

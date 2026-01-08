@@ -71,6 +71,35 @@ class DatabaseManager:
         trades = await self.trade_ops.get_open_trades()
         return [self.utils.desanitize_data(trade) for trade in trades]
 
+    async def get_active_trades(self, symbol: str = None, trader: str = None) -> List[Dict[str, Any]]:
+        """
+        Get all active trades, optionally filtered by symbol or trader.
+
+        Args:
+            symbol: Optional symbol filter
+            trader: Optional trader filter
+
+        Returns:
+            List of active trade records
+        """
+        try:
+            trades = await self.trade_ops.get_open_trades()
+
+            active_trades = [
+                trade for trade in trades
+                if trade.get('status') == 'OPEN' and trade.get('is_active', True)
+            ]
+
+            if symbol:
+                active_trades = [t for t in active_trades if t.get('coin_symbol') == symbol]
+            if trader:
+                active_trades = [t for t in active_trades if t.get('trader') == trader]
+
+            return [self.utils.desanitize_data(trade) for trade in active_trades]
+        except Exception as e:
+            logger.error(f"Error getting active trades: {e}")
+            return []
+
     async def get_trades_by_trader(self, trader: str) -> List[Dict[str, Any]]:
         """Get all trades by a specific trader."""
         trades = await self.trade_ops.get_trades_by_trader(trader)
