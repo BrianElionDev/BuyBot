@@ -27,6 +27,7 @@ from supabase import create_client, Client
 from src.services.pricing.price_service import PriceService
 from src.exchange import BinanceExchange, KucoinExchange
 from discord_bot.websocket import DiscordBotWebSocketManager
+from discord_bot.websocket.kucoin_websocket_manager import DiscordBotKucoinWebSocketManager
 from config import settings
 from src.services.notifications.notification_manager import NotificationManager
 
@@ -113,6 +114,12 @@ class DiscordBot:
 
         # Initialize WebSocket manager for real-time database sync
         self.websocket_manager = DiscordBotWebSocketManager(self, self.db_manager)
+
+        # Initialize KuCoin WebSocket manager if exchange is available
+        if self.kucoin_exchange:
+            self.kucoin_websocket_manager = DiscordBotKucoinWebSocketManager(self, self.db_manager)
+        else:
+            self.kucoin_websocket_manager = None
 
         logger.info(f"DiscordBot initialized with {'AI' if client else 'simple'} Signal Parser.")
 
@@ -916,6 +923,8 @@ class DiscordBot:
         try:
             if hasattr(self, 'websocket_manager') and self.websocket_manager:
                 await self.websocket_manager.stop()
+            if hasattr(self, 'kucoin_websocket_manager') and self.kucoin_websocket_manager:
+                await self.kucoin_websocket_manager.stop()
             logger.info("DiscordBot closed successfully")
         except Exception as e:
             logger.error(f"Error closing DiscordBot: {e}")
@@ -923,24 +932,47 @@ class DiscordBot:
     async def start_websocket_sync(self):
         """Start WebSocket real-time database synchronization."""
         try:
+            binance_success = False
+            kucoin_success = False
+
             if hasattr(self, 'websocket_manager') and self.websocket_manager:
-                success = await self.websocket_manager.start()
-                if success:
-                    logger.info("WebSocket real-time sync started successfully")
-                    return True
+                binance_success = await self.websocket_manager.start()
+                if binance_success:
+                    logger.info("Binance WebSocket real-time sync started successfully")
                 else:
-                    logger.error("Failed to start WebSocket sync")
-                    return False
-            else:
-                logger.warning("WebSocket manager not available")
+                    logger.error("Failed to start Binance WebSocket sync")
+
+            if hasattr(self, 'kucoin_websocket_manager') and self.kucoin_websocket_manager:
+                kucoin_success = await self.kucoin_websocket_manager.start()
+                if kucoin_success:
+                    logger.info("KuCoin WebSocket real-time sync started successfully")
+                else:
+                    logger.error("Failed to start KuCoin WebSocket sync")
+
+            return binance_success or kucoin_success
+
         except Exception as e:
             logger.error(f"Error starting WebSocket sync: {e}")
+            return False
 
     def get_websocket_status(self) -> dict:
         """Get WebSocket manager status."""
-        if hasattr(self, 'websocket_manager'):
-            return self.websocket_manager.get_status()
-        return {"status": "not_available"}
+        status = {
+            "binance": {},
+            "kucoin": {}
+        }
+
+        if hasattr(self, 'websocket_manager') and self.websocket_manager:
+            status["binance"] = self.websocket_manager.get_status()
+        else:
+            status["binance"] = {"status": "not_available"}
+
+        if hasattr(self, 'kucoin_websocket_manager') and self.kucoin_websocket_manager:
+            status["kucoin"] = self.kucoin_websocket_manager.get_status()
+        else:
+            status["kucoin"] = {"status": "not_available"}
+
+        return status
 
     async def _execute_single_action(self, action: Dict[str, Any], trade_row: Dict[str, Any], signal) -> Tuple[bool, Any]:
         """
