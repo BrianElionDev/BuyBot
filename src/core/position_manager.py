@@ -158,6 +158,30 @@ class PositionManager:
                 logger.info(f"Successfully closed {close_percentage}% of {position_type} position for {coin_symbol}. Order ID: {close_order['orderId']}")
                 return True, close_order
             else:
+                error_code = None
+                error_msg = ""
+                if isinstance(close_order, dict):
+                    error_code = close_order.get('code')
+                    error_msg = close_order.get('error', '')
+                    
+                    response = close_order.get('response', {})
+                    if isinstance(response, dict):
+                        nested_code = response.get('code')
+                        nested_error = response.get('error', '')
+                        if nested_code:
+                            error_code = nested_code
+                        if nested_error:
+                            error_msg = nested_error
+                    
+                    if isinstance(error_msg, dict):
+                        error_msg = error_msg.get('error', '') or str(error_msg)
+                
+                error_msg_str = str(error_msg) if error_msg else ''
+                
+                if error_code == -2022 or 'ReduceOnly Order is rejected' in error_msg_str:
+                    logger.info(f"Position for {coin_symbol} already closed (Binance error -2022). Treating as success.")
+                    return True, {"message": "Position already closed, no action needed", "binance_error": error_msg_str}
+                
                 logger.error(f"Failed to close position for {coin_symbol}: {close_order}")
                 return False, {"error": "Failed to close position", "response": close_order}
 

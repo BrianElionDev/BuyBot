@@ -654,22 +654,40 @@ class TradingEngine:
             coin_symbol = trade_row.get('coin_symbol')
             if not coin_symbol:
                 return False, {"error": "Missing coin_symbol in trade_row"}
-            trading_pair = f"{coin_symbol}USDT"
+            
+            trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
 
-            # Pre-check open positions to avoid reduceOnly errors
+            parsed_signal = SignalParser.parse_parsed_signal(trade_row.get("parsed_signal"))
+            position_type = parsed_signal.get("position_type", "SPOT").upper() if parsed_signal else trade_row.get("signal_type", "LONG").upper()
+            
+            if position_type not in ['LONG', 'SHORT']:
+                return await self.position_manager.close_position_at_market(trade_row, reason, close_percentage)
+
+            expected_position_side = position_type
+            expected_close_side = 'SELL' if position_type == 'LONG' else 'BUY'
+
             positions = await self.exchange.get_futures_position_information()
-            has_open = False
+            matching_position = None
+            
             for pos in positions:
                 try:
-                    if pos.get('symbol') == trading_pair and float(pos.get('positionAmt', 0)) != 0:
-                        has_open = True
-                        break
+                    pos_symbol = pos.get('symbol', '')
+                    pos_amt = float(pos.get('positionAmt', 0))
+                    pos_side = pos.get('positionSide', 'BOTH')
+                    
+                    if pos_amt == 0:
+                        continue
+                    
+                    if pos_symbol == trading_pair:
+                        if pos_side in ['BOTH', expected_position_side]:
+                            matching_position = pos
+                            break
                 except Exception:
-                    # Some exchanges may use different keys; ignore here and delegate
                     pass
 
-            if not has_open:
-                return False, {"error": f"No open position for {trading_pair} (reduceOnly risk)"}
+            if not matching_position:
+                logger.info(f"No open position found for {trading_pair} {position_type}. Position may already be closed.")
+                return await self.position_manager.close_position_at_market(trade_row, reason, close_percentage)
 
             return await self.position_manager.close_position_at_market(trade_row, reason, close_percentage)
         except Exception as e:
