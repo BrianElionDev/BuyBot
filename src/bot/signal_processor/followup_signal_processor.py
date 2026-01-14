@@ -103,6 +103,13 @@ class FollowupSignalProcessor:
         if not coin_symbol:
             return False, active_trade, f"Trade {trade_id} missing coin_symbol"
 
+        # Check if trade failed - don't proceed with follow-up on failed trades
+        trade_status = str(active_trade.get('status', '')).upper()
+        if trade_status in ('FAILED', 'REJECTED', 'CANCELLED'):
+            error_msg = active_trade.get('error_message', f"Trade {trade_id} has status {trade_status}")
+            logger.warning(f"Cannot process follow-up for {trade_id}: {error_msg}")
+            return False, active_trade, f"Trade {trade_id} failed: {error_msg}"
+
         # Check if trade was successfully executed (has exchange order)
         exchange_order_id = active_trade.get('exchange_order_id')
         binance_response = active_trade.get('binance_response', '')

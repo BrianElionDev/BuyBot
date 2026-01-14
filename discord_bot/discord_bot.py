@@ -276,6 +276,45 @@ class DiscordBot:
                 await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates=trade_updates)
                 logger.info(f"Updated trade {trade_row['id']} with parsed signal data")
 
+                # Validate symbol exists on target exchange before execution
+                try:
+                    from src.core.dynamic_symbol_validator import dynamic_validator
+                    exchange_name = exchange_type.value.lower()
+                    
+                    # Get trading pair format for the exchange
+                    if exchange_name == 'binance':
+                        trading_pair = f"{coin_symbol.upper()}USDT"
+                    else:
+                        trading_pair = f"{coin_symbol.upper()}-USDT"
+                    
+                    # Get appropriate exchange client
+                    exchange_client = None
+                    if exchange_name == 'binance':
+                        exchange_client = self.binance_exchange
+                    elif exchange_name == 'kucoin' and hasattr(self, 'kucoin_exchange'):
+                        exchange_client = self.kucoin_exchange
+                    
+                    if exchange_client:
+                        is_supported = await dynamic_validator.is_symbol_supported(
+                            symbol=trading_pair,
+                            exchange=exchange_name,
+                            exchange_client=exchange_client,
+                            trading_type='futures'
+                        )
+                        
+                        if not is_supported:
+                            error_msg = f"Symbol {trading_pair} does not exist on {exchange_name} futures"
+                            logger.error(f"Symbol validation failed for trade {trade_row['id']}: {error_msg}")
+                            await self.db_manager.update_existing_trade(trade_id=trade_row['id'], updates={
+                                'status': 'FAILED',
+                                'error_message': error_msg,
+                                'sync_error_count': 1,
+                                'manual_verification_needed': True
+                            })
+                            return {"status": "error", "message": error_msg}
+                except Exception as e:
+                    logger.warning(f"Symbol validation check failed, proceeding with execution: {e}")
+
                 # Execute the trade on Binance
                 try:
                     logger.info(f"Executing trade on Binance for {parsed_signal['coin_symbol']}")

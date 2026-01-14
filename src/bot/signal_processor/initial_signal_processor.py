@@ -159,6 +159,24 @@ class InitialSignalProcessor:
         is_futures = position_type.upper() in ['LONG', 'SHORT']
         trading_pair = self.exchange.get_futures_trading_pair(coin_symbol)
 
+        # Early symbol existence check using dynamic validator
+        try:
+            from src.core.dynamic_symbol_validator import dynamic_validator
+            exchange_name = 'binance' if 'binance' in str(type(self.exchange)).lower() else 'kucoin'
+            
+            is_supported = await dynamic_validator.is_symbol_supported(
+                symbol=trading_pair,
+                exchange=exchange_name,
+                exchange_client=self.exchange,
+                trading_type='futures'
+            )
+            
+            if not is_supported:
+                logger.error(f"Symbol {trading_pair} not supported on {exchange_name} futures")
+                return False, f"Symbol {trading_pair} does not exist on {exchange_name} futures"
+        except Exception as e:
+            logger.warning(f"Dynamic symbol validation failed, using fallback: {e}")
+
         # CRITICAL: Validate symbol early (before trade calculation) to fail fast
         exchange_info = await self.exchange.get_exchange_info()
         if not exchange_info:
