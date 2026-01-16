@@ -103,6 +103,27 @@ class FollowupSignalProcessor:
         if not coin_symbol:
             return False, active_trade, f"Trade {trade_id} missing coin_symbol"
 
+        # Check if trade was merged into another trade - redirect to primary trade
+        import json
+        exchange_response = active_trade.get('exchange_response', '')
+        sync_order_response = active_trade.get('sync_order_response', '')
+        
+        for response_field in [exchange_response, sync_order_response]:
+            if response_field:
+                try:
+                    if isinstance(response_field, str):
+                        response_data = json.loads(response_field)
+                    else:
+                        response_data = response_field
+                    
+                    if isinstance(response_data, dict) and response_data.get('action') == 'merged':
+                        primary_trade_id = response_data.get('primary_trade_id')
+                        if primary_trade_id and primary_trade_id != trade_id:
+                            logger.info(f"Trade {trade_id} was merged into trade {primary_trade_id}, redirecting follow-up")
+                            return await self.validate_trade_for_followup(primary_trade_id, action)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
         # Check if trade failed - don't proceed with follow-up on failed trades
         trade_status = str(active_trade.get('status', '')).upper()
         if trade_status in ('FAILED', 'REJECTED', 'CANCELLED'):
@@ -118,7 +139,6 @@ class FollowupSignalProcessor:
 
         if not exchange_order_id:
             try:
-                import json
                 if binance_response:
                     if isinstance(binance_response, str):
                         response_data = json.loads(binance_response)
@@ -169,7 +189,72 @@ class FollowupSignalProcessor:
                 pass
 
         if not exchange_order_id:
-            return False, active_trade, f"Trade {trade_id} has no exchange order ID - original trade likely failed"
+            error_msg = f"Trade {trade_id} has no exchange order ID - original trade likely failed"
+            logger.warning(error_msg)
+            
+            trade_status = str(active_trade.get('status', '')).upper()
+            if trade_status == 'FAILED':
+                return False, active_trade, error_msg
+            
+            logger.info(f"Attempting to recover order ID for trade {trade_id} from exchange...")
+            
+            try:
+                coin_symbol_for_recovery = active_trade.get('coin_symbol')
+                trade_created_at = active_trade.get('created_at')
+                if coin_symbol_for_recovery:
+                    trading_pair_for_recovery = self.exchange.get_futures_trading_pair(coin_symbol_for_recovery)
+                    open_orders = await self.exchange.get_all_open_futures_orders()
+                    
+                    matching_orders = []
+                    for order in open_orders:
+                        if order.get('symbol') == trading_pair_for_recovery:
+                            matching_orders.append(order)
+                    
+                    if len(matching_orders) == 1:
+                        potential_order_id = matching_orders[0].get('orderId')
+                        if potential_order_id:
+                            logger.info(f"Found single matching order ID {potential_order_id} for trade {trade_id}")
+                            await self.db_manager.update_existing_trade(
+                                trade_id=trade_id,
+                                updates={'exchange_order_id': str(potential_order_id)}
+                            )
+                            active_trade['exchange_order_id'] = str(potential_order_id)
+                            exchange_order_id = str(potential_order_id)
+                    elif len(matching_orders) > 1 and trade_created_at:
+                        from datetime import datetime
+                        try:
+                            if isinstance(trade_created_at, str):
+                                trade_time = datetime.fromisoformat(trade_created_at.replace('Z', '+00:00'))
+                            else:
+                                trade_time = trade_created_at
+                            trade_timestamp = int(trade_time.timestamp() * 1000)
+                            
+                            best_match = None
+                            smallest_diff = float('inf')
+                            for order in matching_orders:
+                                order_time = order.get('time', 0)
+                                time_diff = abs(order_time - trade_timestamp)
+                                if time_diff < smallest_diff:
+                                    smallest_diff = time_diff
+                                    best_match = order
+                            
+                            if best_match and smallest_diff < 60000:
+                                potential_order_id = best_match.get('orderId')
+                                if potential_order_id:
+                                    logger.info(f"Found best matching order ID {potential_order_id} for trade {trade_id} (time diff: {smallest_diff}ms)")
+                                    await self.db_manager.update_existing_trade(
+                                        trade_id=trade_id,
+                                        updates={'exchange_order_id': str(potential_order_id)}
+                                    )
+                                    active_trade['exchange_order_id'] = str(potential_order_id)
+                                    exchange_order_id = str(potential_order_id)
+                        except Exception as time_parse_error:
+                            logger.warning(f"Could not parse trade time for matching: {time_parse_error}")
+            except Exception as recovery_error:
+                logger.warning(f"Could not recover order ID for trade {trade_id}: {recovery_error}")
+            
+            if not exchange_order_id:
+                return False, active_trade, error_msg
 
         if str(active_trade.get('status', '')).upper() == 'CLOSED':
             logger.info(f"Trade {trade_id} already closed. Treating as acknowledged.")
@@ -328,7 +413,8 @@ class FollowupSignalProcessor:
             # For position-closing actions, we need an active position
             if action in ['stop_loss_hit', 'take_profit_1', 'position_closed']:
                 if not binance_status['has_position']:
-                    return False, active_trade, f"No active position found on Binance for {coin_symbol}USDT - cannot execute {action}"
+                    logger.info(f"No active position found on Binance for {coin_symbol}USDT - position may already be closed")
+                    return True, active_trade, f"Position already closed, no action needed for {action}"
 
                 # Update the trade data with current position size from Binance
                 active_trade['current_binance_position_size'] = binance_status['position_size']
@@ -648,6 +734,21 @@ class FollowupSignalProcessor:
                 logger.info(f"Position closed: {close_order['orderId']}")
                 return True, close_order
             else:
+                error_code = None
+                error_msg = ""
+                if isinstance(close_order, dict):
+                    error_code = close_order.get('code')
+                    error_msg = close_order.get('error', '')
+                    
+                    if isinstance(error_msg, dict):
+                        error_msg = error_msg.get('error', '') or str(error_msg)
+                
+                error_msg_str = str(error_msg) if error_msg else ''
+                
+                if error_code == -2022 or 'ReduceOnly Order is rejected' in error_msg_str:
+                    logger.info(f"Position for {coin_symbol} already closed (Binance error -2022). Treating as success.")
+                    return True, {"message": "Position already closed, no action needed", "binance_error": error_msg_str}
+                
                 logger.error(f"Failed to close position: {close_order}")
                 return False, {"error": "Failed to close position", "response": close_order}
 

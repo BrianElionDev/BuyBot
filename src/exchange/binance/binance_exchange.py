@@ -483,11 +483,16 @@ class BinanceExchange(ExchangeBase):
 
     async def cancel_futures_order(self, pair: str, order_id: str) -> Tuple[bool, Dict[str, Any]]:
         """Cancel a futures order."""
+        if not order_id or not str(order_id).strip():
+            error_msg = "Cannot cancel order: order_id is empty or None"
+            logger.error(f"cancel_futures_order called with invalid order_id: {order_id}")
+            return False, {'error': error_msg, 'code': -1}
+
         await self._init_client()
         assert self.client is not None
 
         try:
-            result = await self.client.futures_cancel_order(symbol=pair, orderId=order_id)
+            result = await self.client.futures_cancel_order(symbol=pair, orderId=str(order_id))
             try:
                 logger.info(f"Raw Binance cancel response: {json.dumps(result)}")
             except Exception:

@@ -87,15 +87,20 @@ class OrderCanceller:
                         order['type'] in ['STOP_MARKET', 'STOP', 'TAKE_PROFIT_MARKET', 'TAKE_PROFIT'] and
                         order.get('reduceOnly', False)):
                         try:
-                            logger.info(f"Cancelling TP/SL order {order['orderId']} ({order['type']}) for {trading_pair}")
-                            success, _ = await self.exchange.cancel_futures_order(trading_pair, order['orderId'])
+                            order_id = order.get('orderId')
+                            if not order_id or not str(order_id).strip():
+                                logger.warning(f"Skipping TP/SL order with invalid orderId: {order}")
+                                continue
+                            
+                            logger.info(f"Cancelling TP/SL order {order_id} ({order['type']}) for {trading_pair}")
+                            success, _ = await self.exchange.cancel_futures_order(trading_pair, str(order_id))
                             if success:
                                 cancelled_count += 1
-                                logger.info(f"Successfully cancelled TP/SL order {order['orderId']}")
+                                logger.info(f"Successfully cancelled TP/SL order {order_id}")
                             else:
-                                logger.warning(f"Failed to cancel TP/SL order {order['orderId']}")
+                                logger.warning(f"Failed to cancel TP/SL order {order_id}")
                         except Exception as e:
-                            logger.error(f"Error cancelling TP/SL order {order['orderId']}: {e}")
+                            logger.error(f"Error cancelling TP/SL order {order.get('orderId', 'UNKNOWN')}: {e}")
 
             logger.info(f"Successfully cancelled {cancelled_count} TP/SL orders for {trading_pair}")
             return cancelled_count > 0

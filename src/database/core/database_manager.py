@@ -276,6 +276,32 @@ class DatabaseManager:
             logger.error(f"Error getting active trades: {e}")
             return []
 
+    async def update_trade(self, trade_id: int, updates: Dict[str, Any]) -> bool:
+        """Update a trade record by ID."""
+        try:
+            if 'updated_at' not in updates:
+                updates['updated_at'] = datetime.now(timezone.utc).isoformat()
+            
+            result = await self.update("trades", updates, filters={"id": trade_id})
+            return bool(result and result.get("data"))
+        except Exception as e:
+            logger.error(f"Failed to update trade {trade_id}: {e}")
+            return False
+
+    async def update_existing_trade(self, trade_id: int, updates: Dict[str, Any]) -> bool:
+        """Alias for update_trade for backward compatibility."""
+        return await self.update_trade(trade_id, updates)
+
+    async def find_trade_by_discord_id(self, discord_id: str) -> Optional[Dict[str, Any]]:
+        """Find a trade by discord_id."""
+        try:
+            result = await self.select("trades", filters={"discord_id": discord_id}, limit=1)
+            data = result.get("data", [])
+            return data[0] if data else None
+        except Exception as e:
+            logger.error(f"Failed to find trade by discord_id {discord_id}: {e}")
+            return None
+
     def get_stats(self) -> Dict[str, Any]:
         """Get database manager statistics."""
         return {
