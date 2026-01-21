@@ -199,6 +199,7 @@ class DiscordBot:
                     'timestamp': signal.timestamp,
                     'content': signal.content,
                     'status': 'PENDING',
+                    'order_status': 'NEW',
                     'exchange': exchange_type.value,
                     'created_at': datetime.now(timezone.utc).isoformat(),
                     'updated_at': datetime.now(timezone.utc).isoformat()
@@ -226,7 +227,9 @@ class DiscordBot:
 
             # Parse signal with AI
             try:
-                parsed_signal = await self.signal_parser.parse_new_trade_signal(signal.structured)
+                parsed_signal = await self.signal_parser.parse_new_trade_signal(
+                    f"{signal.content}\n{signal.structured or ''}"
+                )
                 if not parsed_signal or not parsed_signal.get('coin_symbol'):
                     logger.error(f"Failed to parse signal or extract coin_symbol for trade {trade_row['id']}")
                     # Update trade with error status using existing columns

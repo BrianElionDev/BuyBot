@@ -138,7 +138,7 @@ class PositionDatabaseOperations:
             updates['updated_at'] = datetime.now(timezone.utc).isoformat()
 
             # Update the trade
-            result = await self.db_manager.update_trade(trade_id, updates)
+            result = await self.db_manager.update_existing_trade(trade_id, updates)
 
             if result:
                 logger.info(f"Updated trade {trade_id}")

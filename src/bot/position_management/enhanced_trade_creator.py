@@ -128,7 +128,7 @@ class EnhancedTradeCreator:
                         'updated_at': datetime.now(timezone.utc).isoformat()
                     }
 
-                    await self.db_manager.update_trade(temp_trade_id, trade_data)
+                    await self.db_manager.update_existing_trade(temp_trade_id, trade_data)
 
                     # Execute the trade
                     result = await self._execute_trade(
@@ -147,7 +147,7 @@ class EnhancedTradeCreator:
 
             except Exception as e:
                 # Clean up temporary trade on error
-                await self.db_manager.update_trade(temp_trade_id, {
+                await self.db_manager.update_existing_trade(temp_trade_id, {
                     'status': 'FAILED',
                     'order_status': 'FAILED',
                     'sync_issues': [f"Error during conflict detection: {str(e)}"],
@@ -284,7 +284,7 @@ class EnhancedTradeCreator:
                     'updated_at': datetime.now(timezone.utc).isoformat()
                 }
 
-            await self.db_manager.update_trade(trade_id, update_data)
+            await self.db_manager.update_existing_trade(trade_id, update_data)
 
             return result
 
@@ -292,7 +292,7 @@ class EnhancedTradeCreator:
             logger.error(f"Error executing trade: {e}")
 
             # Update trade with error
-            await self.db_manager.update_trade(trade_id, {
+            await self.db_manager.update_existing_trade(trade_id, {
                 'status': 'FAILED',
                 'order_status': 'FAILED',
                 'sync_issues': [f"Execution error: {str(e)}"],

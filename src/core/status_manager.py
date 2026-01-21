@@ -21,7 +21,9 @@ class StatusManager:
         'CANCELED': 'CANCELED',
         'CANCELLED': 'CANCELED',
         'REJECTED': 'REJECTED',
-        'EXPIRED': 'EXPIRED'
+        'EXPIRED': 'EXPIRED',
+        'MERGED': 'MERGED',
+        'UNPROCESSED': 'NEW',
     }
 
     # Internal position statuses
@@ -30,8 +32,27 @@ class StatusManager:
         'ACTIVE': 'ACTIVE',       # Position is open
         'CLOSED': 'CLOSED',       # Position is closed
         'FAILED': 'FAILED',       # Order failed
-        'CANCELLED': 'CANCELLED'  # Order was cancelled
+        'CANCELLED': 'CANCELLED',  # Order was cancelled
+        'MERGED': 'MERGED',
     }
+
+    @staticmethod
+    def _normalize_order_status(order_status: Optional[str]) -> str:
+        s = str(order_status or '').upper().strip()
+        if not s or s == 'NONE':
+            return 'NEW'
+        if s == 'UNPROCESSED':
+            return 'NEW'
+        return s
+
+    @staticmethod
+    def _normalize_position_status(position_status: Optional[str]) -> str:
+        s = str(position_status or '').upper().strip()
+        if not s or s == 'NONE':
+            return 'PENDING'
+        if s == 'UNPROCESSED':
+            return 'PENDING'
+        return s
 
     @staticmethod
     def map_exchange_to_internal(exchange_status: str, position_size: float = 0) -> Tuple[str, str]:
@@ -88,8 +109,8 @@ class StatusManager:
         Returns:
             True if consistent, False otherwise
         """
-        order_status = str(order_status).upper().strip()
-        position_status = str(position_status).upper().strip()
+        order_status = StatusManager._normalize_order_status(order_status)
+        position_status = StatusManager._normalize_position_status(position_status)
 
         # Define valid combinations
         valid_combinations = {
@@ -100,7 +121,8 @@ class StatusManager:
             'CANCELLED': ['CANCELLED'],
             'REJECTED': ['FAILED'],
             'FAILED': ['FAILED'],  # Allow FAILED order_status with FAILED position_status
-            'EXPIRED': ['CANCELLED']
+            'EXPIRED': ['CANCELLED'],
+            'MERGED': ['MERGED'],
         }
 
         valid_positions = valid_combinations.get(order_status, [])
@@ -119,8 +141,13 @@ class StatusManager:
         Returns:
             Tuple of (corrected_order_status, corrected_position_status)
         """
-        order_status = str(order_status).upper().strip()
-        position_status = str(position_status).upper().strip()
+        order_status = StatusManager._normalize_order_status(order_status)
+        position_status = StatusManager._normalize_position_status(position_status)
+
+        if position_status == 'MERGED':
+            return ('MERGED', 'MERGED')
+        if order_status == 'MERGED':
+            return ('MERGED', 'MERGED')
 
         # If order is filled but position is pending, position should be active
         if order_status == 'FILLED' and position_status == 'PENDING':

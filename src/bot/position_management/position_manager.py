@@ -306,7 +306,7 @@ class PositionManager:
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
-            await self.db_manager.update_trade(conflict.existing_position.primary_trade_id, update_data)
+            await self.db_manager.update_existing_trade(conflict.existing_position.primary_trade_id, update_data)
 
             # Mark new trade as merged
             merge_data = {
@@ -315,7 +315,7 @@ class PositionManager:
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
-            await self.db_manager.update_trade(conflict.new_trade_id, merge_data)
+            await self.db_manager.update_existing_trade(conflict.new_trade_id, merge_data)
 
             # Invalidate position cache
             self.position_cache = {}
@@ -348,7 +348,7 @@ class PositionManager:
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
-            await self.db_manager.update_trade(conflict.new_trade_id, reject_data)
+            await self.db_manager.update_existing_trade(conflict.new_trade_id, reject_data)
 
             logger.info(f"Rejected trade {conflict.new_trade_id}: {conflict.reason}")
 
@@ -376,11 +376,11 @@ class PositionManager:
                     'closed_at': datetime.now(timezone.utc).isoformat(),
                     'updated_at': datetime.now(timezone.utc).isoformat()
                 }
-                await self.db_manager.update_trade(trade_id, close_data)
+                await self.db_manager.update_existing_trade(trade_id, close_data)
 
             # Mark new trade as primary
             new_trade_data['status'] = 'OPEN'
-            await self.db_manager.update_trade(conflict.new_trade_id, new_trade_data)
+            await self.db_manager.update_existing_trade(conflict.new_trade_id, new_trade_data)
 
             # Invalidate position cache
             self.position_cache = {}
@@ -412,7 +412,7 @@ class PositionManager:
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
-            await self.db_manager.update_trade(conflict.new_trade_id, cooldown_data)
+            await self.db_manager.update_existing_trade(conflict.new_trade_id, cooldown_data)
 
             logger.info(f"Applied cooldown and rejected trade {conflict.new_trade_id}")
 

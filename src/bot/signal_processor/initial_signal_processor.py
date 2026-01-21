@@ -112,7 +112,7 @@ class InitialSignalProcessor:
                     )
 
                     # Update the existing position (Trade 1)
-                    await self._update_existing_position(
+                    primary_update_ok = await self._update_existing_position(
                         existing_position.primary_trade_id,
                         new_total_size,
                         new_weighted_entry,
@@ -121,8 +121,9 @@ class InitialSignalProcessor:
                     )
 
                     # Mark Trade 2 as merged (update existing row using discord_id)
+                    merged_mark_ok = True
                     if discord_id:
-                        await self._mark_trade_as_merged(
+                        merged_mark_ok = await self._mark_trade_as_merged(
                             discord_id,  # Use the discord_id from the signal
                             existing_position.primary_trade_id,
                             new_total_size,
@@ -130,6 +131,15 @@ class InitialSignalProcessor:
                         )
                     else:
                         logger.warning("No discord_id provided, cannot mark trade as merged")
+                        merged_mark_ok = False
+
+                    if not primary_update_ok or not merged_mark_ok:
+                        reason = (
+                            f"Merge persistence failed for {coin_symbol} {position_type}: "
+                            f"primary_update_ok={primary_update_ok}, merged_mark_ok={merged_mark_ok}"
+                        )
+                        logger.error(reason)
+                        return False, reason
 
                     # Set position cooldown
                     cooldown_manager.set_position_cooldown(coin_symbol, 600)  # 10 minutes
@@ -1062,7 +1072,7 @@ class InitialSignalProcessor:
             }
 
             # Update the trade in database
-            success = await self.db_manager.update_trade(primary_trade_id, update_data)
+            success = await self.db_manager.update_existing_trade(primary_trade_id, update_data)
 
             if success:
                 logger.info(f"Successfully updated position {primary_trade_id} with merged trade data")
@@ -1109,11 +1119,13 @@ class InitialSignalProcessor:
             # Update the trade to mark it as merged
             merge_data = {
                 'status': 'MERGED',
+                'order_status': 'MERGED',
                 'merged_into_trade_id': primary_trade_id,
                 'merge_reason': 'Position aggregation - same symbol/side conflict',
                 'merged_at': datetime.now(timezone.utc).isoformat(),
                 'position_size': 0,  # Set to 0 since it's merged
                 'entry_price': 0,    # Set to 0 since it's merged
+                'is_active': False,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
 

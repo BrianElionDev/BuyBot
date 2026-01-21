@@ -426,7 +426,7 @@ class TradingEngine:
                     pnl_updates['updated_at'] = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
                 except Exception:
                     pass
-                await self.db_manager.update_trade(trade_id, pnl_updates)
+                await self.db_manager.update_existing_trade(trade_id, pnl_updates)
         except Exception:
             # best-effort
             pass
